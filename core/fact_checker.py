@@ -18,36 +18,36 @@ from typing import Optional
 
 CLAIM_PATTERNS = [
     # Prices
-    r'(?:價格|價錢|售價|收費|費用|定價)[：:]\\s*[\\d,]+',
-    r'(?:每月|每年|一次性)\\s*(?:費用|收費|價格)[：:]\\s*[\\d,]+',
-    r'(?:USD|HKD|NTD|TWD|CNY|JPY|EUR|GBP)\\s*[\\d,]+(?:\\.\\d+)?',
-    r'[$€£¥]\\s*[\\d,]+(?:\\.\\d+)?',
-    r'[\\d,]+(?:\\.\\d+)?\\s*(?:USD|HKD|元|美元|港幣|歐元|日圓|英鎊)',
+    r'(?:價格|價錢|售價|收費|費用|定價)[：:]\s*[\d,]+',
+    r'(?:每月|每年|一次性)\s*(?:費用|收費|價格)[：:]\s*[\d,]+',
+    r'(?:USD|HKD|NTD|TWD|CNY|JPY|EUR|GBP)\s*[\d,]+(?:\.\d+)?',
+    r'[$€£¥]\s*[\d,]+(?:\.\d+)?',
+    r'[\d,]+(?:\.\d+)?\s*(?:USD|HKD|元|美元|港幣|歐元|日圓|英鎊)',
 
     # Dates & versions
-    r'release\\s*:?\\s*[\\d.]+',
-    r'version\\s*:?\\s*[\\d.]+',
-    r'v?[\\d]+\\.\\d+\\.\\d+(?:-\\w+)?',
-    r'\\d{4}\\s*年\\s*\\d{1,2}\\s*月',
-    r'(?:發佈|推出|上市|更新|改版)[於在]?\\s*\\d{4}',
+    r'release\s*:?\s*[\d.]+',
+    r'version\s*:?\s*[\d.]+',
+    r'v?[\d]+\.\d+\.\d+(?:-\w+)?',
+    r'\d{4}\s*年\s*\d{1,2}\s*月',
+    r'(?:發佈|推出|上市|更新|改版)[於在]?\s*\d{4}',
 
     # Statistics / metrics
-    r'(?:準確率|accuracy|precision|recall|latency|throughput|benchmark)\\s*(?:[：:]|of)\\s*\\d+',
-    r'\\d+(?:\\.\\d+)?%',
-    r'(?:rank|rating|score)[：:]\\s*\\d+(?:\\.\\d+)?',
+    r'(?:準確率|accuracy|precision|recall|latency|throughput|benchmark)\s*(?:[：:]|of)\s*\d+',
+    r'\d+(?:\.\d+)?%',
+    r'(?:rank|rating|score)[：:]\s*\d+(?:\.\d+)?',
 
     # Technical specs
-    r'\\d+\\s*(?:GB|TB|MB|KB|GHz|MHz|TOPS|FLOPS|watt|W)',
-    r'\\d+\\s*x\\s*\\d+\\s*(?:px|pixels|resolution)',
-    r'(?:context|context\\s*window|max\\s*tokens|training\\s*data)\\s*[：:]\\s*[\\d,]+',
+    r'\d+\s*(?:GB|TB|MB|KB|GHz|MHz|TOPS|FLOPS|watt|W)',
+    r'\d+\s*x\s*\d+\s*(?:px|pixels|resolution)',
+    r'(?:context|context\s*window|max\s*tokens|training\s*data)\s*[：:]\s*[\d,]+',
 ]
 
 SOURCE_INDICATORS = [
-    r'according\\s+to',
-    r'source\\s*[：:]',
+    r'according\s+to',
+    r'source\s*[：:]',
     r'ref[：:]',
-    r'from\\s+(?:the\\s+)?(?:docs?|documentation|manual)',
-    r'see\\s+(?:link|url)',
+    r'from\s+(?:the\s+)?(?:docs?|documentation|manual)',
+    r'see\s+(?:link|url)',
     r'據.*報導',
     r'根據.*資料',
     r'官方文件顯示',
@@ -108,7 +108,7 @@ class FactChecker:
         self.seen_claims: set[str] = set()
 
     def check(self, text: str, task_context: str = "") -> tuple[str, dict]:
-        """First-pass regex-based check. Same as before.
+        """First-pass regex-based check.
 
         Returns:
             ("pass", ...) / ("flag", ...) / ("block", ...)
@@ -148,7 +148,7 @@ class FactChecker:
         return "flag", {"claims": unique, "annotated": annotated}
 
     def verify_with_search(self, text: str, task_context: str = "") -> tuple[str, dict]:
-        """Second-pass LLM-augmented verification using web search.
+        """Second-pass verification using web search.
 
         After regex check, for each unverified claim, run web search
         to confirm or flag it.
@@ -183,19 +183,15 @@ class FactChecker:
         flagged = []
         for c in claims[:5]:  # Max 5 lookups per response
             claim_text = c["claim"]
-            # Build a focused search query from the claim
             query = claim_text
             if c["context"]:
-                # Extract meaningful keywords from context
                 ctx_line = c["context"][:100]
                 query = f"{claim_text} {ctx_line}"
 
             try:
                 results = _search(query, provider="duckduckgo", limit=3)
                 if results:
-                    # Heuristic: if search returns relevant results, consider verified
                     snippets = " ".join(r.get("snippet", "") for r in results).lower()
-                    # Check if claim keywords appear in results
                     keywords = re.sub(r'[^\w\s]', '', claim_text).lower().split()
                     keywords = [k for k in keywords if len(k) > 2]
                     if keywords:
