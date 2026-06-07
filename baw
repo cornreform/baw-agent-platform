@@ -63,6 +63,18 @@ def main():
   write_file  Write content to a file
   web_search  Search the web (DuckDuckGo, no API key)
 
+Slash commands (interactive mode):
+  /help       Show available commands
+  /status     Show BAW status
+  /version    Show version + git log
+  /remember   Store a memory entry
+  /search     Search memories
+  /model      Switch model
+  /tone       Switch tone profile
+  /dream      Run self-curation
+  /tools      List registered tools
+  /provider   Search provider ops
+
 Examples:
   baw "list files in current directory"
   baw --model MiniMax-M3 "describe this image"
@@ -175,18 +187,36 @@ Examples:
     prompt = " ".join(args.prompt) if args.prompt else None
     if not prompt:
         print("BAW Interactive Mode (Ctrl+D to exit)")
-        from baw.core.memory import MemoryStore
-        mem = MemoryStore(data_dir)
+        from baw.core.commands import handle_slash
         while True:
             try:
                 user_input = input("\n>> ")
                 if not user_input.strip():
                     continue
+                # Check for slash command
+                if user_input.startswith("/"):
+                    parts = user_input[1:].strip().split(None, 1)
+                    cmd = parts[0] if parts else ""
+                    cmd_args = parts[1].split() if len(parts) > 1 else []
+                    result = handle_slash(cmd, cmd_args, config, data_dir, args.verbose)
+                    if result is not None:
+                        print(result)
+                        continue
                 _run_single(user_input, config, args, data_dir)
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
     else:
+        # Check for slash command in single-shot mode
+        if prompt.startswith("/"):
+            parts = prompt[1:].strip().split(None, 1)
+            cmd = parts[0] if parts else ""
+            cmd_args = parts[1].split() if len(parts) > 1 else []
+            from baw.core.commands import handle_slash
+            result = handle_slash(cmd, cmd_args, config, data_dir, args.verbose)
+            if result is not None:
+                print(result)
+                return
         _run_single(prompt, config, args, data_dir)
 
 
