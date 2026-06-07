@@ -19,12 +19,14 @@ class ModelDef:
     provider: str
     base_url: str
     api_key: str
-    protocol: str = "openai-chat"  # openai-chat | anthropic | google | custom
+    protocol: str = "openai-chat"
     context_window: int = 4096
     vision: bool = False
     cost_per_1m_input: float = 0
     cost_per_1m_output: float = 0
-    custom_handler: Optional[str] = None  # Python path to custom handler fn
+    temperature: float = 0.7  # Default, overridden by model config
+    custom_handler: Optional[str] = None
+    model_kwargs: dict = None  # Extra body params (e.g. thinking, top_p)
 
 
 @dataclass
@@ -85,6 +87,8 @@ def get_model(config: dict, model_id: Optional[str] = None) -> ModelDef:
                     vision=m.get("vision", False),
                     cost_per_1m_input=m.get("cost_per_1m_input", 0),
                     cost_per_1m_output=m.get("cost_per_1m_output", 0),
+                    temperature=m.get("temperature", 0.7),
+                    model_kwargs=m.get("model_kwargs"),
                     custom_handler=m.get("custom_handler"),
                 )
     raise ValueError(f"Model '{model_id}' not found in config.\n"
@@ -139,6 +143,8 @@ def _call_openai_chat(
         body["tools"] = tools
     if max_tokens:
         body["max_tokens"] = max_tokens
+    if model.model_kwargs:
+        body.update(model.model_kwargs)
 
     url = f"{model.base_url.rstrip('/')}/chat/completions"
     data = _post(url, headers, body)
@@ -147,8 +153,13 @@ def _call_openai_chat(
     msg = choice.get("message", {})
     usage = data.get("usage", {})
 
+    # Handle models that return content in reasoning_content (e.g. Kimi thinking mode)
+    content = msg.get("content", "") or ""
+    if not content and msg.get("reasoning_content"):
+        content = msg["reasoning_content"]
+
     return LLMResponse(
-        content=msg.get("content", "") or "",
+        content=content,
         tool_calls=msg.get("tool_calls", []),
         input_tokens=usage.get("prompt_tokens", 0),
         output_tokens=usage.get("completion_tokens", 0),
@@ -327,7 +338,7 @@ def call_llm_with_fallback(
     messages: list[dict],
     tools: Optional[list[dict]] = None,
     primary_id: Optional[str] = None,
-    temperature: float = 0.7,
+    temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
 ) -> FallbackResult:
     """Call LLM with auto-fallback.
@@ -348,7 +359,9 @@ def call_llm_with_fallback(
     # Try primary
     try:
         model = get_model(config, primary_id)
-        resp = _call_with_timeout(model, messages, tools, temperature, max_tokens)
+        fb_temp = temperature if temperature is not None else model.temperature
+        fb_kwargs = model.model_kwargs
+        resp = _call_with_timeout(model, messages, tools, fb_temp, max_tokens)
         return FallbackResult(
             response=resp,
             model_used="primary",
@@ -363,7 +376,8 @@ def call_llm_with_fallback(
     # Fallback
     try:
         model = get_model(config, fallback_id)
-        resp = _call_with_timeout(model, messages, tools, temperature, max_tokens)
+        fb_temp = temperature if temperature is not None else model.temperature
+        resp = _call_with_timeout(model, messages, tools, fb_temp, max_tokens)
         return FallbackResult(
             response=resp,
             model_used="fallback",
@@ -383,8 +397,9 @@ def _call_with_timeout(
     model: ModelDef,
     messages: list[dict],
     tools: Optional[list[dict]] = None,
-    temperature: float = 0.7,
+    temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
 ) -> LLMResponse:
-    """Wrapper for call_llm with a reasonable timeout."""
-    return call_llm(model, messages, tools, temperature, max_tokens)
+    """Wrapper for call_llm with model-aware temperature."""
+    temp = temperature if temperature is not None else model.temperature
+    return call_llm(model, messages, tools, temp, max_tokens)
