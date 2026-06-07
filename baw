@@ -57,7 +57,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="BAW (Black And White) — Agent Platform",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Examples:
+        epilog="""Available tools:
+  bash        Execute shell commands
+  read_file   Read file contents
+  write_file  Write content to a file
+  web_search  Search the web (DuckDuckGo, no API key)
+
+Examples:
   baw "list files in current directory"
   baw --model MiniMax-M3 "describe this image"
   baw --tone business "write a proposal"
