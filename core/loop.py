@@ -471,11 +471,8 @@ def run_agent(
     # ── Display: show plan to user ──
     from . import display as dsp
     _display_log: list[str] = []
-    # Capture the plan text as a display of the LLM's analysis
     if _execution_plan:
-        _plan_display = dsp.phase_plan(_execution_plan)
-        _display_log.append(_plan_display)
-        print(_plan_display)
+        _display_log.append(dsp.phase_plan(_execution_plan))
 
     # ── Phase 3: Execute plan step by step ──
     max_iterations = 40  # More iterations for plan-following
