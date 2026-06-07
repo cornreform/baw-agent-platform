@@ -36,7 +36,7 @@
 # Install
 git clone https://github.com/cornreform/baw-agent-platform.git
 cd baw-agent-platform
-pip install pyyaml duckduckgo-search
+pip install pyyaml httpx duckduckgo-search croniter
 ln -sf $PWD/baw ~/.local/bin/baw
 
 # Set API Key (~/.baw/.env)
@@ -49,6 +49,32 @@ baw --btw "What time is it?"
 baw --setup           # Interactive setup wizard
 baw                   # Interactive Chat mode
 </pre>
+
+<blockquote>
+<strong>💡 First time?</strong><br>
+If <code>baw: command not found</code>, add <code>~/.local/bin</code> to your PATH:<br>
+<strong>Bash:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc</code><br>
+<strong>Zsh:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc</code><br>
+<strong>Fish:</strong> <code>fish_add_path "$HOME/.local/bin"</code>
+</blockquote>
+
+<h3>🔧 Prerequisites</h3>
+
+<table>
+  <tr><th>Requirement</th><th>Check / Install</th></tr>
+  <tr><td>Python 3.11+</td><td><code>python3 --version</code> — if missing: <code>brew install python@3.12</code> (macOS) or <code>sudo apt install python3.12</code> (Linux)</td></tr>
+  <tr><td>Git</td><td><code>git --version</code> — if missing: <code>brew install git</code> (macOS) or <code>sudo apt install git</code> (Linux)</td></tr>
+  <tr><td>pip</td><td><code>python3 -m pip --version</code> — if missing: <code>python3 -m ensurepip --upgrade</code></td></tr>
+  <tr><td>~/.local/bin in PATH</td><td><code>echo $PATH</code> should include <code>~/.local/bin</code> — see above for Bash/Zsh/Fish setup</td></tr>
+</table>
+
+<h3>🤖 One-Command Install</h3>
+
+<pre>
+curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
+</pre>
+
+<p>This will: detect your Python version → pip install dependencies → clone the repo → create the <code>baw</code> CLI wrapper → check/suggest PATH setup → print next steps.</p>
 
 <h3>🎯 Core Features</h3>
 
@@ -183,11 +209,11 @@ vim ~/.baw/config.yaml
 # 安裝
 git clone https://github.com/cornreform/baw-agent-platform.git
 cd baw-agent-platform
-pip install pyyaml duckduckgo-search
+pip install pyyaml httpx duckduckgo-search croniter
 ln -sf $PWD/baw ~/.local/bin/baw
 
 # 設定 API Key（~/.baw/.env）
-echo "DEEPSEEK_API_KEY=sk-your-key" >> ~/.baw/.env
+echo "DEEPSEEK_API_KEY=*** >> ~/.baw/.env
 
 # ✨ 即刻用！
 baw "list files in current directory"
@@ -196,6 +222,32 @@ baw --btw "而家幾點？"
 baw --setup           # 互動式設定精靈
 baw                   # 互動式 Chat 模式
 </pre>
+
+<blockquote>
+<strong>💡 第一次用？</strong><br>
+如果 <code>baw: command not found</code>，將 <code>~/.local/bin</code> 加入 PATH：<br>
+<strong>Bash:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc</code><br>
+<strong>Zsh:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc</code><br>
+<strong>Fish:</strong> <code>fish_add_path "$HOME/.local/bin"</code>
+</blockquote>
+
+<h3>🔧 系統要求</h3>
+
+<table>
+  <tr><th>要求</th><th>檢查／安裝</th></tr>
+  <tr><td>Python 3.11+</td><td><code>python3 --version</code> — macOS: <code>brew install python@3.12</code> / Linux: <code>sudo apt install python3.12</code></td></tr>
+  <tr><td>Git</td><td><code>git --version</code> — macOS: <code>brew install git</code> / Linux: <code>sudo apt install git</code></td></tr>
+  <tr><td>pip</td><td><code>python3 -m pip --version</code> — 如果冇: <code>python3 -m ensurepip --upgrade</code></td></tr>
+  <tr><td>~/.local/bin in PATH</td><td><code>echo $PATH</code> 應該包含 <code>~/.local/bin</code> — 見上面 Bash/Zsh/Fish 設定</td></tr>
+</table>
+
+<h3>🤖 一鍵安裝</h3>
+
+<pre>
+curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
+</pre>
+
+<p>會自動：檢測 Python → pip 安裝依賴 → clone repo → 建立 <code>baw</code> CLI wrapper → 檢查 PATH → 顯示下一步。</p>
 
 <h3>🎯 核心特色</h3>
 
