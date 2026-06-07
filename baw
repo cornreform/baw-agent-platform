@@ -165,8 +165,8 @@ Examples:
         msgs = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt}]
         fb = call_llm_with_fallback(config, msgs, temperature=0.7)
         cost = calculate_cost(model, fb.response.input_tokens, fb.response.output_tokens)
-        print(f"{btw_header()}{fb.response.content}")
-        print(f"\n⚡ {cost:.4f} | {fb.response.input_tokens}↑{fb.response.output_tokens}↓")
+        print(f"{btw_header()}{fb.response.content}\n")
+        print(f"  ⚡ {cost:.4f} | {fb.response.input_tokens}↑{fb.response.output_tokens}↓")
         return
 
     # ── Background delegation ──
