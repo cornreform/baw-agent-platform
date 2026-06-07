@@ -465,6 +465,40 @@ def run_agent(
                 # Add the failure to context
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
 
+                # ── Try degradation chain ──
+                from .degradation import next_strategy as next_degradation
+                degraded = next_degradation(name, _current_strategies, args, exe_result)
+                if degraded:
+                    strategy_name = degraded["name"]
+                    new_args = degraded["new_args"]
+                    if verbose:
+                        print(f"  🔄 Degradation [{name}]: → {strategy_name} ({degraded['description']})")
+
+                    # Execute with degraded approach
+                    degraded_result = execute_tool(name, new_args)
+                    degraded_success = not degraded_result.startswith("[Error") and not degraded_result.startswith("[BLOCKED")
+
+                    # Track it
+                    _current_strategies.append(f"degrade:{strategy_name}")
+                    checkpointer.record_strategy(f"degrade:{strategy_name}")
+
+                    if degraded_success:
+                        # Degradation worked!
+                        if verbose:
+                            print(f"  ✅ Degradation succeeded: {strategy_name}")
+                        consecutive_failures = 0
+                        steps_completed += 1
+                        checkpointer.commit()
+                        ctx.add_tool_result(tc.get("id", ""), name, degraded_result)
+                        continue
+                    else:
+                        # Degradation also failed — track and continue
+                        consecutive_failures += 1
+                        checkpointer.record_attempt()
+                        ctx.add_tool_result(tc.get("id", ""), name, degraded_result + f"\n[Degrade {strategy_name} also failed]")
+                        if verbose:
+                            print(f"  ❌ Degradation also failed: {strategy_name}")
+
                 if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                     # All strategies exhausted — notify user with analysis
                     error_summary = (
