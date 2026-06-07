@@ -1,7 +1,11 @@
 """BAW — Async Task Manager
 
 Proper background task management with queue, concurrency limits,
-cancellation, status tracking, and integration with the scheduler.
+cancellation, status tracking, and daemon-free execution.
+
+Key design: subprocesses are DETACHED from the parent (start_new_session=True).
+The 'baw --delegate' command can exit immediately — the child process
+continues running independently.
 """
 
 from __future__ import annotations
@@ -55,9 +59,26 @@ class AsyncTask:
 
     def cancel(self):
         """Cancel the task by sending SIGTERM and marking status."""
+        # Try PID file first (survives parent restart)
+        pid_file = self.dir / "pid.txt"
+        if pid_file.exists():
+            try:
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, signal.SIGTERM)
+                # Give it 3s
+                for _ in range(6):
+                    try:
+                        os.kill(pid, 0)  # Still alive?
+                        time.sleep(0.5)
+                    except OSError:
+                        break
+                else:
+                    os.kill(pid, signal.SIGKILL)
+            except (ValueError, OSError, ProcessLookupError):
+                pass
+        # Fallback: in-process Popen
         if self.process and self.process.poll() is None:
             self.process.terminate()
-            # Give it 3s, then kill
             try:
                 self.process.wait(timeout=3)
             except sp.TimeoutExpired:
@@ -74,7 +95,10 @@ class AsyncTask:
 
 
 class TaskManager:
-    """Manages background task lifecycle — queue, execute, cancel, track.
+    """Manages background task lifecycle — execute, cancel, track.
+
+    Tasks are launched as DETACHED subprocesses (start_new_session=True)
+    so they survive the parent process exiting.
 
     Singleton per process. Thread-safe.
     """
@@ -113,76 +137,92 @@ class TaskManager:
                 prompt = p.read_text(encoding="utf-8") if p.exists() else "?"
                 task = AsyncTask(d.name, prompt, d)
                 self._tasks[d.name] = task
+                # Check if PID file confirms it's still alive
                 if task.status == "running":
-                    self._running.add(d.name)
+                    if self._pid_alive(task):
+                        self._running.add(d.name)
+                    else:
+                        # Process died without updating status
+                        task.status = "done (stale)"
 
-    def submit(self, prompt: str, baw_path: str | None = None,
-               mode: str = "hybrid", verbose: bool = False) -> AsyncTask:
-        """Submit a new background task. Returns immediately."""
+    def _pid_alive(self, task: AsyncTask) -> bool:
+        """Check if the task's PID is still alive."""
+        pid_file = task.dir / "pid.txt"
+        if not pid_file.exists():
+            return False
+        try:
+            pid = int(pid_file.read_text().strip())
+            os.kill(pid, 0)  # Signal 0 = check existence only
+            return True
+        except (ValueError, OSError, ProcessLookupError):
+            return False
+
+    def _find_baw_command(self) -> str:
+        """Find the BAW CLI command to use in subprocesses.
+
+        Priority:
+        1. ~/.local/bin/baw (the bash wrapper — most robust)
+        2. sys.argv[0] (current script path)
+        3. 'baw' (fallback, assumes it's in PATH)
+        """
+        local_baw = Path.home() / ".local/bin" / "baw"
+        if local_baw.exists() and os.access(local_baw, os.X_OK):
+            return str(local_baw)
+        if sys.argv and sys.argv[0]:
+            return sys.argv[0]
+        return "baw"
+
+    def submit(self, prompt: str, mode: str = "hybrid") -> AsyncTask:
+        """Submit a new background task. Subprocess starts immediately.
+
+        The child process is DETACHED from parent (start_new_session=True),
+        so 'baw --delegate' can exit while the task runs in background.
+        """
         task_id = f"task-{int(time.time())}-{uuid.uuid4().hex[:6]}"
         task_dir = self.data_dir / TASKS_DIR / task_id
         task_dir.mkdir(parents=True, exist_ok=True)
 
         task = AsyncTask(task_id, prompt, task_dir)
         (task_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
-        task.status = "queued"
+        task.status = "running"
+        task._started = datetime.now()
+        self._tasks[task_id] = task
+        self._running.add(task_id)
 
-        with self._lock:
-            self._tasks[task_id] = task
-            self._queue.append(task_id)
+        # Launch subprocess DETACHED — survives parent exit
+        baw_cmd = self._find_baw_command()
+        try:
+            proc = sp.Popen(
+                [baw_cmd, "--mode", mode, "--task-id", task_id, prompt],
+                stdout=(task_dir / "stdout.txt").open("w"),
+                stderr=(task_dir / "stderr.txt").open("w"),
+                cwd=str(self.data_dir.parent),
+                start_new_session=True,  # Detach from parent process group
+            )
+            task.process = proc
+            # Save PID so status can be checked across process restarts
+            (task_dir / "pid.txt").write_text(str(proc.pid), encoding="utf-8")
+        except Exception as e:
+            task.status = f"failed (spawn error: {e})"
+            self._running.discard(task_id)
+            if (task_dir / "stderr.txt").exists():
+                (task_dir / "stderr.txt").write_text(str(e), encoding="utf-8")
 
-        # Start the execution thread (non-blocking)
-        self._start_consumer()
         return task
 
-    def _start_consumer(self):
-        """Ensure the background consumer thread is running."""
+    def _start_cleaner(self):
+        """Start background cleaner thread (monitoring only, not execution)."""
         if self._cleaner_running:
             return
         self._cleaner_running = True
-        self._cleaner_thread = threading.Thread(target=self._consumer_loop, daemon=True)
+        self._cleaner_thread = threading.Thread(target=self._cleaner_loop, daemon=True)
         self._cleaner_thread.start()
 
-    def _consumer_loop(self):
-        """Continuously process queued tasks, respecting MAX_CONCURRENT."""
+    def _cleaner_loop(self):
+        """Check running tasks and update stale statuses."""
         while True:
-            with self._lock:
-                # Pick next queued task if we have capacity
-                available = MAX_CONCURRENT - len(self._running)
-                to_start = []
-                while available > 0 and self._queue:
-                    tid = self._queue.pop(0)
-                    if tid in self._tasks:
-                        to_start.append(tid)
-                        available -= 1
-
-            # Start selected tasks (outside lock)
-            for tid in to_start:
-                self._execute(tid)
-
-            # Check for stale running tasks
             self._check_stale()
-
             time.sleep(POLL_INTERVAL)
-
-    def _execute(self, task_id: str):
-        """Launch a task in a subprocess."""
-        task = self._tasks.get(task_id)
-        if not task:
-            return
-
-        task.status = "running"
-        task._started = datetime.now()
-        with self._lock:
-            self._running.add(task_id)
-
-        baw_path = sys.argv[0] if sys.argv and sys.argv[0] else "baw"
-        task.process = sp.Popen(
-            [baw_path, "--mode", "hybrid", "--task-id", task_id, task.prompt],
-            stdout=(task.dir / "stdout.txt").open("w"),
-            stderr=(task.dir / "stderr.txt").open("w"),
-            cwd=str(self.data_dir.parent),
-        )
 
     def _check_stale(self):
         """Check if any running tasks have completed/failed."""
@@ -192,16 +232,20 @@ class TaskManager:
             if not task:
                 stale.append(tid)
                 continue
-            if task.process and task.process.poll() is not None:
-                rc = task.process.returncode
-                if task.status == "running":
-                    task.status = "done" if rc == 0 else f"failed (rc={rc})"
-                task._finished = datetime.now()
+
+            # Check status file (written by the subprocess itself)
+            current_status = task.status
+            if current_status in ("done", "failed", "cancelled", "error"):
                 stale.append(tid)
-            elif task.status != "running":
-                # Status changed externally (e.g. cancelled via --task-cancel)
-                if task.process and task.process.poll() is None:
-                    task.process.terminate()
+                continue
+
+            # Check PID — if process died without updating status
+            if not self._pid_alive(task):
+                # Process exited — read stderr for error info
+                if task.error:
+                    task.status = f"failed ({task.error[:100]})"
+                else:
+                    task.status = "done"
                 stale.append(tid)
 
         with self._lock:
