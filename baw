@@ -155,7 +155,7 @@ def _run_single(prompt: str, config: dict, args, data_dir: Path):
         )
         print(f"\n{response}")
         if args.verbose:
-            cost_line = f"[{info['model']}] tokens: {info['tokens_in']}↑ {info['tokens_out']}↓ ${info['cost']:.6f}"
+            cost_line = f"[{info['model']}] iterations: {info.get('iterations', '?')} ${info['cost']:.6f}"
             print(f"\n{cost_line}")
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

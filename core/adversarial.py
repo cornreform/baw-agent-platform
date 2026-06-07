@@ -63,7 +63,7 @@ class DevilVoice:
 
         fb_result = call_llm_with_fallback(
             self.config, messages, tools=None,
-            primary_id=self.model.id, temperature=0.8,
+            primary_id=self.model.id,
         )
         response = fb_result.response
 
@@ -128,7 +128,7 @@ class AngelVoice:
 
         fb_result = call_llm_with_fallback(
             self.config, messages, tools=get_openai_tools(),
-            primary_id=self.model.id, temperature=0.7,
+            primary_id=self.model.id,
         )
         response = fb_result.response
 

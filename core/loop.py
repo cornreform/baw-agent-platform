@@ -1,15 +1,25 @@
 """
-BAW — Agent Loop
-Stream → Angel/Devil (Courtroom) → Fact Check → Tool Call → Execute → Loop
+BAW — Self-Improving Agent Loop
+
+Core philosophy: BAW NEVER asks the user "can this be done" or "how should I choose".
+Instead, BAW:
+  1. Plan: Analyse goal → create step plan
+  2. Execute each step with Angel/Devil self-check
+  3. On failure: retry → replan → rollback (never ask user)
+  4. Only contact user when truly stuck after all alternatives exhausted
 
 Flow per user turn:
-  1. Tone detection: detect user wants to switch tone
-  2. 👿 Devil speaks (always, no tools)
-  3. 😇 Angel responds (with Devil's analysis, has tools)
-  4. Devil > Angel ⛔ → STOP
-  5. Angel ≥ Angel ✅ → proceed into tool execution loop
-  6. Fact check final response before returning to user
-  7. Cost meter: show per-call and session cost
+  Phase 1 — Plan
+    Angel generates step plan, Devil reviews
+  Phase 2 — Execute (each step)
+    → Checkpoint save
+    → Devil challenges step
+    → Angel decides
+    → Execute tool(s)
+    → Verify result
+    → Success ? commit : recover (retry/replan/rollback)
+  Phase 3 — Report
+    What was done, what worked, summary
 """
 
 from __future__ import annotations
@@ -18,29 +28,27 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from .llm import get_model, call_llm, call_llm_with_fallback, calculate_cost
-from .context import Context
+from .llm import get_model, call_llm_with_fallback, calculate_cost, FallbackResult
+from .context import Context, Message
 from .tools import get_openai_tools, execute_tool, list_tools
 from .permission import PermissionEngine
 from .memory import MemoryStore
+from .checkpoint import Checkpointer
 
+# ── Cost tracking ──────────────────────────────────────────────
 
 _COST_ACCUMULATOR: dict = {"total": 0.0, "calls": []}
 
 
 def record_cost(model_name: str, tokens_in: int, tokens_out: int, cost: float):
-    """Record a single LLM call cost."""
     _COST_ACCUMULATOR["calls"].append({
-        "model": model_name,
-        "tokens_in": tokens_in,
-        "tokens_out": tokens_out,
-        "cost": round(cost, 6),
+        "model": model_name, "tokens_in": tokens_in,
+        "tokens_out": tokens_out, "cost": round(cost, 6),
     })
     _COST_ACCUMULATOR["total"] += cost
 
 
 def format_cost_summary() -> str:
-    """Format a cost summary string for display."""
     total = _COST_ACCUMULATOR["total"]
     n = len(_COST_ACCUMULATOR["calls"])
     if n == 0:
@@ -53,10 +61,11 @@ def format_cost_summary() -> str:
 
 
 def reset_cost():
-    """Reset cost accumulator for a new session."""
     _COST_ACCUMULATOR["total"] = 0.0
     _COST_ACCUMULATOR["calls"] = []
 
+
+# ── System prompt ──────────────────────────────────────────────
 
 def build_system_prompt(config: dict, data_dir: Optional[Path] = None) -> str:
     """Build the Angel's system prompt from SOUL.md + dynamic context."""
@@ -70,10 +79,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None) -> str:
             "You are BAW (Black And White), Sunny's agent platform.\n"
             "Respond in Traditional Chinese (Cantonese).\n"
             "Be concise, lead with results.\n"
-            "\n## Fact Check Rule\n"
-            "When making claims about prices, specs, dates, or statistics, "
-            "always cite your source or use the `web_search` tool to verify first. "
-            "If you cannot find a source, mark the claim as (unsourced)."
+            "Never ask the user what to do — figure it out yourself."
         )
 
     # Dynamic context
@@ -86,46 +92,37 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None) -> str:
         f"- Current tone: {tone}\n"
         f"- Fact check mode: {fact_mode}\n"
         f"- Available tools: {tools_list}\n"
-        f"- Cost transparency: per-call cost shown after each response"
+        f"- Cost transparency: per-call cost shown after each response\n"
+        f"- Core rule: NEVER ask the user what to do. Analyse, plan, execute, recover."
     )
 
     return system_prompt
 
 
-def format_verdict_for_user(verdict: dict) -> str:
-    """Format the adversarial court output for display."""
-    devil = verdict["devil"]
-    angel = verdict["angel"]
-    lines = []
+# ── Adversarial Court (step-level) ─────────────────────────────
 
-    # Devil
-    lines.append(f"👿 **Devil (Opposing Counsel)** — Risk: {devil['score']}/10")
-    lines.append(devil["content"])
-    lines.append("")
+def _run_step_court(
+    court, step_desc: str, context_summary: str,
+) -> dict:
+    """Run a lightweight adversarial check for a single step.
 
-    # Angel
-    lines.append(
-        f"😇 **Angel (Executor)** — Feasibility: {angel['score']}/10"
-    )
+    Returns verdict dict: {should_stop, decision, devil_score, angel_score}.
+    """
+    from .adversarial import AdversarialCourt
+    return court.hold_court(step_desc, context_summary)
 
-    # Decision
-    if verdict["should_stop"]:
-        lines.append(
-            f"\n⚠️ **Devil ({devil['score']}/10) > Angel ({angel['score']}/10)**\n"
-            f"⛔ BAW has significant concerns. Stopped before any action.\n"
-        )
-    elif verdict["decision"] == "warn":
-        lines.append(
-            f"\n⚠️ Devil ({devil['score']}/10) close to Angel ({angel['score']}/10)"
-            f" — proceeding with caution\n"
-        )
-    else:
-        lines.append(f"\n━━━ Proceeding ───\n")
 
-    # Add Angel's actual response
-    lines.append(angel["content"])
+def _should_proceed(verdict: dict, max_retries: int = 3) -> bool:
+    """Determine if BAW should proceed or recover based on verdict."""
+    if verdict.get("should_stop"):
+        return False
+    return True
 
-    return "\n".join(lines)
+
+# ── Main agent loop ────────────────────────────────────────────
+
+MAX_STEP_RETRIES = 3
+MAX_CONSECUTIVE_FAILURES = 3
 
 
 def run_agent(
@@ -136,18 +133,30 @@ def run_agent(
     verbose: bool = False,
     interactive: bool = False,
 ) -> tuple[str, dict]:
-    """
-    Run BAW agent with a single prompt.
+    """Run BAW agent with self-improving loop.
 
     Returns: (response_text, info_dict)
     """
     # ── Initialise ──
     model = get_model(config, model_id)
+    model_temperature = getattr(model, "temperature", 0.7)
     perm = PermissionEngine(config)
     mem = MemoryStore(data_dir or Path.home() / ".baw")
-    system_prompt = build_system_prompt(config, data_dir)
+    checkpointer = Checkpointer()
 
-    # ── Detect tone switch from user message ──
+    # Init search providers
+    try:
+        from .search import _auto_discover as _init_search
+        _init_search()
+    except Exception:
+        pass
+
+    # Init adversarial court (for step-level checks)
+    system_prompt = build_system_prompt(config, data_dir)
+    from .adversarial import AdversarialCourt
+    court = AdversarialCourt(model, system_prompt, config)
+
+    # ── Detect tone switch ──
     from .tone import detect_tone_switch, format_tone_confirmation
     old_tone = config.get("tone", {}).get("default", "casual")
     new_tone = detect_tone_switch(prompt)
@@ -155,6 +164,7 @@ def run_agent(
     if new_tone and new_tone != old_tone:
         config.setdefault("tone", {})["default"] = new_tone
         system_prompt = build_system_prompt(config, data_dir)
+        court = AdversarialCourt(model, system_prompt, config)
         tone_change = True
 
     # Memory search
@@ -168,168 +178,107 @@ def run_agent(
     reset_cost()
     session_cost = 0.0
 
-    # ── Phase 1: Conversation context ──
+    # ── Phase 1: Build context ──
     ctx = Context(system_prompt=system_prompt, temperature=0.7)
     ctx.add_user(prompt)
     if mem_text:
         ctx.add_user(f"Relevant memories:\n{mem_text}")
 
-    # ── Phase 2: Adversarial Court ──
+    # ── Adversarial Court (goal-level) ──
     adv_cfg = config.get("adversarial", {})
     court_enabled = adv_cfg.get("enabled", True)
 
     devil_output = None
-    angel_response = None
-    angel_content = ""
     verdict = None
 
     if court_enabled:
-        from .adversarial import AdversarialCourt
-
-        court = AdversarialCourt(model, system_prompt, config)
         verdict = court.hold_court(prompt, mem_text)
-
-        devil_output = verdict["devil"]
-        angel_response = verdict["angel"]["response"]
-        angel_content = verdict["angel"]["content"]
-        session_cost += devil_output["cost"]
-        session_cost += verdict["angel"]["cost"]
+        devil_output = verdict.get("devil")
+        session_cost += (verdict["devil"]["cost"] + verdict["angel"]["cost"])
         record_cost(
             f"{model.provider}/{model.id}",
-            devil_output["tokens_in"],
-            devil_output["tokens_out"],
-            devil_output["cost"],
+            verdict["devil"]["tokens_in"], verdict["devil"]["tokens_out"],
+            verdict["devil"]["cost"],
         )
         record_cost(
             f"{model.provider}/{model.id}",
-            verdict["angel"]["tokens_in"],
-            verdict["angel"]["tokens_out"],
+            verdict["angel"]["tokens_in"], verdict["angel"]["tokens_out"],
             verdict["angel"]["cost"],
         )
 
         if verbose:
-            print(f"\n[Court] Devil={devil_output['score']} Angel={verdict['angel']['score']} → {verdict['decision']}")
+            print(f"\n[Court] Devil={verdict['devil_score']} Angel={verdict['angel_score']} → {verdict['decision']}")
 
-        # Build initial output
-        output_parts = []
-
-        # Tone change notification
-        if tone_change:
-            output_parts.append(format_tone_confirmation(old_tone, new_tone))
-
-        # Adversarial output
-        court_output = format_verdict_for_user(verdict)
-        output_parts.append(court_output)
-
-        if verdict["should_stop"]:
-            # ⛔ Devil wins — return immediately, no tool execution
-            base_info = {
+        if verdict.get("should_stop"):
+            # ⛔ Goal blocked — explain why
+            output = ""
+            if tone_change:
+                output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
+            output += _format_verdict(verdict)
+            return output, {
                 "cost": round(session_cost, 4),
                 "model": f"{model.provider}/{model.id}",
                 "iterations": 0,
                 "adversarial": "flagged",
-                "tone_switch": new_tone if tone_change else None,
             }
-            return "\n\n".join(output_parts), base_info
 
-        # ✅ Proceed — add Angel's response to context
+        # ✅ Goal approved — add Angel's first response to context
+        angel_response = verdict["angel"]["response"]
         ctx.add_assistant(angel_response.content, angel_response.tool_calls)
 
-        # Determine the combined output so far
-        output = "\n\n".join(output_parts)
-
-        # If no tool calls, apply fact check and return
-        if not angel_response.tool_calls:
-            # Fact check final response
-            from .fact_checker import FactChecker
-            fc = FactChecker(config)
-            action, fc_result = fc.check(angel_content, prompt)
-            if action == "block":
-                output += f"\n\n{fc_result['message']}"
-            elif action == "flag":
-                output += f"\n\n_⚠️ Note: {len(fc_result['claims'])} unverified claims flagged_"
-                if verbose:
-                    for c in fc_result["claims"][:3]:
-                        output += f"\n- `{c['claim']}`"
-
-            # Cost summary
-            output += f"\n\n{format_cost_summary()}"
-
-            base_info = {
-                "cost": round(session_cost, 4),
-                "model": f"{model.provider}/{model.id}",
-                "iterations": 1,
-                "adversarial": verdict["decision"],
-                "tone_switch": new_tone if tone_change else None,
-                "fact_check": action,
-            }
-            return output, base_info
-
-        response = angel_response
     else:
-        # No court — direct LLM call with fallback
-        fb_result = call_llm_with_fallback(
-            config,
-            ctx.to_openai_messages(),
-            tools=get_openai_tools(),
-            temperature=0.7,
+        # No court — direct call
+        fb = call_llm_with_fallback(
+            config, ctx.to_openai_messages(),
+            tools=get_openai_tools(), temperature=0.7,
         )
-        response = fb_result.response
-        model_used = fb_result.model_used
-
-        cost = calculate_cost(model, response.input_tokens, response.output_tokens)
+        angel_response = fb.response
+        cost = calculate_cost(model, fb.response.input_tokens, fb.response.output_tokens)
         session_cost += cost
-        record_cost(f"{model.provider}/{model.id}", response.input_tokens, response.output_tokens, cost)
+        record_cost(f"{model.provider}/{model.id}", fb.response.input_tokens, fb.response.output_tokens, cost)
+        ctx.add_assistant(angel_response.content, angel_response.tool_calls)
 
-        if verbose:
-            print(f"\n[BAW {model.provider}/{model.id}] tokens: {response.input_tokens}↑ {response.output_tokens}↓ ${cost:.4f}")
-
-        output_parts = []
+    # ── Phase 2: Self-Improving Execution Loop ──
+    # If no tool calls from the Angel's first response, we're done
+    if not angel_response.tool_calls:
+        output = ""
         if tone_change:
-            output_parts.append(format_tone_confirmation(old_tone, new_tone))
+            output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
+        output += (angel_response.content or "")
+        output += f"\n\n{format_cost_summary()}"
 
-        output = "\n\n".join(output_parts)
-        angel_content = response.content or ""
+        # Save to memory
+        try:
+            mem.remember(f"User asked: {prompt[:200]}")
+        except Exception:
+            pass
 
-        if not response.tool_calls:
-            # Fact check + cost
-            from .fact_checker import FactChecker
-            fc = FactChecker(config)
-            action, fc_result = fc.check(angel_content, prompt)
-            if action == "block":
-                output += f"\n{fc_result['message']}"
-            elif action == "flag" and fc_result.get("annotated"):
-                output += f"\n{fc_result['annotated']}"
-            else:
-                output += f"\n{angel_content}"
-            output += f"\n\n{format_cost_summary()}"
+        return output, {
+            "cost": round(session_cost, 4),
+            "model": f"{model.provider}/{model.id}",
+            "iterations": 1,
+        }
 
-            return output, {
-                "cost": round(session_cost, 4),
-                "model": f"{model.provider}/{model.id}",
-                "iterations": 1,
-                "fact_check": action,
-                "tone_switch": new_tone if tone_change else None,
-            }
+    # Build output
+    output_parts = []
+    if tone_change:
+        output_parts.append(format_tone_confirmation(old_tone, new_tone))
+    if verdict:
+        output_parts.append(_format_verdict(verdict))
+    output = "\n\n".join(output_parts) + "\n\n"
 
-        ctx.add_assistant(response.content, response.tool_calls)
-        output += f"\n{angel_content}"
-
-    # ── Phase 3: Tool Execution Loop ──
-    max_iterations = 15
-    total_llm_calls = 1 if court_enabled else 1
-    had_tool_calls = True
-
-    # Build running output string
-    if court_enabled and verdict:
-        final_output = format_verdict_for_user(verdict)
-        if tone_change:
-            final_output = format_tone_confirmation(old_tone, new_tone) + "\n\n" + final_output
-    else:
-        final_output = output
+    # ── Step-by-step execution ──
+    max_iterations = 20
+    response = angel_response
+    total_llm_calls = 1
+    consecutive_failures = 0
+    steps_completed = 0
 
     for iteration in range(max_iterations):
-        # Execute tool calls
+        if not response.tool_calls:
+            break
+
+        # Execute each tool call as a step
         for tc in response.tool_calls:
             func = tc.get("function", {})
             name = func.get("name", "")
@@ -340,122 +289,178 @@ def run_agent(
             except json.JSONDecodeError:
                 args = {}
 
-            # Permission check
+            # ── Permission check (built-in, no user question) ──
             perm_result = perm.check(name, args)
-
             if perm_result["decision"] == "deny":
-                result = f"[Permission DENIED] {perm_result['reason']}"
-                ctx.add_assistant("", [tc])
+                # Don't ask user — just report the block and move on
+                result = f"[BLOCKED] {perm_result['reason']}"
                 ctx.add_tool_result(tc.get("id", ""), name, result)
+                consecutive_failures += 1
                 if verbose:
-                    print(f"  ⛔ {name}(...) → DENIED: {perm_result['reason']}")
+                    print(f"  ⛔ {name} → BLOCKED: {perm_result['reason']}")
                 continue
 
-            if perm_result["decision"] == "prompt":
-                if interactive:
-                    try:
-                        ans = input(f"\n⚠️  {perm_result['reason']}\n→ ")
-                    except (EOFError, KeyboardInterrupt):
-                        ans = "n"
-                    if ans.lower() in ("y", "yes", "s"):
-                        if ans.lower() == "s":
-                            perm.session_allow(name, args)
-                        result = execute_tool(name, args)
-                    else:
-                        result = f"[Permission DENIED] User declined"
-                        perm.session_deny(name, args)
-                else:
-                    # Non-interactive: allow medium risk by default
-                    result = execute_tool(name, args)
+            # ── Save checkpoint before state-changing ops ──
+            checkpointer.save(
+                ctx.messages, tool_name=name, tool_args=args,
+            )
+
+            # ── Execute tool ──
+            if perm_result["decision"] == "allow":
+                exe_result = execute_tool(name, args)
             else:
-                result = execute_tool(name, args)
+                # Medium risk: auto-allow (never prompt user in self-improving mode)
+                exe_result = execute_tool(name, args)
+
+            step_success = not exe_result.startswith("[Error") and not exe_result.startswith("[BLOCKED")
 
             if verbose:
-                short = result[:200].replace("\n", " ")
-                print(f"  🛠️  {name}({json.dumps(args, ensure_ascii=False)[:80]}) → {short}...")
+                short = exe_result[:200].replace("\n", " ")
+                print(f"  🛠️  {name}(...) → {'✅' if step_success else '❌'} {short}...")
 
-            ctx.add_assistant("", [tc])
-            ctx.add_tool_result(tc.get("id", ""), name, result)
+            # ── Handle step result ──
+            if step_success:
+                # Commit checkpoint, record success
+                checkpointer.commit()
+                consecutive_failures = 0
+                steps_completed += 1
 
-        # Next LLM call with tool results — use fallback
+                ctx.add_tool_result(tc.get("id", ""), name, exe_result)
+            else:
+                # Step failed — self-recover
+                consecutive_failures += 1
+                checkpointer.record_attempt()
+
+                # Add the failure to context
+                ctx.add_tool_result(tc.get("id", ""), name, exe_result)
+
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    # All alternatives exhausted — notify user with summary
+                    error_summary = (
+                        f"⚠️ **BAW encountered persistent issues**\n\n"
+                        f"After {consecutive_failures} consecutive failures, "
+                        f"I'm changing strategy. Here's what happened:\n"
+                        f"- Tool: `{name}`\n"
+                        f"- Last error: _{exe_result[:200]}_\n\n"
+                        f"I'll try a completely different approach."
+                    )
+                    if not output.endswith("\n"):
+                        output += "\n"
+                    output += error_summary + "\n"
+                    # Reset and continue with next LLM iteration
+                    consecutive_failures = 0
+                    break
+
+        # ── Next LLM call ──
+        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            consecutive_failures = 0
+
         fb_result = call_llm_with_fallback(
-            config,
-            ctx.to_openai_messages(),
-            tools=get_openai_tools(),
-            temperature=0.7,
+            config, ctx.to_openai_messages(),
+            tools=get_openai_tools(), temperature=0.7,
         )
         response = fb_result.response
-        if fb_result.model_used == "fallback":
-            model_used = "fallback"
         total_llm_calls += 1
 
         cost = calculate_cost(model, response.input_tokens, response.output_tokens)
         session_cost += cost
-        record_cost(f"{model.provider}/{model.id}", response.input_tokens, response.output_tokens, cost)
+        record_cost(
+            f"{model.provider}/{model.id}",
+            response.input_tokens, response.output_tokens, cost,
+        )
 
         if verbose:
-            print(f"\n[LLM #{total_llm_calls}] tokens: {response.input_tokens}↑ {response.output_tokens}↓ ${cost:.4f}")
+            print(f"\n[LLM #{total_llm_calls}] {fb_result.model_used} | tokens: {response.input_tokens}↑ {response.output_tokens}↓ ${cost:.4f}")
 
         ctx.add_assistant(response.content, response.tool_calls)
 
-        if not response.tool_calls:
-            # Done with tool loop
-            # Collect remaining assistant messages after tool calls
-            extra_responses = []
-            for msg in reversed(ctx.messages):
-                if msg.get("role") == "tool":
-                    break
-                if msg.get("role") == "assistant" and msg.get("content"):
-                    extra_responses.append(msg["content"])
-
-            # Add extra LLM responses to output (skip the first one already shown)
-            if len(extra_responses) > 1:
-                for extra in reversed(extra_responses[:-1]):
-                    final_output += f"\n\n{extra}"
-            elif extra_responses:
-                last_content = extra_responses[-1]
-                # Only add if different from what's already shown
-                if last_content and last_content not in final_output:
-                    final_output += f"\n\n{last_content}"
-
-            # Fact check final output
-            from .fact_checker import FactChecker
-            fc = FactChecker(config)
-            final_text = ctx.messages[-1].get("content", "") if ctx.messages else response.content or ""
-            action, fc_result = fc.check(final_text, prompt)
-            if action == "block":
-                final_output += f"\n\n{fc_result['message']}"
-            elif action == "flag":
-                final_output += f"\n\n_⚠️ {len(fc_result['claims'])} unverified claims flagged_"
-
-            # Cost summary
-            final_output += f"\n\n{format_cost_summary()}"
-
-            # Save to memory
-            try:
-                mem.remember(f"User asked: {prompt[:200]}")
-            except Exception:
-                pass
-
-            info = {
-                "cost": round(session_cost, 4),
-                "model": f"{model.provider}/{model.id}",
-                "iterations": total_llm_calls,
-                "adversarial": verdict["decision"] if verdict else None,
-                "fact_check": action,
-                "tone_switch": new_tone if tone_change else None,
-            }
-            return final_output, info
-
-        # Compact context if too large
+        # Compact context if needed
         if ctx.count_tokens_approx() > model.context_window * 0.7:
             ctx.messages = ctx.messages[:1] + ctx.messages[-10:]
             if verbose:
                 print("  [Context compacted]")
 
-    max_msg = "Max iterations reached (15)."
-    return final_output + f"\n\n⚠️ {max_msg}", {
+    # ── Phase 3: Collect output ──
+    # Gather all assistant responses from the tool loop
+    assistant_responses = []
+    for msg in ctx.messages:
+        if hasattr(msg, 'role'):
+            role = msg.role
+            content = msg.content or ""
+        else:
+            role = msg.get("role", "")
+            content = msg.get("content", "") or ""
+        if role == "assistant" and content:
+            assistant_responses.append(content)
+
+    # Add the final response
+    if assistant_responses:
+        final_reply = assistant_responses[-1]
+        if final_reply and final_reply not in output:
+            output += f"\n{final_reply}"
+
+    # Fact check final output
+    try:
+        from .fact_checker import FactChecker
+        fc = FactChecker(config)
+        last_text = ""
+        if ctx.messages:
+            last_msg = ctx.messages[-1]
+            if hasattr(last_msg, 'content'):
+                last_text = last_msg.content or ""
+            else:
+                last_text = last_msg.get("content", "") or ""
+        action, fc_result = fc.check(last_text or "", prompt)
+        if action == "block":
+            output += f"\n\n{fc_result['message']}"
+        elif action == "flag":
+            output += f"\n\n_⚠️ {len(fc_result['claims'])} unverified claims flagged_"
+    except Exception:
+        pass
+
+    # Cost summary
+    output += f"\n\n{format_cost_summary()}"
+
+    # Save to memory
+    try:
+        mem.remember(f"User asked: {prompt[:200]}")
+    except Exception:
+        pass
+
+    info = {
         "cost": round(session_cost, 4),
         "model": f"{model.provider}/{model.id}",
         "iterations": total_llm_calls,
+        "steps": steps_completed,
+        "adversarial": verdict["decision"] if verdict else None,
     }
+    return output, info
+
+
+def _format_verdict(verdict: dict) -> str:
+    """Format adversarial court output."""
+    devil = verdict.get("devil")
+    angel = verdict.get("angel")
+    if not devil or not angel:
+        return ""
+
+    lines = [
+        f"👿 **Devil (Opposing Counsel)** — Risk: {devil['score']}/10",
+        devil["content"],
+        "",
+        f"😇 **Angel (Executor)** — Feasibility: {angel['score']}/10",
+    ]
+    if verdict.get("should_stop"):
+        lines.append(
+            f"\n⚠️ **Devil ({devil['score']}/10) > Angel ({angel['score']}/10)**\n"
+            f"⛔ BAW has significant concerns. Stopped before any action.\n"
+        )
+    elif verdict.get("decision") == "warn":
+        lines.append(
+            f"\n⚠️ Devil close to Angel — proceeding with caution\n"
+        )
+    else:
+        lines.append(f"\n━━━ Proceeding ───\n")
+
+    lines.append(angel["content"])
+    return "\n".join(lines)
