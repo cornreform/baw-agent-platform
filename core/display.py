@@ -9,19 +9,25 @@ from __future__ import annotations
 
 # ── Strip long plan descriptions ──
 
-def _shorten(desc: str, max_len: int = 50) -> str:
-    """Shorten a step description: strip tool/outcome/details."""
-    # Strip common verbose patterns
-    for sep in (" — ", " —", " - ", " — ", "by running ", "to get ", "to see ",
-                "to confirm ", "to check ", "to determine ", "to verify ",
-                " — ", "– ", "- ", ": "):
+def _shorten(desc: str, max_len: int = 80) -> str:
+    """Shorten a step description: strip tool/outcome, keep human language."""
+    # Strip detailed tool info after ' — '
+    for sep in (" — ", "—", " - "):
         if sep in desc:
             desc = desc.split(sep)[0].strip()
-    # Also cut at first period if it's long
-    if len(desc) > max_len and ". " in desc:
-        desc = desc.split(". ")[0].strip()
+    # Cut at natural sentence boundary if still too long
     if len(desc) > max_len:
-        desc = desc[:max_len-1] + "…"
+        # Try cutting at last full stop before limit
+        cutoff = desc[:max_len].rfind("。")
+        if cutoff > max_len // 2:
+            desc = desc[:cutoff+1]
+        else:
+            # Or last comma
+            cutoff = desc[:max_len].rfind("，")
+            if cutoff > max_len // 2:
+                desc = desc[:cutoff+1]
+            else:
+                desc = desc[:max_len-1] + "…"
     return desc
 
 
