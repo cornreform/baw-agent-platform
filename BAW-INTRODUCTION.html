@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BAW — Black And White Agent Platform 完整介紹</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e8;
+    line-height: 1.7;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+  /* ── Hero ── */
+  .hero {
+    padding: 80px 0 60px;
+    text-align: center;
+    border-bottom: 1px solid #1a1a2e;
+    margin-bottom: 60px;
+  }
+  .hero h1 {
+    font-size: 3em;
+    font-weight: 800;
+    background: linear-gradient(135deg, #ffffff 0%, #8888ff 50%, #4444aa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -1px;
+    margin-bottom: 12px;
+  }
+  .hero .subtitle {
+    font-size: 1.1em;
+    color: #888;
+    font-weight: 300;
+  }
+  .hero .badge-row {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.8em;
+    font-weight: 500;
+    border: 1px solid #2a2a44;
+    color: #aaa;
+  }
+  .badge.primary { border-color: #5555cc; color: #8888ff; }
+  .badge.success { border-color: #22aa66; color: #44dd88; }
+  .badge.warn { border-color: #cc8833; color: #ffbb44; }
+
+  /* ── Typography ── */
+  h2 {
+    font-size: 1.6em;
+    font-weight: 700;
+    margin: 50px 0 20px;
+    color: #fff;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #1a1a2e;
+  }
+  h3 {
+    font-size: 1.2em;
+    font-weight: 600;
+    margin: 30px 0 14px;
+    color: #bbb;
+  }
+  h4 {
+    font-size: 1em;
+    font-weight: 600;
+    margin: 20px 0 10px;
+    color: #999;
+  }
+  p { margin: 0 0 16px; color: #b0b0b8; }
+  ul, ol { margin: 0 0 16px 24px; color: #b0b0b8; }
+  li { margin-bottom: 6px; }
+  strong { color: #ddd; }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+    background: #14141f;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: #88ddff;
+  }
+  a { color: #6666ee; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Code blocks ── */
+  pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82em;
+    background: #0e0e18;
+    border: 1px solid #1a1a2e;
+    border-radius: 10px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin: 16px 0 24px;
+    line-height: 1.6;
+    color: #c8c8d8;
+  }
+  pre .cmd { color: #66dd88; }
+  pre .arg { color: #88ddff; }
+  pre .str { color: #ddbb66; }
+  pre .cmt { color: #555; }
+  pre .kw { color: #bb66ff; }
+  pre .sec { color: #ff8844; }
+  pre .out { color: #888; }
+
+  /* ── Cards ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 20px 0 30px;
+  }
+  .card {
+    background: #10101a;
+    border: 1px solid #1a1a2e;
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card h4 { margin: 0 0 8px; color: #fff; }
+  .card p { margin: 0; font-size: 0.9em; color: #999; }
+  .card .icon { font-size: 1.5em; margin-bottom: 8px; display: block; }
+
+  /* ── Table ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    font-size: 0.9em;
+  }
+  th {
+    text-align: left;
+    background: #14141f;
+    padding: 10px 14px;
+    font-weight: 600;
+    color: #aaa;
+    border-bottom: 2px solid #2a2a44;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #181828;
+    color: #b0b0b8;
+  }
+  td:first-child { font-weight: 500; color: #88ddff; font-family: 'JetBrains Mono', monospace; font-size: 0.85em; }
+  tr:hover td { background: #12121e; }
+
+  /* ── TOC ── */
+  .toc {
+    background: #0e0e18;
+    border: 1px solid #1a1a2e;
+    border-radius: 12px;
+    padding: 24px 30px;
+    margin: 30px 0;
+  }
+  .toc h3 { margin: 0 0 14px; color: #fff; border: none; }
+  .toc ol {
+    margin: 0;
+    columns: 2;
+    column-gap: 40px;
+  }
+  .toc li {
+    margin-bottom: 8px;
+    break-inside: avoid;
+  }
+  .toc a { color: #8888ff; }
+
+  /* ── Feature block ── */
+  .feature-block {
+    background: linear-gradient(135deg, #0e0e1e 0%, #0a0a18 100%);
+    border: 1px solid #1a1a2e;
+    border-radius: 12px;
+    padding: 24px;
+    margin: 16px 0 24px;
+  }
+  .feature-block h4 { color: #fff; margin: 0 0 10px; }
+  .feature-block p { margin: 0; }
+
+  /* ── CLI terminal mock ── */
+  .terminal-mock {
+    background: #06060e;
+    border: 1px solid #1a1a2e;
+    border-radius: 12px;
+    padding: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82em;
+    line-height: 1.6;
+    margin: 16px 0 24px;
+  }
+  .terminal-mock .prompt { color: #66dd88; }
+  .terminal-mock .input { color: #e0e0e8; }
+  .terminal-mock .output { color: #888; }
+  .terminal-mock .banner {
+    color: #4444cc;
+    font-weight: 500;
+  }
+
+  /* ── Section anchors ── */
+  .section-link { scroll-margin-top: 20px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 700px) {
+    body { padding: 0 16px 60px; }
+    .hero h1 { font-size: 2em; }
+    .toc ol { columns: 1; }
+    table { font-size: 0.8em; }
+    td, th { padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════ HERO ════════ -->
+<div class="hero">
+  <h1>BAW</h1>
+  <div class="subtitle">Black And White — 由零打造嘅 Agent Platform</div>
+  <div class="badge-row">
+    <span class="badge primary">v1.0.0</span>
+    <span class="badge success">Linux + macOS</span>
+    <span class="badge">Protocol-agnostic LLM</span>
+    <span class="badge warn">Angel/Devil Court</span>
+    <span class="badge">Always-on Self-Learning</span>
+  </div>
+</div>
+
+<!-- ════════ TOC ════════ -->
+<div class="toc">
+  <h3>📑 目錄</h3>
+  <ol>
+    <li><a href="#intro">BAW 係咩？</a></li>
+    <li><a href="#features">核心特色</a></li>
+    <li><a href="#install">安裝 & 設定</a></li>
+    <li><a href="#setup-wizard">互動式設定精靈</a></li>
+    <li><a href="#config-cli">即時 Config CLI</a></li>
+    <li><a href="#chat">互動式 Chat 介面</a></li>
+    <li><a href="#modes">三種執行模式</a></li>
+    <li><a href="#adversarial">天使/魔鬼法庭</a></li>
+    <li><a href="#commands">指令一覽</a></li>
+    <li><a href="#slash">Slash 指令 (Chat)</a></li>
+    <li><a href="#scheduler">Scheduler 排程</a></li>
+    <li><a href="#skills">Skills 技能系統</a></li>
+    <li><a href="#tasks">背景任務 Async Delegation</a></li>
+    <li><a href="#github">GitHub 整合</a></li>
+    <li><a href="#board">Dashboard</a></li>
+    <li><a href="#tone">語氣設定</a></li>
+    <li><a href="#search">Search Provider</a></li>
+    <li><a href="#memory">記憶系統</a></li>
+    <li><a href="#fact-check">事實查證</a></li>
+    <li><a href="#permission">權限引擎</a></li>
+    <li><a href="#examples">實例</a></li>
+  </ol>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="intro" class="section-link">1️⃣ BAW 係咩？</h2>
+
+<p>
+<strong>BAW (Black And White)</strong> 係一套由零開始構建嘅 Agent Platform，唔依賴任何現有 framework。
+佢嘅名嚟自兩隻狗仔（黑白配），代表系統嘅核心哲學：
+</p>
+<ul>
+  <li><strong>🤍 Angel</strong> — 執行者，有工具權限，負責規劃同執行</li>
+  <li><strong>🖤 Devil</strong> — 反對派，無任何工具權限，永遠先發言挑戰</li>
+</ul>
+<p>
+BAW 嘅設計理念係 <strong>「永不放棄、永不問用戶」</strong>。
+遇到問題時，BAW 會自己規劃步驟、嘗試替代方案、checkpoint rollback，所有策略用盡先上報。
+佢唔會問你「呢個應該點做？」——佢自己做決定。
+</p>
+
+<div class="feature-block">
+  <h4>🎯 適合邊啲人用？</h4>
+  <p>
+    • 開發者/工程師 — 自動化 coding, debugging, deploy<br>
+    • DevOps — 系統監控、排程任務、自動修復<br>
+    • 資料分析 — 網頁搜索、記憶查詢、檔案處理<br>
+    • 任何需要 <strong>靠得住、唔煩人</strong> 嘅 agent
+  </p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="features" class="section-link">2️⃣ 核心特色</h2>
+
+<div class="card-grid">
+  <div class="card">
+    <span class="icon">⚖️</span>
+    <h4>Angel/Devil 法庭</h4>
+    <p>Devil 永遠先發言審查，Angel 聽完再執行。Devil 分數 > Angel 即 STOP。</p>
+  </div>
+  <div class="card">
+    <span class="icon">🧠</span>
+    <h4>永不放棄</h4>
+    <p>失敗 → retry → replan → rollback。6 種策略用盡先上報，唔煩人。</p>
+  </div>
+  <div class="card">
+    <span class="icon">🔌</span>
+    <h4>協議無關 LLM</h4>
+    <p>OpenAI / Anthropic / Google 協議通吃。一行 config 轉模型。</p>
+  </div>
+  <div class="card">
+    <span class="icon">💰</span>
+    <h4>透明成本</h4>
+    <p>每次 LLM call 顯示 per-token cost。預算控制。</p>
+  </div>
+  <div class="card">
+    <span class="icon">📝</span>
+    <h4>自我學習技能</h4>
+    <p>俾句描述 / URL，BAW 自動分析、拆解、生成 YAML skill。</p>
+  </div>
+  <div class="card">
+    <span class="icon">📊</span>
+    <h4>HTML Dashboard</h4>
+    <p>一鍵生成深色主題 dashboard：系統狀態、排程、技能、活動。</p>
+  </div>
+  <div class="card">
+    <span class="icon">🎭</span>
+    <h4>6 種語氣 Profile</h4>
+    <p>casual / business / teaching / client-doc / ot-rt / stepwise — 隨時切換。</p>
+  </div>
+  <div class="card">
+    <span class="icon">🔍</span>
+    <h4>開放 Search Provider</h4>
+    <p>內置 DuckDuckGo（無需 Key），可升級 Tavily/Brave/Firecrawl。</p>
+  </div>
+  <div class="card">
+    <span class="icon">🔄</span>
+    <h4>Scheduler 排程</h4>
+    <p>Cron 表達式定時執行。背景 daemon 60s 輪詢。</p>
+  </div>
+  <div class="card">
+    <span class="icon">📁</span>
+    <h4>檔案版本歷史</h4>
+    <p>每次寫入 ISO timestamp + SHA256 manifest + 自動 git commit。</p>
+  </div>
+  <div class="card">
+    <span class="icon">🛡️</span>
+    <h4>三級權限</h4>
+    <p>High（禁止 sudo/rm -rf）/ Medium（提示）/ Low（允許）。</p>
+  </div>
+  <div class="card">
+    <span class="icon">✅</span>
+    <h4>Per-step Verify</h4>
+    <p>每步 LLM 驗證結果，FAIL 自動 recover（retry / replan / rollback）。</p>
+  </div>
+  <div class="card">
+    <span class="icon">🔧</span>
+    <h4>Tool Degradation</h4>
+    <p>bash timeout → 加倍 → parent directory fallback。write_file 失敗 → /tmp/。</p>
+  </div>
+  <div class="card">
+    <span class="icon">🎮</span>
+    <h4>互動式 Chat</h4>
+    <p>彩色 terminal MU*, Tab 補全 slash commands。單句或聊天模式。</p>
+  </div>
+  <div class="card">
+    <span class="icon">⚙️</span>
+    <h4>Setup Wizard</h4>
+    <p>互動引導：mode → tone → court → fact check → model。即時生效。</p>
+  </div>
+  <div class="card">
+    <span class="icon">💡</span>
+    <h4>BTW 快捷模式</h4>
+    <p><code>baw --btw "問題"</code> — 快速 LLM 一問一答，無 court 無 plan。</p>
+  </div>
+  <div class="card">
+    <span class="icon">🏗️</span>
+    <h4>Async Delegation</h4>
+    <p><code>baw --delegate "task"</code> — 背景執行，主 terminal 即刻 free。</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="install" class="section-link">3️⃣ 安裝 & 設定</h2>
+
+<h3>最低要求</h3>
+<ul>
+  <li>Python 3.11+（建議 3.12）</li>
+  <li>macOS / Linux</li>
+  <li>Git（auto-commit 用）</li>
+</ul>
+
+<h3>安裝步驟</h3>
+
+<pre>
+<span class="cmt"># 1. Clone repo</span>
+<span class="cmd">git clone</span> https://github.com/cornreform/baw-agent-platform.git ~/baw
+<span class="cmd">cd</span> ~/baw
+
+<span class="cmt"># 2. 安裝 dependencies（用 uv 或 pip）</span>
+<span class="cmd">pip install</span> pyyaml <span class="cmt"># 核心依賴</span>
+<span class="cmd">pip install</span> duckduckgo-search <span class="cmt"># 內置 web search</span>
+
+<span class="cmt"># 3. 建立 CLI wrapper</span>
+<span class="cmd">ln -sf</span> ~/baw/baw ~/.local/bin/baw
+</pre>
+
+<h3>基本 Config</h3>
+<p>
+BAW 嘅 config 喺 <code>~/.baw/config.yaml</code>。
+第一次用 <code>baw</code> 會自動用 repo 入面嘅預設 config。
+</p>
+
+<pre>
+<span class="cmt"># ~/.baw/config.yaml 結構</span>
+model:
+  default: "deepseek-v4-flash"          <span class="cmt"># 主要模型</span>
+  fallback: "deepseek-v4-flash"         <span class="cmt"># fallback 模型</span>
+
+providers:
+  deepseek:                             <span class="cmt"># 每個 provider 一個 section</span>
+    base_url: "https://api.deepseek.com/v1"
+    api_key_env: "DEEPSEEK_API_KEY"     <span class="cmt"># 從環境變數讀 key</span>
+    models:
+      - id: "deepseek-v4-flash"
+        context_window: 65536
+        cost_per_1m_input: 0.30
+        cost_per_1m_output: 1.20
+
+mode: "tight"                          <span class="cmt"># 執行模式</span>
+tone:
+  default: "casual"                    <span class="cmt"># 語氣</span>
+adversarial:
+  enabled: true                        <span class="cmt"># 開法庭</span>
+fact_check:
+  mode: "normal"                       <span class="cmt"># 事實查證強度</span>
+</pre>
+
+<h3>API Keys</h3>
+<p>
+將 API keys 放入 <code>~/.baw/.env</code> 或 shell 環境變數：
+</p>
+
+<pre>
+<span class="cmt"># ~/.baw/.env</span>
+DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxx
+MINIMAX_API_KEY=mc-xxxxxxxxxxxxxxxx
+</pre>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="setup-wizard" class="section-link">4️⃣ 互動式設定精靈</h2>
+
+<p>
+唔想手動改 YAML？BAW 有內置互動式 setup wizard：
+</p>
+
+<div class="terminal-mock">
+  <span class="banner">◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈</span><br>
+  <span class="banner">  BAW Setup Wizard</span><br>
+  <span class="output">  This will guide you through the basic configuration.</span><br>
+  <span class="output">  Press Enter to keep current values.</span><br>
+  <span class="banner">◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈</span><br>
+  <br>
+  <span class="sec">◆ Execution Mode</span><br>
+  <span class="output">  Choose how BAW executes tasks:</span><br>
+  <span class="output">    quick  = no court, no plan (fastest)</span><br>
+  <span class="output">    hybrid = plan only, no court (balanced)</span><br>
+  <span class="output">    tight  = full court + plan + verify (most thorough)</span><br>
+  <span class="prompt">? Execution mode</span> <span class="output">[tight]</span> _
+</div>
+
+<p>設定精靈會逐步引導你設定：</p>
+<ol>
+  <li><strong>Execution Mode</strong> — quick / hybrid / tight</li>
+  <li><strong>Tone Profile</strong> — casual / business / teaching / client-doc / ot-rt / stepwise</li>
+  <li><strong>Adversarial Court</strong> — 開關天使/魔鬼法庭</li>
+  <li><strong>Fact Checking</strong> — off / normal / strict</li>
+  <li><strong>Default Model</strong> — LLM 模型 ID</li>
+</ol>
+
+<p>全部設定即時寫入 <code>~/.baw/config.yaml</code>，即刻生效。</p>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="config-cli" class="section-link">5️⃣ 即時 Config CLI</h2>
+
+<p>
+使用中隨時用 <code>baw --cfg</code> 查看或修改設定，唔使開 editor：
+</p>
+
+<table>
+  <tr><th>指令</th><th>功能</th></tr>
+  <tr><td>baw --cfg list</td><td>顯示完整 config 樹</td></tr>
+  <tr><td>baw --cfg get &lt;key&gt;</td><td>查某個設定（e.g. <code>mode</code>, <code>model.default</code>, <code>tone.default</code>）</td></tr>
+  <tr><td>baw --cfg set &lt;key&gt; &lt;value&gt;</td><td>即時修改設定（e.g. <code>baw --cfg set mode hybrid</code>）</td></tr>
+  <tr><td>baw --cfg help</td><td>顯示可設定 key 一覽</td></tr>
+</table>
+
+<pre>
+<span class="cmt"># 例子：即時轉 mode、tone</span>
+<span class="cmd">baw --cfg set</span> mode hybrid
+<span class="cmd">baw --cfg set</span> tone.default business
+
+<span class="cmt"># 查看收費設定</span>
+<span class="cmd">baw --cfg get</span> model.default
+</pre>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="chat" class="section-link">6️⃣ 互動式 Chat 介面</h2>
+
+<p>
+唔畀 prompt 直接 <code>baw</code> 就進入互動式 chat 模式：
+</p>
+
+<div class="terminal-mock">
+  <span class="banner">◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈</span><br>
+  <span class="banner">  BAW Interactive Chat</span><br>
+  <span class="output">  Model: deepseek-v4-flash • Tone: casual • Mode: tight</span><br>
+  <span class="output">  Type /help for commands • Ctrl+D or /exit to quit</span><br>
+  <span class="banner">◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈</span><br>
+  <br>
+  <span class="prompt">BAW></span> <span class="input">list files in current directory</span><br>
+  <span class="output">─── Processing ───</span><br>
+  <span class="output">📋 Plan:</span><br>
+  <span class="output">  1. 用 bash ls 列出當前目錄嘅檔案</span><br>
+  <span class="output">  2. 按類型分組顯示</span><br>
+  <span class="output">▶️ Step 1: 用 bash ls 列出當前目錄...</span><br>
+  <span class="output">✅ Done — 2/2 steps</span><br>
+  <span class="output">當前目錄有以下檔案：</span><br>
+  <span class="output">... (結果)</span><br>
+  <br>
+  <span class="prompt">BAW></span> _
+</div>
+
+<h3>Tab 自動補全</h3>
+<p>
+輸入 <code>/</code> 之後按 Tab 就會見到所有可用 slash command：
+</p>
+
+<pre>
+<span class="prompt">BAW></span> /[Tab]
+/help    /status  /model   /tone    /mode    /remember
+/search  /rethink /court   /fresh   /btw     /delegate
+/tasks   /skill-list /board /exit   /quit    /clear
+/dream   /tools   /provider
+</pre>
+
+<h3>單句模式</h3>
+<p>
+直接 <code>baw "prompt"</code> 就行單句模式，做完即 return：
+</p>
+
+<pre>
+<span class="cmd">baw</span> <span class="str">"check system disk usage"</span>
+<span class="cmd">baw --tone business</span> <span class="str">"寫一份合作方案"</span>
+<span class="cmd">baw --mode quick</span> <span class="str">"而家幾點？"</span>
+</pre>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="modes" class="section-link">7️⃣ 三種執行模式</h2>
+
+<p>
+BAW 有三種執行模式，平衡速度同完整度：
+</p>
+
+<table>
+  <tr><th>模式</th><th>用法</th><th>Court</th><th>Plan</th><th>Verify</th><th>速度</th></tr>
+  <tr><td>🚀 Quick</td><td><code>--mode quick</code></td><td>❌</td><td>❌</td><td>❌</td><td>最快</td></tr>
+  <tr><td>⚖️ Hybrid</td><td><code>--mode hybrid</code></td><td>❌</td><td>✅</td><td>❌</td><td>平衡</td></tr>
+  <tr><td>🛡️ Tight</td><td><code>--mode tight</code>（預設）</td><td>✅</td><td>✅</td><td>✅</td><td>最全面</td></tr>
+</table>
+
+<div class="feature-block">
+  <h4>Quick Mode</h4>
+  <p>純粹 LLM call，無 court 無 planning。最快但無安全審查。適合簡單查詢、BTW 模式。</p>
+</div>
+
+<div class="feature-block">
+  <h4>Hybrid Mode</h4>
+  <p>有 step plan 引導執行，但 skip 咗 court 同 verify。平衡速度同可控性。</p>
+</div>
+
+<div class="feature-block">
+  <h4>Tight Mode（預設）</h4>
+  <p>完整 pipeline：Plan → Devil 審查 → Angel 執行 → 每步 verify → checkpoint。最安全、最全面。</p>
+</div>
+
+<p>
+可以在 config 設定預設 mode，或用 <code>--mode</code> flag override：
+</p>
+
+<pre>
+<span class="cmt"># 默認 tight，有時 quick</span>
+<span class="cmd">baw --cfg set</span> mode hybrid       <span class="cmt"># 改默認</span>
+<span class="cmd">baw --mode quick</span> <span class="str">"而家幾點？"</span> <span class="cmt"># 單次 override</span>
+</pre>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="adversarial" class="section-link">8️⃣ 天使/魔鬼法庭</h2>
+
+<p>
+法庭係 BAW 嘅核心。每次執行任務前，Devil 會先發言，Angel 聽完先決定點做。
+</p>
+
+<h3>流程</h3>
+<ol>
+  <li><strong>用戶落指令</strong> — 「delete all .log files」</li>
+  <li><strong>👿 Devil 先發言</strong> — 「咁做可能會 delete 錯重要 log...」<br>
+  Devil 無任何工具權限，得把口。</li>
+  <li><strong>Devil 比風險分數</strong> — <code>[Devil: 7/10]</code></li>
+  <li><strong>😇 Angel 聽完回應</strong> — 「OK，我先 check 邊啲 log 係舊嘅，唔 delete active logs」<br>
+  Angel 有齊工具，可以執行。</li>
+  <li><strong>比對分數</strong> — Angel 分數 > Devil 分數 → 繼續執行；否則 BLOCK</li>
+  <li><strong>執行</strong> — Angel 用工具做嘢，每步 checkpoint</li>
+</ol>
+
+<pre>
+<span class="cmd">baw</span> <span class="str">"清空 /tmp 嘅 .tmp 檔案"</span>
+
+<span class="out">👿 Devil review: [Devil: 6/10]
+  危險操作。雖然係 /tmp，但可能有正在使用嘅 temp file。
+  建議先 list 出要 delete 嘅檔案，確認無 process 使用。
+  可以用 lsof 檢查。</span>
+
+<span class="out">😇 Angel response: [Angel: 8/10]
+  同意 Devil。我會先 list files → check lsof →
+  只 delete 無使用嘅 .tmp files → 報告結果。</span>
+
+<span class="out">📋 Plan:
+  1. ls -la /tmp/*.tmp 列出目標
+  2. lsof /tmp/*.tmp 檢查使用中
+  3. rm 無使用嘅檔案
+  4. 報告共刪除 N 個檔案
+
+▶️ Step 1: 列出 /tmp/*.tmp ...
+✅ Done — 4/4 steps
+刪除咗 12 個 .tmp 檔案，有 2 個被 process 使用中已保留。</span>
+</pre>
+
+<p>
+法庭可以用 <code>baw --cfg set adversarial.enabled false</code> 熄咗佢。
+喺 chat 中可以用 <code>/court</code> 睇返上次審判記錄。
+</p>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="commands" class="section-link">9️⃣ 指令一覽</h2>
+
+<table>
+  <tr><th>指令</th><th>功能</th><th>用法</th></tr>
+  <tr><td>baw "prompt"</td><td>執行 agent</td><td>baw "list files"</td></tr>
+  <tr><td>baw --mode quick/hybrid/tight</td><td>執行模式</td><td>baw --mode quick "time"</td></tr>
+  <tr><td>baw --tone &lt;profile&gt;</td><td>語氣 override</td><td>baw --tone business</td></tr>
+  <tr><td>baw --model &lt;id&gt;</td><td>模型 override</td><td>baw --model MiniMax-M3</td></tr>
+  <tr><td>baw --verbose</td><td>詳細輸出+成本</td><td>baw --verbose "debug"</td></tr>
+  <tr><td>baw --dry-run</td><td>試行（唔改 file）</td><td>baw --dry-run "clean"</td></tr>
+  <tr><td>baw --btw "q"</td><td>快速答問題</td><td>baw --btw "天氣？"</td></tr>
+  <tr><td>baw --delegate "task"</td><td>背景執行任務</td><td>baw --delegate "backup"</td></tr>
+  <tr><td>baw --task-id &lt;id&gt;</td><td>檢查背景任務</td><td>baw --task-id abc123</td></tr>
+  <tr><td>baw --tasks</td><td>列表背景任務</td><td>baw --tasks</td></tr>
+  <tr><td>baw --task-cancel &lt;id&gt;</td><td>取消背景任務</td><td>baw --task-cancel abc123</td></tr>
+  <tr><td>baw --version</td><td>顯示版本</td><td>baw --version</td></tr>
+  <tr><td>baw --status</td><td>系統狀態</td><td>baw --status</td></tr>
+  <tr><td>baw --remember "text"</td><td>儲存記憶</td><td>baw --remember "使用繁體"</td></tr>
+  <tr><td>baw --search "query"</td><td>搜尋記憶</td><td>baw --search "tone"</td></tr>
+  <tr><td>baw --dream</td><td>自我整理</td><td>baw --dream</td></tr>
+  <tr><td>baw --setup</td><td>互動設定精靈</td><td>baw --setup</td></tr>
+  <tr><td>baw --cfg list</td><td>Config 列表</td><td>baw --cfg list</td></tr>
+  <tr><td>baw --cfg get &lt;k&gt;</td><td>Config 查詢</td><td>baw --cfg get model.default</td></tr>
+  <tr><td>baw --cfg set &lt;k&gt; &lt;v&gt;</td><td>Config 設定</td><td>baw --cfg set mode hybrid</td></tr>
+  <tr><td>baw --board</td><td>Dashboard</td><td>baw --board</td></tr>
+</table>
+
+<h3>GitHub 指令</h3>
+<table>
+  <tr><th>指令</th><th>功能</th></tr>
+  <tr><td>baw --gh setup</td><td>GitHub auth 指南</td></tr>
+  <tr><td>baw --gh status</td><td>BAW repo 狀態</td></tr>
+  <tr><td>baw --gh issues &lt;repo&gt; [state]</td><td>列出 issues</td></tr>
+  <tr><td>baw --gh create-issue &lt;repo&gt; &lt;title&gt; [body]</td><td>建立 issue</td></tr>
+  <tr><td>baw --gh close-issue &lt;repo&gt; &lt;num&gt;</td><td>關閉 issue</td></tr>
+  <tr><td>baw --gh prs &lt;repo&gt; [state]</td><td>列出 PRs</td></tr>
+  <tr><td>baw --gh ci &lt;repo&gt; [branch]</td><td>CI 狀態</td></tr>
+  <tr><td>baw --gh repos [owner]</td><td>列出 repos</td></tr>
+</table>
+
+<h3>排程 & Skills 指令</h3>
+<table>
+  <tr><th>指令</th><th>功能</th></tr>
+  <tr><td>baw --schedule-list</td><td>列出排程任務</td></tr>
+  <tr><td>baw --schedule-add &lt;name&gt; &lt;cron&gt; &lt;command&gt;</td><td>新增排程</td></tr>
+  <tr><td>baw --schedule-rm &lt;name&gt;</td><td>移除排程</td></tr>
+  <tr><td>baw --skill-list</td><td>列出 skills</td></tr>
+  <tr><td>baw --skill-run &lt;name&gt;</td><td>執行 skill</td></tr>
+  <tr><td>baw --learn-skill "description"</td><td>自主學習新 skill</td></tr>
+  <tr><td>baw --learn-url &lt;url&gt;</td><td>從 URL 學習 skill</td></tr>
+</table>
+
+<h3>Search Provider 指令</h3>
+<table>
+  <tr><th>指令</th><th>功能</th></tr>
+  <tr><td>baw --search-provider list</td><td>列出所有 provider</td></tr>
+  <tr><td>baw --search-provider guide &lt;name&gt;</td><td>設定指南</td></tr>
+  <tr><td>baw --search-provider api &lt;name&gt;</td><td>API 參考</td></tr>
+  <tr><td>baw --search-provider test &lt;name&gt; &lt;query&gt;</td><td>測試 provider</td></tr>
+</table>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="slash" class="section-link">🔟 Slash 指令 (Chat 模式)</h2>
+
+<p>
+進入互動式 chat 之後，可以用 <code>/</code> 開頭嘅指令：
+</p>
+
+<table>
+  <tr><th>指令</th><th>別名</th><th>功能</th></tr>
+  <tr><td>/help</td><td>/h, /?</td><td>顯示所有指令</td></tr>
+  <tr><td>/status</td><td>/s</td><td>BAW 狀態</td></tr>
+  <tr><td>/version</td><td>/v</td><td>版本 + git log</td></tr>
+  <tr><td>/model &lt;id&gt;</td><td>/m</td><td>即時轉模型</td></tr>
+  <tr><td>/tone &lt;profile&gt;</td><td>/t</td><td>即時轉語氣</td></tr>
+  <tr><td>/mode &lt;mode&gt;</td><td>/m</td><td>即時轉執行模式</td></tr>
+  <tr><td>/remember &lt;text&gt;</td><td>/r</td><td>儲存記憶</td></tr>
+  <tr><td>/search &lt;query&gt;</td><td>-</td><td>搜尋記憶</td></tr>
+  <tr><td>/rethink</td><td>-</td><td>用替代分析重做上次 prompt</td></tr>
+  <tr><td>/court</td><td>-</td><td>顯示上次天使/魔鬼判決</td></tr>
+  <tr><td>/fresh</td><td>-</td><td>原始 LLM，無 soul 無 memory</td></tr>
+  <tr><td>/btw &lt;question&gt;</td><td>-</td><td>快速提問</td></tr>
+  <tr><td>/delegate &lt;task&gt;</td><td>-</td><td>背景執行</td></tr>
+  <tr><td>/tasks</td><td>-</td><td>背景任務列表</td></tr>
+  <tr><td>/skill-list</td><td>-</td><td>列出 skills</td></tr>
+  <tr><td>/board</td><td>-</td><td>生成 dashboard</td></tr>
+  <tr><td>/dream</td><td>-</td><td>自我整理</td></tr>
+  <tr><td>/tools</td><td>-</td><td>列出已註冊 tools</td></tr>
+  <tr><td>/provider&nbsp;list|guide|api|test</td><td>-</td><td>Search provider 操作</td></tr>
+  <tr><td>/clear</td><td>-</td><td>清螢幕</td></tr>
+  <tr><td>/exit 或 /quit</td><td>Ctrl+D</td><td>離開</td></tr>
+</table>
+
+<div class="feature-block">
+  <h4>💡 /rethink 同 /court</h4>
+  <p>
+    <code>/rethink</code> 會用同一個 prompt 但強制完全唔同嘅分析角度去做，
+    適合你覺得 BAW 上次做得唔好嗰陣。<br>
+    <code>/court</code> 顯示上次完整嘅 Devil/Angel 審判記錄（Devil 原始評論 + Angel 回應）。
+  </p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="scheduler" class="section-link">1️⃣1️⃣ Scheduler 排程</h2>
+
+<p>
+BAW 內置 cron-based scheduler，可以定時自動執行任務：
+</p>
+
+<pre>
+<span class="cmt"># 新增排程：每日凌晨 3 點做 backup</span>
+<span class="cmd">baw --schedule-add</span> daily-backup <span class="str">'0 3 * * *'</span> <span class="str">'backup important files'</span>
+
+<span class="cmt"># 每小時檢查 disk</span>
+<span class="cmd">baw --schedule-add</span> hourly-disk <span class="str">'0 * * * *'</span> <span class="str">'check disk usage and alert if > 90%'</span>
+
+<span class="cmt"># 列表、移除</span>
+<span class="cmd">baw --schedule-list</span>
+<span class="cmd">baw --schedule-rm</span> hourly-disk
+</pre>
+
+<p>
+Scheduler 行 background daemon（每 60 秒 poll 一次），唔會阻住你個 terminal。
+支援 cron 表達式、last-run 追蹤、避免 duplicate。
+</p>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="skills" class="section-link">1️⃣2️⃣ Skills 技能系統</h2>
+
+<p>
+Skills 係可重用嘅 YAML 任務模版。BAW 內置幾個 sample skills：
+</p>
+
+<pre>
+<span class="cmd">baw --skill-list</span>
+<span class="out">📋 Available Skills:
+  daily-git-push           — Auto commit & push BAW repo
+  disk-check               — Check disk usage
+  system-health            — System health report
+  git-commit-summarizer    — Summarize recent commits
+  system_temp_monitor      — Monitor system temperature</span>
+
+<span class="cmt"># 執行 skill</span>
+<span class="cmd">baw --skill-run</span> system-health
+</pre>
+
+<h3>自我學習技能</h3>
+<p>
+直接俾句描述，BAW 會自動分析、拆解步驟、生成 YAML skill：
+</p>
+
+<pre>
+<span class="cmd">baw --learn-skill</span> <span class="str">"每個鐘 check CPU 溫度，超過 75°C 就報警"</span>
+<span class="out">🧠 Learning skill from description...
+✅ Created skill 'system_temp_monitor' — 2 steps</span>
+
+<span class="cmt"># 從 URL 學</span>
+<span class="cmd">baw --learn-url</span> <span class="str">"https://example.com/backup-guide"</span>
+</pre>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="tasks" class="section-link">1️⃣3️⃣ 背景任務 Async Delegation</h2>
+
+<p>
+長時間任務可以 delegate 去背景執行，主 terminal 即刻 free：
+</p>
+
+<pre>
+<span class="cmt"># Delegate 去背景（主 terminal 即時可用）</span>
+<span class="cmd">baw --delegate</span> <span class="str">"分析呢個 project 嘅 code quality"</span>
+<span class="out">📋 Task ID: baw_20260607_123456_abc</span>
+
+<span class="cmt"># Check 狀態（任何時候）</span>
+<span class="cmd">baw --task-id</span> baw_20260607_123456_abc
+<span class="out">📋 Task: baw_20260607_123456_abc
+   Status: running
+   Goal: 分析呢個 project 嘅 code quality</span>
+
+<span class="cmt"># 全部任務一覧</span>
+<span class="cmd">baw --tasks</span>
+
+<span class="cmt"># 取消</span>
+<span class="cmd">baw --task-cancel</span> baw_20260607_123456_abc
+</pre>
+
+<p>
+TaskManager 會自動管理 concurrency（最多 3 個同時行），超出嘅會自動排隊。
+</p>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="github" class="section-link">1️⃣4️⃣ GitHub 整合</h2>
+
+<p>
+BAW 可以經 <code>gh</code> CLI 或 <code>GITHUB_TOKEN</code> 操作 GitHub：
+</p>
+
+<pre>
+<span class="cmt"># 設定</span>
+<span class="cmd">baw --gh setup</span>
+
+<span class="cmt"># Issues</span>
+<span class="cmd">baw --gh issues</span> cornreform/baw-agent-platform
+<span class="cmd">baw --gh create-issue</span> cornreform/baw-agent-platform <span class="str">"Add Docker support"</span> <span class="str">"Should support containerized deployment"</span>
+<span class="cmd">baw --gh close-issue</span> cornreform/baw-agent-platform 42
+
+<span class="cmt"># PRs & CI</span>
+<span class="cmd">baw --gh prs</span> cornreform/baw-agent-platform
+<span class="cmd">baw --gh ci</span> cornreform/baw-agent-platform main
+
+<span class="cmt"># Repos</span>
+<span class="cmd">baw --gh repos</span> cornreform
+
+<span class="cmt"># 自身 repo 狀態</span>
+<span class="cmd">baw --gh status</span>
+</pre>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="board" class="section-link">1️⃣5️⃣ Dashboard</h2>
+
+<p>
+一鍵生成 HTML dashboard：
+</p>
+
+<pre>
+<span class="cmd">baw --board</span>
+<span class="out">📊 Dashboard: /home/user/.baw/dashboard.html</span>
+</pre>
+
+<p>Dashboard 係深色主題 HTML，包含：</p>
+<ul>
+  <li>系統狀態（記憶、config）</li>
+  <li>Scheduler 任務列表</li>
+  <li>Skills 列表</li>
+  <li>最近活動 log</li>
+</ul>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="tone" class="section-link">1️⃣6️⃣ 語氣設定</h2>
+
+<p>
+BAW 有 6 種語氣 profile，隨時切換：
+</p>
+
+<table>
+  <tr><th>Tone</th><th>場景</th><th>說明</th></tr>
+  <tr><td>casual</td><td>日常吹水</td><td>粵語口語、短句、emoji OK</td></tr>
+  <tr><td>business</td><td>客戶文件</td><td>合作邀約 tone、唔出個人名</td></tr>
+  <tr><td>teaching</td><td>教學文件</td><td>直接俾 .md，唔問要唔要 extra format</td></tr>
+  <tr><td>client-doc</td><td>Client facing</td><td>零 comment、零 meta、直接出 artifact</td></tr>
+  <tr><td>ot-rt</td><td>快速執行</td><td>做完先報，唔逐 step confirm</td></tr>
+  <tr><td>stepwise</td><td>逐步執行</td><td>每步報 result，等 confirm 先繼續</td></tr>
+</table>
+
+<pre>
+<span class="cmt"># 設定預設語氣</span>
+<span class="cmd">baw --cfg set</span> tone.default teaching
+
+<span class="cmt"># 單次 override</span>
+<span class="cmd">baw --tone business</span> <span class="str">"寫一份合作提案"</span>
+
+<span class="cmt"># Chat 模式即時轉</span>
+<span class="prompt">BAW></span> /tone casual
+</pre>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="search" class="section-link">1️⃣7️⃣ Search Provider</h2>
+
+<p>
+BAW 嘅 web search 系統係 pluggable 嘅 — 可以隨時加新 provider：
+</p>
+
+<pre>
+<span class="cmt"># 內置：DuckDuckGo（完全免費，無需 API key）</span>
+<span class="cmd">baw --search-provider list</span>
+<span class="out">Available Search Providers:
+  duckduckgo
+    DuckDuckGo search (no API key required)
+    No API key needed
+
+<span class="cmt"># 測試</span>
+<span class="cmd">baw --search-provider test</span> duckduckgo <span class="str">"latest Linux kernel"</span>
+
+<span class="cmt"># 睇設定指南</span>
+<span class="cmd">baw --search-provider guide</span> duckduckgo
+
+<span class="cmt"># 睇 API 參考</span>
+<span class="cmd">baw --search-provider api</span> duckduckgo
+</pre>
+
+<p>
+要加新 provider（Tavily / Brave / Firecrawl），只需：</p>
+<ol>
+  <li>喺 <code>search_providers/</code> 放一個 Python file 實作介面</li>
+  <li>Call <code>register_search_provider()</code></li>
+  <li>唔使改核心 code</li>
+</ol>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="memory" class="section-link">1️⃣8️⃣ 記憶系統</h2>
+
+<p>
+BAW 嘅記憶係 JSONL append‑only + 內部評分機制：
+</p>
+
+<pre>
+<span class="cmt"># 記低偏好</span>
+<span class="cmd">baw --remember</span> <span class="str">"Always use Traditional Chinese for responses"</span>
+<span class="out">Remembered (score: 1.00)</span>
+
+<span class="cmt"># 搜尋記憶</span>
+<span class="cmd">baw --search</span> chinese
+<span class="out">[0.92] Always use Traditional Chinese for responses</span>
+
+<span class="cmt"># Chat 模式</span>
+<span class="prompt">BAW></span> /remember 語氣用 casual
+<span class="prompt">BAW></span> /search 語氣
+</pre>
+
+<p>
+記憶系統會隨使用自動評分：重複存取 → 加分。相關記憶 → 聯想擴散。
+記憶會注入每次 agent run 嘅 system prompt。
+</p>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="fact-check" class="section-link">1️⃣9️⃣ 事實查證</h2>
+
+<p>
+BAW 內置三級事實查證：
+</p>
+
+<table>
+  <tr><th>Mode</th><th>行為</th></tr>
+  <tr><td>off</td><td>唔檢查，最快</td></tr>
+  <tr><td>normal（預設）</td><td>標記可疑宣稱</td></tr>
+  <tr><td>strict</td><td>阻擋無法驗證嘅宣稱</td></tr>
+</table>
+
+<p>
+Normal mode 下，BAW 會標記「聽落唔對路」嘅陳述：
+</p>
+
+<pre>
+<span class="cmd">baw</span> <span class="str">"話我知 Raspberry Pi 5 嘅 specs"</span>
+<span class="out">⚠️ Fact Check: "8GB RAM" — 需要確認實際型號
+⚠️ Fact Check: "2.4GHz quad-core" — 搜索結果唔一致
+→ BAW 已自動用 web_search 驗證</span>
+</pre>
+
+<p>
+Strict mode 下，無法驗證嘅宣稱會直接 block。
+</p>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="permission" class="section-link">2️⃣0️⃣ 權限引擎</h2>
+
+<p>
+BAW 有三級風險權限，防止意外破壞：
+</p>
+
+<table>
+  <tr><th>風險</th><th>包含</th><th>行為</th></tr>
+  <tr><td>🔴 High</td><td><code>/etc/*</code>, <code>rm -rf</code>, <code>sudo</code>, <code>dd</code>, <code>.env</code>, <code>*.key</code></td><td>⛔ 禁止</td></tr>
+  <tr><td>🟡 Medium</td><td><code>write_file</code>, <code>bash</code> (general)</td><td>⚠️ 提示確認</td></tr>
+  <tr><td>🟢 Low</td><td><code>read_file</code>, <code>web_search</code></td><td>✅ 允許</td></tr>
+</table>
+
+<p>
+權限規則喺 <code>config.yaml</code> 嘅 <code>permissions.risk_levels</code> section，
+可以用 path pattern 同 command prefix 定義。
+</p>
+
+<pre>
+<span class="cmt"># config.yaml 權限配置示例</span>
+permissions:
+  risk_levels:
+    high:
+      - path: "/etc/*"          <span class="cmt"># 系統設定檔</span>
+      - cmd_prefix: "sudo"       <span class="cmt"># 特權命令</span>
+      - cmd_prefix: "rm -rf"     <span class="cmt"># 危險 delete</span>
+    medium:
+      - tool: "write_file"       <span class="cmt"># 寫檔案要提示</span>
+      - tool: "bash"             <span class="cmt"># 任意 bash 要提示</span>
+    low:
+      - tool: "read_file"        <span class="cmt"># 讀檔案直接俾</span>
+      - tool: "web_search"       <span class="cmt"># 搜索直接俾</span>
+</pre>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="examples" class="section-link">2️⃣1️⃣ 實例</h2>
+
+<h3>日常用</h3>
+
+<pre>
+<span class="cmt"># 快速問題</span>
+<span class="cmd">baw --btw</span> <span class="str">"而家香港 UTC+8 幾點？"</span>
+
+<span class="cmt"># 檔案操作</span>
+<span class="cmd">baw</span> <span class="str">"將 ~/notes/*.txt merge 成一個 file，按日期排序"</span>
+
+<span class="cmt"># Code review</span>
+<span class="cmd">baw --verbose</span> <span class="str">"review 呢個 Python file，check security issues"</span>
+
+<span class="cmt"># 語氣切換</span>
+<span class="cmd">baw --tone teaching</span> <span class="str">"解釋咩係 Docker，俾 example"</span>
+</pre>
+
+<h3>進階用</h3>
+
+<pre>
+<span class="cmt"># 背景執行長時間 task</span>
+<span class="cmd">baw --delegate</span> <span class="str">"掃描 ~/projects 所有 repo，列出行數同語言分佈"</span>
+<span class="cmd">baw --tasks</span>                           <span class="cmt"># check 狀態</span>
+
+<span class="cmt"># 排程日常健康檢查</span>
+<span class="cmd">baw --schedule-add</span> early-check <span class="str">'0 8 * * *'</span> <span class="str">"check disk, memory, CPU, report"</span>
+
+<span class="cmt"># GitHub issue 管理</span>
+<span class="cmd">baw --gh issues</span> cornreform/baw-agent-platform
+<span class="cmd">baw --gh create-issue</span> myuser/myrepo <span class="str">"Bug: login fails on ARM64"</span> <span class="str">"Details: ..."</span>
+
+<span class="cmt"># 自我學習新技能</span>
+<span class="cmd">baw --learn-url</span> <span class="str">"https://docs.docker.com/engine/reference/commandline/cli/"</span>
+
+<span class="cmt"># Dashboard</span>
+<span class="cmd">baw --board</span>
+</pre>
+
+<h3>互動 Chat 示範</h3>
+
+<div class="terminal-mock">
+  <span class="prompt">BAW></span> <span class="input">search for log files larger than 100MB</span><br>
+  <span class="output">📋 Plan:<br>
+  1. find /var/log -size +100M<br>
+  2. 報告結果</span><br>
+  <span class="output">✅ Done</span><br>
+  <span class="output">找到 3 個 log files > 100MB</span><br>
+  <span class="output">  /var/log/syslog.1 — 245MB</span><br>
+  <span class="output">  /var/log/kern.log.2 — 188MB</span><br>
+  <span class="output">  /var/log/nginx/access.log — 156MB</span><br>
+  <br>
+  <span class="prompt">BAW></span> <span class="input">/rethink</span><br>
+  <span class="output">(用唔同角度重做：今次會 check 邊啲 log 有 compressed 版本)</span><br>
+  <br>
+  <span class="prompt">BAW></span> <span class="input">/tone teaching</span><br>
+  <span class="prompt">BAW></span> <span class="input">解釋點樣 setup logrotate</span><br>
+</div>
+
+<hr style="border: none; border-top: 1px solid #1a1a2e; margin: 60px 0 30px;">
+
+<p style="text-align: center; color: #666; font-size: 0.85em;">
+BAW Agent Platform v1.0.0<br>
+Built from scratch — no framework, no vendor lock-in, no surrender.
+</p>
+
+</body>
+</html>
