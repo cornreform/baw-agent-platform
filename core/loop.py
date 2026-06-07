@@ -1,27 +1,22 @@
 """
-BAW — Self-Improving Agent Loop
-
-Core philosophy: BAW NEVER asks the user "can this be done" or "how should I choose".
-Instead, BAW:
-  1. Plan: Analyse goal → create step plan
-  2. Execute each step with Angel/Devil self-check
-  3. On failure: retry → replan → rollback (never ask user)
-  4. Only contact user when truly stuck after all alternatives exhausted
+BAW — Agent Loop: Debate-first, Execute-second
 
 Flow per user turn:
-  Phase 1 — Plan
-    Angel generates step plan, Devil reviews
-  Phase 2 — Execute (each step)
-    → Checkpoint save
-    → Devil challenges step
-    → Angel decides
-    → Execute tool(s)
-    → Verify result
-    → Success ? commit : recover (retry/replan/rollback)
-  Phase 3 — Report
-    What was done, what worked, summary
-"""
+  Phase 1 — Court (independent analysis)
+    Devil and Angel analyze the SAME input independently.
+    Both give scores. BAW synthesizes neutrally.
+    ⚠️ NEITHER voice has execution power during court.
 
+  Phase 2 — Neutral response & debate (interactive only)
+    BAW responds from neutral perspective.
+    NOT trying to please the user — WILLING to disagree.
+    User ↔ Agent back and forth until conclusion.
+
+  Phase 3 — Execute (once conclusion is reached)
+    BAW executes toward the goal.
+    Plan → Execute per step → Verify → Report.
+    No re-litigation — the debate is settled.
+"""
 from __future__ import annotations
 import re
 import json
@@ -70,7 +65,6 @@ class CostTracker:
             return f"📊 [{len(self.calls)} LLM calls] {calls_info} | **total: ${self.total:.4f}**"
 
     def html_summary(self) -> str:
-        """HTML version for Telegram-friendly reporting."""
         with self._lock:
             if not self.calls:
                 return ""
@@ -89,10 +83,6 @@ class CostTracker:
             self.calls = []
 
 
-# ── Helper functions that use the tracker ──
-# These exist for backward compatibility with existing call sites.
-# New code should create a CostTracker instance directly.
-
 _TRACKER: CostTracker | None = None
 
 
@@ -108,12 +98,10 @@ def record_cost(model_name: str, tokens_in: int, tokens_out: int, cost: float):
 
 
 def format_cost_summary() -> str:
-    """Markdown cost summary (used within agent context)."""
     return _get_tracker().summary()
 
 
 def html_cost_summary() -> str:
-    """HTML cost summary (for user-facing output)."""
     return _get_tracker().html_summary()
 
 
@@ -125,7 +113,7 @@ def reset_cost():
 
 def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                         fresh_start: bool = False) -> str:
-    """Build the Angel's system prompt from SOUL.md + dynamic context.
+    """Build system prompt from SOUL.md + dynamic context.
 
     If fresh_start=True, returns a minimal prompt with no SOUL.md or memories.
     """
@@ -166,26 +154,6 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     return system_prompt
 
 
-# ── Adversarial Court (step-level) ─────────────────────────────
-
-def _run_step_court(
-    court, step_desc: str, context_summary: str,
-) -> dict:
-    """Run a lightweight adversarial check for a single step.
-
-    Returns verdict dict: {should_stop, decision, devil_score, angel_score}.
-    """
-    from .adversarial import AdversarialCourt
-    return court.hold_court(step_desc, context_summary)
-
-
-def _should_proceed(verdict: dict, max_retries: int = 3) -> bool:
-    """Determine if BAW should proceed or recover based on verdict."""
-    if verdict.get("should_stop"):
-        return False
-    return True
-
-
 # ── Main agent loop ────────────────────────────────────────────
 
 MAX_STEP_RETRIES = 3
@@ -202,7 +170,11 @@ def run_agent(
     fresh_start: bool = False,
     mode: Optional[str] = None,
 ) -> tuple[str, dict]:
-    """Run BAW agent with self-improving loop.
+    """Run BAW agent with debate-first, execute-second flow.
+
+    Phase 1 — Court: Devil + Angel analyze independently.
+    Phase 2 — Neutral response & debate (interactive only).
+    Phase 3 — Execute: plan → execute → verify → report.
 
     If fresh_start=True, SOUL.md and memories are bypassed entirely.
     Returns: (response_text, info_dict)
@@ -221,10 +193,7 @@ def run_agent(
     except Exception:
         pass
 
-    # Init adversarial court (for step-level checks)
     system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
-    from .adversarial import AdversarialCourt
-    court = AdversarialCourt(model, system_prompt, config)
 
     # ── Detect tone switch ──
     from .tone import detect_tone_switch, format_tone_confirmation
@@ -234,7 +203,6 @@ def run_agent(
     if new_tone and new_tone != old_tone:
         config.setdefault("tone", {})["default"] = new_tone
         system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
-        court = AdversarialCourt(model, system_prompt, config)
         tone_change = True
 
     # Memory search
@@ -247,6 +215,7 @@ def run_agent(
 
     reset_cost()
     session_cost = 0.0
+    court_result = None
 
     # ── Resolve execution mode ──
     _mode = (mode or config.get("mode", "tight")).lower()
@@ -327,16 +296,20 @@ def run_agent(
             "mode": "quick",
         }
 
-    # ── Adversarial Court (goal-level) ──
-    adv_cfg = config.get("adversarial", {})
-    court_enabled = adv_cfg.get("enabled", True)
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 1: Court — Independent dual-voice analysis
+    # ═══════════════════════════════════════════════════════════════
+    from .adversarial import AdversarialCourt
+    court = AdversarialCourt(model, system_prompt, config)
+    court_enabled = config.get("adversarial", {}).get("enabled", True) and _mode == "tight"
 
-    devil_output = None
-    verdict = None
+    if court_enabled:
+        if verbose:
+            print("\n  ⚖️ Court: Devil + Angel analyzing independently...")
 
-    if court_enabled and _mode != "hybrid":
         verdict = court.hold_court(prompt, mem_text)
-        devil_output = verdict.get("devil")
+        court_result = verdict
+
         session_cost += (verdict["devil"]["cost"] + verdict["angel"]["cost"])
         record_cost(
             f"{model.provider}/{model.id}",
@@ -349,49 +322,60 @@ def run_agent(
             verdict["angel"]["cost"],
         )
 
-        if verbose:
-            print(f"\n[Court] Devil={verdict['devil_score']} Angel={verdict['angel_score']} → {verdict['decision']}")
-
-        if verdict.get("should_stop"):
-            # ⛔ Goal blocked — explain why
-            output = ""
-            if tone_change:
-                output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
-            output += _format_verdict(verdict)
-            return output, {
-                "cost": round(session_cost, 4),
-                "model": f"{model.provider}/{model.id}",
-                "iterations": 0,
-                "adversarial": "flagged",
-                "adversarial_raw": verdict if verdict else None,
-            }
-
-        # ✅ Goal approved — add Angel's first response to context
-        angel_response = verdict["angel"]["response"]
-        ctx.add_assistant(angel_response.content, angel_response.tool_calls)
-
-    else:
-        # No court — direct call
-        fb = call_llm_with_fallback(
-            config, ctx.to_openai_messages(),
-            tools=get_openai_tools(), temperature=0.7,
+        # Inject both analyses into context (not as a decision — as perspectives)
+        court_context = (
+            f"\n─── 👿 DEVIL'S INDEPENDENT ANALYSIS ───\n"
+            f"{verdict['devil']['content']}\n"
+            f"Score: {verdict['devil_score']}/10\n"
+            f"─── 😇 ANGEL'S INDEPENDENT ANALYSIS ───\n"
+            f"{verdict['angel']['content']}\n"
+            f"Score: {verdict['angel_score']}/10\n"
+            f"─── END COURT ───\n\n"
+            f"Both perspectives are available. "
+            f"Now respond from a NEUTRAL perspective — "
+            f"you are NOT obligated to please the user. "
+            f"Be honest. Be willing to disagree. "
+            f"Your goal is to reach the best outcome through honest discussion."
         )
-        angel_response = fb.response
-        cost = calculate_cost(model, fb.response.input_tokens, fb.response.output_tokens)
-        session_cost += cost
-        record_cost(f"{model.provider}/{model.id}", fb.response.input_tokens, fb.response.output_tokens, cost)
-        ctx.add_assistant(angel_response.content, angel_response.tool_calls)
+        ctx.add_user(court_context)
 
-    # ── Phase 2: Self-Improving Execution Loop ──
-    # If no tool calls from the Angel's first response, we're done
-    if not angel_response.tool_calls:
+        if verbose:
+            print(f"  [Court] Devil={verdict['devil_score']}/10 | Angel={verdict['angel_score']}/10 | Gap={verdict['score_gap']} ({verdict['agreement_level']})")
+
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 2: Neutral response
+    # BAW responds from neutral perspective — may disagree with user
+    # ═══════════════════════════════════════════════════════════════
+
+    # Call LLM with court context (or without, for hybrid mode)
+    fb = call_llm_with_fallback(
+        config, ctx.to_openai_messages(),
+        tools=get_openai_tools(),
+        temperature=model_temperature,
+    )
+    neutral_response = fb.response
+    n_cost = calculate_cost(model, neutral_response.input_tokens, neutral_response.output_tokens)
+    session_cost += n_cost
+    record_cost(f"{model.provider}/{model.id}", neutral_response.input_tokens, neutral_response.output_tokens, n_cost)
+    ctx.add_assistant(neutral_response.content, neutral_response.tool_calls)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 2.5: Debate (interactive mode only)
+    # In single-shot mode, BAW must decide on its own.
+    # ═══════════════════════════════════════════════════════════════
+
+    if interactive:
+        # In interactive mode, after the neutral response, BAW returns
+        # and waits for user's next input. The debate is handled
+        # by the CLI loop calling run_agent() again with each user turn.
+        # We only handle the initial court + neutral response here.
         output = ""
         if tone_change:
             output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
-        output += (angel_response.content or "")
+
+        output += (neutral_response.content or "")
         output += f"\n\n{format_cost_summary()}"
 
-        # Save to memory
         try:
             mem.remember(f"User asked: {prompt[:200]}")
         except Exception:
@@ -402,48 +386,71 @@ def run_agent(
             "model": f"{model.provider}/{model.id}",
             "iterations": 1,
             "steps": 0,
-            "adversarial": verdict["decision"] if verdict else None,
-            "adversarial_raw": verdict if verdict else None,
+            "adversarial": "debate",
+            "adversarial_raw": court_result,
         }
 
-    # Build output
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 3: Execute (single-shot mode)
+    # BAW makes its best judgment and executes.
+    # ═══════════════════════════════════════════════════════════════
+
+    # If BAW's neutral response didn't call any tools, just return it
+    if not neutral_response.tool_calls:
+        output = ""
+        if tone_change:
+            output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
+        output += (neutral_response.content or "")
+        output += f"\n\n{format_cost_summary()}"
+
+        try:
+            mem.remember(f"User asked: {prompt[:200]}")
+        except Exception:
+            pass
+
+        return output, {
+            "cost": round(session_cost, 4),
+            "model": f"{model.provider}/{model.id}",
+            "iterations": 1,
+            "steps": 0,
+            "adversarial": court_result["agreement_level"] if court_result else None,
+            "adversarial_raw": court_result,
+        }
+
+    # ── Build output ──
     output_parts = []
     if tone_change:
         output_parts.append(format_tone_confirmation(old_tone, new_tone))
-    if verdict:
-        output_parts.append(_format_verdict(verdict))
-    output = "\n\n".join(output_parts) + "\n\n"
+    output = "\n\n".join(output_parts)
+    if output_parts:
+        output += "\n\n"
 
-    # ── Phase 2: Orchestrator writes execution plan ──
-    # The LLM creates a detailed step-by-step plan BEFORE executing
-    # Each step is small (1-2 tool calls max)
-    # The plan is injected into context on each iteration
-    total_llm_calls = 1  # Count Angel's court response as first call
+    # ── Phase 3a: Orchestrator writes execution plan ──
+    total_llm_calls = 1
     _execution_plan: list[dict] = []
     _execution_progress: list[str] = []
-    
-    # Request a plan from the LLM — use separate context (no tool_calls issue)
+
     plan_prompt = (
         f"[ORCHESTRATOR] Goal: {prompt}\n\n"
         f"Write a step-by-step execution plan.\n"
         f"Each step must be SMALL (max 1-2 tool calls).\n"
-        f"Describe each step in Traditional Chinese / Cantonese — "
-        f"use human language, NOT raw commands.\n"
+        f"Describe each step in human language — "
+        f"NOT raw commands.\n"
         f"Format each step as:\n"
-        f"  Step N: <粵語描述步驟做咩> — <tool> — <expected outcome>\n\n"
+        f"  Step N: <description> — <tool> — <expected outcome>\n\n"
         f"Reply with ONLY the plan, numbered 1..N."
     )
     _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": plan_prompt}]
     plan_fb = call_llm_with_fallback(
         config, _plan_msgs,
-        temperature=None,  # Use model default
+        temperature=None,
     )
     plan_response = plan_fb.response
     total_llm_calls += 1
     cost = calculate_cost(model, plan_response.input_tokens, plan_response.output_tokens)
     session_cost += cost
     record_cost(f"{model.provider}/{model.id}", plan_response.input_tokens, plan_response.output_tokens, cost)
-    
+
     # Parse plan into steps
     import re as _re
     plan_text = plan_response.content or ""
@@ -452,9 +459,8 @@ def run_agent(
         if _m:
             _execution_plan.append({"num": int(_m.group(1)), "desc": _m.group(2)})
     if not _execution_plan:
-        # Fallback: single-step plan
         _execution_plan.append({"num": 1, "desc": plan_text[:200]})
-    
+
     if verbose:
         print(f"\n  📋 Plan ({len(_execution_plan)} steps):")
         for _s in _execution_plan:
@@ -474,9 +480,11 @@ def run_agent(
     if _execution_plan:
         _display_log.append(dsp.phase_plan(_execution_plan))
 
-    # ── Phase 3: Execute plan step by step ──
-    max_iterations = 40  # More iterations for plan-following
-    response = angel_response
+    # ── Phase 3b: Execute plan step by step ──
+    # Note: After the debate phase, execution is purely operational.
+    # No re-litigation — the "what" is decided, now execute the "how".
+    max_iterations = 40
+    response = neutral_response
     consecutive_failures = 0
     _current_strategies: list[str] = []
     steps_completed = 0
@@ -486,7 +494,6 @@ def run_agent(
         if not response.tool_calls:
             break
 
-        # Execute each tool call as a step
         for tc in response.tool_calls:
             func = tc.get("function", {})
             name = func.get("name", "")
@@ -497,10 +504,9 @@ def run_agent(
             except json.JSONDecodeError:
                 args = {}
 
-            # ── Permission check (built-in, no user question) ──
+            # ── Permission check ──
             perm_result = perm.check(name, args)
             if perm_result["decision"] == "deny":
-                # Don't ask user — just report the block and move on
                 result = f"[BLOCKED] {perm_result['reason']}"
                 ctx.add_tool_result(tc.get("id", ""), name, result)
                 consecutive_failures += 1
@@ -521,22 +527,16 @@ def run_agent(
                     metadata={"source": "agent_tool", "step": checkpointer._step_count})
 
             # ── Execute tool ──
-            if perm_result["decision"] == "allow":
-                exe_result = execute_tool(name, args)
-            else:
-                # Medium risk: auto-allow (never prompt user in self-improving mode)
-                exe_result = execute_tool(name, args)
-
+            exe_result = execute_tool(name, args)
             step_success = not exe_result.startswith("[Error") and not exe_result.startswith("[BLOCKED")
 
             if verbose:
                 short = exe_result[:200].replace("\n", " ")
                 print(f"  🛠️  {name}(...) → {'✅' if step_success else '❌'} {short}...")
 
-            # ── Handle step result with strategy-based recovery ──
+            # ── Handle step result ──
             if step_success:
                 # ── Verify step result ──
-                # Uses LLM to score the output against the goal
                 verifier_enabled = config.get("verify", {}).get("enabled", False) and _mode == "tight"
                 if verifier_enabled:
                     from .verifier import verify_step
@@ -552,7 +552,6 @@ def run_agent(
                         print(f"  🔍 Verify [{name}]: {v_result['score']}/10 {'✅' if v_result['passed'] else '❌'} {v_result['reason'][:80]}")
 
                     if not v_result["passed"]:
-                        # Verification failed — treat as step failure
                         consecutive_failures += 1
                         checkpointer.record_attempt()
                         strategy_desc = f"verify({name}): {v_result['reason'][:60]}"
@@ -562,18 +561,16 @@ def run_agent(
                             f"[VERIFY_FAIL] {v_result['reason']}\nActionable: {v_result['actionable']}\n---\n{exe_result}")
                         if verbose:
                             print(f"  ⛔ Verify failed: {v_result['reason'][:80]}")
-                        continue  # Don't commit, let recovery handle it
+                        continue
 
                 # Commit checkpoint, record success
                 checkpointer.commit()
                 consecutive_failures = 0
                 steps_completed += 1
-                # Update execution progress
                 _current_strategies.clear()
                 if current_plan_step < len(_execution_plan):
                     _step_desc = _execution_plan[current_plan_step]['desc'][:80]
                     _execution_progress.append(f"Step {current_plan_step + 1}: ✅ {_step_desc}")
-                    # Display: show step completion
                     _dsp = dsp.phase_step_done(current_plan_step + 1, len(_execution_plan), _step_desc)
                     _display_log.append(_dsp)
                     if verbose:
@@ -601,12 +598,10 @@ def run_agent(
                 consecutive_failures += 1
                 checkpointer.record_attempt()
 
-                # Track the strategy that failed
                 strategy_desc = f"{name}({args.get('path', args.get('command', '?'))})"
                 _current_strategies.append(strategy_desc)
                 checkpointer.record_strategy(strategy_desc)
 
-                # Add the failure to context
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
 
                 # ── Try degradation chain ──
@@ -618,16 +613,12 @@ def run_agent(
                     if verbose:
                         print(f"  🔄 Degradation [{name}]: → {strategy_name} ({degraded['description']})")
 
-                    # Execute with degraded approach
                     degraded_result = execute_tool(name, new_args)
                     degraded_success = not degraded_result.startswith("[Error") and not degraded_result.startswith("[BLOCKED")
-
-                    # Track it
                     _current_strategies.append(f"degrade:{strategy_name}")
                     checkpointer.record_strategy(f"degrade:{strategy_name}")
 
                     if degraded_success:
-                        # Degradation worked!
                         if verbose:
                             print(f"  ✅ Degradation succeeded: {strategy_name}")
                         consecutive_failures = 0
@@ -644,7 +635,6 @@ def run_agent(
                         ctx.add_tool_result(tc.get("id", ""), name, degraded_result)
                         continue
                     else:
-                        # Degradation also failed — track and continue
                         consecutive_failures += 1
                         checkpointer.record_attempt()
                         ctx.add_tool_result(tc.get("id", ""), name, degraded_result + f"\n[Degrade {strategy_name} also failed]")
@@ -652,15 +642,12 @@ def run_agent(
                             print(f"  ❌ Degradation also failed: {strategy_name}")
 
                 if consecutive_failures >= (1 if _mode == "hybrid" else MAX_CONSECUTIVE_FAILURES):
-                    # All strategies exhausted — notify user with analysis
                     error_summary = (
                         f"<b>🔄 BAW Strategy Recovery</b>\n\n"
                         f"After {len(_current_strategies)} strategy attempts, "
                         f"this approach is not working:\n"
                         f"{'<br>'.join(f'❌ {s}' for s in _current_strategies)}\n\n"
                     )
-
-                    # Check if we should try a completely different approach
                     _max_fails = 1 if _mode == "hybrid" else MAX_CONSECUTIVE_FAILURES
                     if consecutive_failures < _max_fails * 2:
                         error_summary += (
@@ -671,7 +658,7 @@ def run_agent(
                     else:
                         error_summary += (
                             f"<b>⛔ All approaches exhausted.</b>\n"
-                            f"Angel/Devil evaluation required for next steps."
+                            f"Analysis required for next steps."
                         )
 
                     if not output.endswith("\n"):
@@ -684,7 +671,6 @@ def run_agent(
         if consecutive_failures >= (1 if _mode == "hybrid" else MAX_CONSECUTIVE_FAILURES):
             consecutive_failures = 0
 
-        # Inject progress update into context before next LLM call
         if _execution_progress:
             _progress_text = "\n[Progress so far]\n" + "\n".join(_execution_progress)
             if len(_execution_progress) >= len(_execution_plan):
@@ -694,7 +680,6 @@ def run_agent(
                 _remaining = len(_execution_plan) - current_plan_step
                 _progress_text += f"\n[Next: Step {current_plan_step + 1}: {_execution_plan[_next_idx]['desc'][:80]}]"
                 _progress_text += f"\n[{_remaining} steps remaining]"
-            # Update system prompt with progress
             if "[Progress" in ctx.system_prompt:
                 ctx.system_prompt = ctx.system_prompt.rsplit("\n[Progress", 1)[0] + _progress_text
             else:
@@ -706,17 +691,14 @@ def run_agent(
         )
         response = fb_result.response
         total_llm_calls += 1
-
         cost = calculate_cost(model, response.input_tokens, response.output_tokens)
         session_cost += cost
         record_cost(
             f"{model.provider}/{model.id}",
             response.input_tokens, response.output_tokens, cost,
         )
-
         if verbose:
             print(f"\n[LLM #{total_llm_calls}] {fb_result.model_used} | tokens: {response.input_tokens}↑ {response.output_tokens}↓ ${cost:.4f}")
-
         ctx.add_assistant(response.content, response.tool_calls)
 
         # Compact context if needed
@@ -725,8 +707,7 @@ def run_agent(
             if verbose:
                 print("  [Context compacted]")
 
-    # ── Phase 3: Collect output ──
-    # Gather all assistant responses from the tool loop
+    # ── Collect output ──
     assistant_responses = []
     for msg in ctx.messages:
         if hasattr(msg, 'role'):
@@ -738,19 +719,16 @@ def run_agent(
         if role == "assistant" and content:
             assistant_responses.append(content)
 
-    # Add the final response, prefixed with display log
     if assistant_responses:
         final_reply = assistant_responses[-1]
-        # Prepend display log if we have one (plan + step progress)
         if _display_log:
             output += "\n".join(_display_log) + "\n"
-        # Add done summary
         if steps_completed > 0:
             output += dsp.done(steps_completed, len(_execution_plan), 0, 0) + "\n"
         if final_reply and final_reply not in output:
             output += f"\n{final_reply}"
 
-        # ── Fact check final output (with web search verification) ──
+        # ── Fact check final output ──
         try:
             from .fact_checker import FactChecker
             fc = FactChecker(config)
@@ -761,13 +739,11 @@ def run_agent(
                     last_text = last_msg.content or ""
                 else:
                     last_text = last_msg.get("content", "") or ""
-            # First-pass regex check
             action, fc_result = fc.check(last_text or "", prompt)
             if action == "block":
                 output += f"\n\n{fc_result['message']}"
             elif action == "flag":
                 output += f"\n\n<i>⚠️ {len(fc_result['claims'])} unverified claims flagged</i>"
-                # Second-pass: web search verification
                 try:
                     search_action, search_result = fc.verify_with_search(last_text or "", prompt)
                     if search_action == "block":
@@ -777,14 +753,13 @@ def run_agent(
                         n_flagged = len(search_result["flagged"])
                         output += f"\n\n{html.italic(f'Web search: {n_flagged} claims unverifiable')}"
                 except Exception:
-                    pass  # web search check is best-effort
+                    pass
         except Exception:
             pass
 
-        # Cost summary (HTML format)
         output += f"\n\n{html_cost_summary()}"
 
-    # Auto-save: commit any changes
+    # Auto-save
     last_commit = None
     try:
         last_commit = auto_commit(
@@ -794,11 +769,9 @@ def run_agent(
     except Exception:
         pass
 
-    # If auto-committed, add to report
     if last_commit:
         output += f"\n💾 <i>Auto-saved: {last_commit}</i>"
 
-    # Save to memory
     try:
         mem.remember(f"User asked: {prompt[:200]}")
     except Exception:
@@ -809,36 +782,7 @@ def run_agent(
         "model": f"{model.provider}/{model.id}",
         "iterations": total_llm_calls,
         "steps": steps_completed,
-        "adversarial": verdict["decision"] if verdict else None,
-        "adversarial_raw": verdict if verdict else None,
+        "adversarial": court_result["agreement_level"] if court_result else None,
+        "adversarial_raw": court_result,
     }
     return output, info
-
-
-def _format_verdict(verdict: dict) -> str:
-    """Format adversarial court output in HTML (Telegram-compatible)."""
-    devil = verdict.get("devil")
-    angel = verdict.get("angel")
-    if not devil or not angel:
-        return ""
-
-    lines = [
-        f"👿 <b>Devil (Opposing Counsel)</b> — Risk: {devil['score']}/10",
-        html.blockquote(devil["content"]),
-        "",
-        f"😇 <b>Angel (Executor)</b> — Feasibility: {angel['score']}/10",
-    ]
-    if verdict.get("should_stop"):
-        lines.append(
-            f"\n⚠️ <b>Devil ({devil['score']}/10) &gt; Angel ({angel['score']}/10)</b>\n"
-            f"⛔ BAW has significant concerns. Stopped before any action.\n"
-        )
-    elif verdict.get("decision") == "warn":
-        lines.append(
-            f"\n⚠️ Devil close to Angel — proceeding with caution\n"
-        )
-    else:
-        lines.append(f"\n━━━ Proceeding ───\n")
-
-    lines.append(angel["content"])
-    return "\n".join(lines)
