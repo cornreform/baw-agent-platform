@@ -1,0 +1,15 @@
+# BAW — Black And White Agent Platform
+# Python dependencies
+
+# Core
+pyyaml>=6.0
+httpx>=0.27.0
+
+# Web search (built-in, no API key required)
+duckduckgo-search>=7.5.0
+
+# Scheduler (optional — for --schedule-* commands)
+croniter>=2.0.0
+
+# Note: No ML/LLM framework dependencies.
+# BAW talks to LLM APIs directly via httpx.
