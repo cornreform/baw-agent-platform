@@ -98,6 +98,11 @@ Examples:
     parser.add_argument("--tone", "-t", help="Override tone (casual / business / teaching / client-doc / ot-rt / stepwise)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--dry-run", "-n", action="store_true", help="Dry run (no changes)")
+    parser.add_argument("--btw", action="store_true",
+                        help="BTW mode: quick question, no court/plan/tools")
+    parser.add_argument("--delegate", nargs="?", const=True, default=None,
+                        help="Delegate a task to background executor (optionally specify prompt)")
+    parser.add_argument("--task-id", help="Check background task status (without prompt) or run as executor (with prompt)")
     parser.add_argument("--config", help="Path to config.yaml")
     parser.add_argument("--version", action="store_true", help="Show BAW version and exit")
 
@@ -144,6 +149,92 @@ Examples:
     # Initialize data directory
     data_dir = Path.home() / ".baw"
     data_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── BTW: quick question, no overhead ──
+    if args.btw:
+        prompt = " ".join(args.prompt) if args.prompt else ""
+        if not prompt:
+            print("Error: --btw requires a prompt (e.g. baw --btw \"what time is it\")")
+            sys.exit(1)
+        from baw.core.llm import call_llm_with_fallback, calculate_cost, get_model
+        from baw.core.loop import build_system_prompt
+        from baw.core.display import btw_header
+
+        model = get_model(config)
+        sys_prompt = build_system_prompt(config, data_dir)
+        msgs = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt}]
+        fb = call_llm_with_fallback(config, msgs, temperature=0.7)
+        cost = calculate_cost(model, fb.response.input_tokens, fb.response.output_tokens)
+        print(f"{btw_header()}{fb.response.content}")
+        print(f"\n⚡ {cost:.4f} | {fb.response.input_tokens}↑{fb.response.output_tokens}↓")
+        return
+
+    # ── Background delegation ──
+    if args.delegate:
+        prompt = " ".join(args.prompt) if args.prompt else args.delegate
+        if not prompt:
+            print("Error: --delegate requires a prompt or plan")
+            sys.exit(1)
+        import uuid, json, subprocess as sp
+        task_id = f"{int(time.time())}-{uuid.uuid4().hex[:6]}"
+        task_dir = data_dir / "tasks" / task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        # Save the prompt
+        (task_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
+        (task_dir / "status.txt").write_text("queued", encoding="utf-8")
+        # Spawn background executor
+        baw_path = Path(__file__).resolve()
+        sp.Popen(
+            [sys.executable, str(baw_path), "--mode", "tight", "--task-id", task_id, prompt],
+            stdout=(task_dir / "stdout.txt").open("w"),
+            stderr=(task_dir / "stderr.txt").open("w"),
+            cwd=str(BAW_ROOT),
+        )
+        from baw.core.display import front_desk_task_id
+        print(front_desk_task_id(task_id))
+        return
+
+    # ── Check background task status (without prompt) ──
+    if args.task_id and not args.prompt:
+        task_dir = data_dir / "tasks" / args.task_id
+        if not task_dir.exists():
+            print(f"❌ Task {args.task_id} not found")
+            sys.exit(1)
+        status = (task_dir / "status.txt").read_text(encoding="utf-8").strip() if (task_dir / "status.txt").exists() else "unknown"
+        prompt_text = (task_dir / "prompt.txt").read_text(encoding="utf-8") if (task_dir / "prompt.txt").exists() else ""
+        stdout_text = (task_dir / "stdout.txt").read_text(encoding="utf-8") if (task_dir / "stdout.txt").exists() else ""
+        print(f"📋 Task: {args.task_id}")
+        print(f"   Status: {status}")
+        if prompt_text:
+            print(f"   Goal: {prompt_text[:100]}")
+        if stdout_text:
+            print(f"\n{stdout_text[:1000]}")
+        return
+
+    # ── Background executor mode: run and save to task dir ──
+    if args.task_id and args.prompt:
+        prompt = " ".join(args.prompt)
+        task_dir = data_dir / "tasks" / args.task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        (task_dir / "status.txt").write_text("running", encoding="utf-8")
+        # Run the agent
+        from baw.tools import register_all as reg_tools
+        from baw.core.loop import run_agent
+        reg_tools()
+        response, info = run_agent(
+            prompt=prompt,
+            config=config,
+            model_id=args.model,
+            data_dir=data_dir,
+            verbose=False,
+            interactive=False,
+            mode=args.mode or "tight",
+        )
+        # Save output
+        (task_dir / "stdout.txt").write_text(response, encoding="utf-8")
+        (task_dir / "status.txt").write_text("done", encoding="utf-8")
+        (task_dir / "info.json").write_text(__import__("json").dumps(info), encoding="utf-8")
+        return
 
     # Subcommands
     if args.remember:
