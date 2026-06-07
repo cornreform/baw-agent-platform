@@ -1,0 +1,66 @@
+# BAW Agent Platform Configuration (Sample)
+# Copy to ~/.baw/config.yaml and fill in your API keys
+
+model:
+  default: "deepseek-v4-flash"
+  # Examples: "MiniMax-M3", "claude-sonnet-4-20250514", "gemini-2.5-pro"
+
+providers:
+  deepseek:
+    base_url: "https://api.deepseek.com/v1"
+    api_key_env: "DEEPSEEK_API_KEY"
+    models:
+      - id: "deepseek-v4-flash"
+        context_window: 65536
+        vision: false
+        cost_per_1m_input: 0.30
+        cost_per_1m_output: 1.20
+
+  minimax:
+    base_url: "https://api.minimax.io/v1"
+    api_key_env: "MINIMAX_API_KEY"
+    models:
+      - id: "MiniMax-M3"
+        context_window: 1048576
+        vision: true
+        cost_per_1m_input: 2.00
+        cost_per_1m_output: 8.00
+
+permissions:
+  risk_levels:
+    high:
+      - path: "/etc/*"
+      - path: "/usr/*"
+      - cmd_prefix: "rm -rf"
+      - cmd_prefix: "sudo"
+      - cmd_prefix: "dd if="
+    medium:
+      - tool: "write_file"
+      - tool: "bash"
+    low:
+      - tool: "read_file"
+      - tool: "web_search"
+
+tone:
+  default: "casual"
+  profiles:
+    casual:
+      description: "日常粵語口語、短句、emoji OK"
+    business:
+      description: "客戶文件 — 合作邀約 tone"
+    client-doc:
+      description: "Client facing — 零 comment、直接出 artifact"
+    teaching:
+      description: "教學模式 — 直接俾 .md"
+    ot-rt:
+      description: "快速執行 — 做完先報"
+    stepwise:
+      description: "逐步執行 — 每步 confirm"
+
+fact_check:
+  mode: "normal"
+
+adversarial:
+  enabled: true
+  flag_threshold: 0
+  warn_threshold: 2

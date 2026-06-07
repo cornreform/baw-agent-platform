@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<title>BAW Agent Platform — Design v3（基於真實使用經驗）</title>
+<style>
+  body { font-family: -apple-system, 'Segoe UI', sans-serif; max-width: 920px; margin: 40px auto; padding: 0 20px; background: #0d1117; color: #e6edf3; line-height: 1.7; }
+  h1 { font-size: 2em; border-bottom: 2px solid #30363d; padding-bottom: 12px; color: #58a6ff; }
+  h2 { font-size: 1.4em; margin-top: 40px; color: #f0883e; }
+  h3 { color: #7ee787; margin-top: 28px; }
+  h4 { color: #d2a8ff; margin-top: 20px; }
+  .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin: 20px 0; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; margin-right: 6px; }
+  .tag-p0 { background: #da3633; color: #fff; }
+  .tag-p1 { background: #9e6a03; color: #fff; }
+  .tag-p2 { background: #1f6feb; color: #fff; }
+  .tag-keep { background: #238636; color: #fff; }
+  .tag-nope { background: #484f58; color: #8b949e; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.75em; font-weight: 600; margin-left: 6px; }
+  pre { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 16px; overflow-x: auto; font-size: 0.85em; }
+  code { background: #2d333b; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { border: 1px solid #30363d; padding: 10px 12px; text-align: left; }
+  th { background: #21262d; font-weight: 600; }
+  .quote { border-left: 4px solid #58a6ff; padding-left: 16px; margin: 16px 0; color: #8b949e; }
+  .flow { font-family: monospace; line-height: 1.4; }
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; }
+  hr { border: none; border-top: 1px solid #30363d; margin: 40px 0; }
+</style>
+</head>
+<body>
+
+<h1>⚡ BAW Agent Platform v3 — Black And White</h1>
+<p style="color: #8b949e; font-size: 1.1em;">由零開始 — 基於 the user 6 個月實戰經驗提煉嘅設計</p>
+
+<div class="quote">
+<strong>一句總結：</strong> Unified memory、built-in fact checking、transparent cost、一鍵 tone switch、graceful fallback。唔好要多層記憶、plugin system、self-evolution、gateway routing 呢類 overhead。
+</div>
+
+<ul>
+  <li><a href="#p0" style="color: #58a6ff;">P0 Core Requirements（必須有）</a></li>
+  <li><a href="#memory" style="color: #58a6ff;">1 — Unified Memory（一層，有評分網絡）</a></li>
+  <li><a href="#fact" style="color: #58a6ff;">2 — Built-in Fact Checker</a></li>
+  <li><a href="#model" style="color: #58a6ff;">3 — Model Router + Auto-fallback</a></li>
+  <li><a href="#tone" style="color: #58a6ff;">4 — Tone Profiles（一鍵轉 tone）</a></li>
+  <li><a href="#cost" style="color: #58a6ff;">5 — Cost Transparency</a></li>
+  <li><a href="#perm" style="color: #58a6ff;">6 — Permission by Risk Level</a></li>
+  <li><a href="#tool" style="color: #58a6ff;">7 — Graceful Tool Degradation</a></li>
+  <li><a href="#sched" style="color: #58a6ff;">8 — Scheduler + Health</a></li>
+  <li><a href="#delegate" style="color: #58a6ff;">9 — Async Delegation</a></li>
+  <li><a href="#checkpoint" style="color: #58a6ff;">10 — Checkpoint + Verify</a></li>
+  <li><a href="#keep" style="color: #58a6ff;">11 — Keep from Hermes / 唔好要做嘅嘢</a></li>
+  <li><a href="#steps" style="color: #58a6ff;">12 — Implementation</a></li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- P0 -->
+<!-- ============================================================ -->
+
+<h2 id="p0">🔴 P0 — 必須有嘅 Core</h2>
+
+<div class="section">
+<table>
+<tr><th>Priority</th><th>Feature</th><th>來自邊個 pain point</th></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td><strong>Unified memory（1 層 API）</strong></td><td>State.db 洗 sessions · 三層記憶混亂 · MEMORY.md drift · Honcho 停用 · Vault merge conflict</td></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td><strong>Built-in fact checker</strong></td><td>Price Gate · Image Gate · Pre-judging · 要另整 skill 先 fact-check 到</td></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td><strong>Model router + auto-fallback</strong></td><td>Switch model 好煩 · API format 唔同 · 某啲冇 vision · API key 散亂</td></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td><strong>One-click tone profile</strong></td><td>Business doc 太大壓力 · Client doc 出咗個人名 · Teaching doc 太多 meta</td></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td><strong>Cost transparency per call</strong></td><td>無 built-in cost tracking · system prompt 越嚟越長 · 每週手動 audit</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- 1 - Memory -->
+<!-- ============================================================ -->
+
+<h2 id="memory">1 — Unified Memory（一層 API + 內部評分網絡）</h2>
+
+<div class="section">
+<div class="quote">
+<strong>關鍵 correction from the user：</strong>「一層夠，多層只係麻煩」。Agent 唔需要知 memory 分幾層。Agent 只需要 <code>baw remember "X"</code> 同 <code>baw search "Y"</code>。<br>
+內部嘅 hot/cold storage 係 implementation detail，唔 expose 俾 agent。
+</div>
+
+<h4>Agent 見到嘅 API（得呢兩個）：</h4>
+<pre>$ baw remember "永遠用繁體中文，技術術語留英文"
+→ 記低咗 (score: 0.50)
+
+$ baw search "繁體"
+→ 1. [score 0.92] HARD GATE: 永遠繁體中文...
+   2. [score 0.78] HARD GATE: 唔好用簡體（相關聯 boosted）
+   3. [score 0.12] 三個月前用過嘅某 API（低分，自動排底）</pre>
+
+<h4>內部儲存（agent 唔需要知）：</h4>
+<pre>~/.baw/memory/
+├── store.jsonl       ← 所有記憶，一行一條 JSON
+└── edges.json        ← 記憶間的相關聯網絡（可選）
+
+// 每條記憶（agent 層面就咁睇到 content + score）
+{
+  "id": "mem_abc123",
+  "content": "HARD GATE: 永遠繁體中文（技術術語留英文）",
+  "type": "rule",
+  "created": "2026-06-07T14:00:00Z",
+  "last_accessed": "2026-06-07T16:30:00Z",
+  "access_count": 47,
+  "score": 0.92,
+  "tags":["gate","language"]
+}</pre>
+
+<h4>評分機制（核心創新，來自 the user）：</h4>
+<table>
+<tr><th>事件</th><th>分數變化</th></tr>
+<tr><td>記憶被存取（search hit / session inject / 手動 recall）</td><td>+0.05（direct boost）</td></tr>
+<tr><td>直接相關記憶（edges 上的鄰居）</td><td>+0.05 × edge_weight（associative spread）</td></tr>
+<tr><td>二度相關記憶（鄰居的鄰居）</td><td>+0.02 × edge_weight × 0.5（decaying）</td></tr>
+<tr><td>24 小時冇存取</td><td>−0.01（slow decay）</td></tr>
+<tr><td>7 日冇存取</td><td>−0.05/day（加速 decay）</td></tr>
+<tr><td>Verify agent 評分 < 5</td><td>−0.10（低品質）</td></tr>
+</table>
+
+<p><strong>用途：</strong> 高分記憶自動 inject 入 context、search 結果按 score 排序、低分記憶自動壓縮歸檔。好似人類記憶 — 成日提嘅嘢印象深刻，關聯記憶都一齊 boosted。</p>
+
+<h4>唔會有嘅問題（vs Hermes）：</h4>
+<ul>
+  <li>❌ 冇 State.db monolithic 黑盒 — 一行一條 JSONL，corrupt 都只係死一條</li>
+  <li>❌ 冇 MEMORY.md drift guard — 記憶同 file system 完全分開</li>
+  <li>❌ 冇 Vault git merge conflict — 記憶係 append-only JSONL，唔係多人改同一個 file</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- 2 - Fact Checker -->
+<!-- ============================================================ -->
+
+<h2 id="fact">2 — Built-in Fact Checker（No Hallucination Architecture）</h2>
+
+<div class="section">
+<p>唔係一個 skill — 係 <strong>core 層面嘅 constraint</strong>。每次 agent 想做出 factual claim 時，自動 trigger：</p>
+
+<pre class="flow">
+Agent 想講「呢個 hosting plan 月費 $99」
+  │
+  ├─→ 係咪 fact? → 係 → 有 source 嗎？
+  │     │                    │
+  │     │               🟢 有 source link → allow
+  │     │               🔴 冇 source → block + 自動 scrape
+  │     │
+  └─→ 係咪 opinion? → allow（唔使 source）
+</pre>
+
+<h4>三種 fact-check mode：</h4>
+<table>
+<tr><th>Mode</th><th>行為</th><th>例子</th></tr>
+<tr><td><span class="tag tag-p0">strict</span></td><td>所有 factual claim 必須有 source link / scrap result，否則 block</td><td>報價、技術規格、歷史事件</td></tr>
+<tr><td><span class="tag tag-p1">normal</span></td><td>Factual claim 盡量搵 source，冇 source 就注明「unsourced」</td><td>日常對話</td></tr>
+<tr><td><span class="tag tag-p2">relaxed</span></td><td>容許 common knowledge 唔使 source</td><td>「Python 係 programming language」</td></tr>
+</table>
+
+<p><strong>Default mode:</strong> <code>normal</code>。當 task 涉及 price / spec / date 時自動升 <code>strict</code>。</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- 3 - Model Router -->
+<!-- ============================================================ -->
+
+<h2 id="model">3 — Model Router + Auto-fallback</h2>
+
+<div class="section">
+<p>Agent 唔需要知用邊個 model。Agent 只需要講想做乜，router 自動揀：</p>
+
+<pre>$ baw "幫我 summarize 呢篇文"
+→ Router: task=summarization, 揀咗 MiniMax-M3（平 + 快 + 夠用）
+
+$ baw "幫我睇下呢張圖有咩"
+→ Router: task=vision, DeepSeek V4 Flash 冇 vision → auto-fallback MiniMax M3 vision
+
+$ baw "寫個 production web app"
+→ Router: task=code_complex, 揀咗 Claude Sonnet（貴但 code quality 好）
+</pre>
+
+<h4>Router 嘅 decision matrix：</h4>
+<table>
+<tr><th>Task type</th><th>Default model</th><th>Fallback if fail</th></tr>
+<tr><td>chat / simple QA</td><td>DeepSeek V4 Flash（平）</td><td>MiniMax-M3</td></tr>
+<tr><td>code generation</td><td>MiniMax M3</td><td>DeepSeek（慢但準）</td></tr>
+<tr><td>vision / image</td><td>MiniMax M3（有 vision）</td><td>fallback mmx CLI</td></tr>
+<tr><td>long context (>32K)</td><td>DeepSeek（1M context）</td><td>MiniMax-M3</td></tr>
+<tr><td>factual / research</td><td>DeepSeek（低 hallucination）</td><td>Claude</td></tr>
+</table>
+
+<p><strong>One-click switch:</strong> <code>baw --model claude-sonnet "do X"</code> 直接 override，唔使改 config file。</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- 4 - Tone -->
+<!-- ============================================================ -->
+
+<h2 id="tone">4 — Tone Profiles（一鍵轉 tone）</h2>
+
+<div class="section">
+<p>唔靠 prompt 記 tone rule — 係 <strong>core tone layer</strong>，所有 output 必經：</p>
+
+<table>
+<tr><th>Profile</th><th>用嚟</th><th>行為</th></tr>
+<tr><td><span class="tag tag-keep">business</span></td><td>客戶文件、正式 email</td><td>「合作邀約」代替「申請/懇請/請求授予」· 唔出個人名 · 唔出 deadline 壓力字眼</td></tr>
+<tr><td><span class="tag tag-keep">casual</span></td><td>日常同 the user 吹水</td><td>粵語口語 · 短句 · emoji OK</td></tr>
+<tr><td><span class="tag tag-keep">client-doc</span></td><td>Client facing 文件</td><td>零 comment · 零 meta · 零個人名 · 直接出 artifact</td></tr>
+<tr><td><span class="tag tag-keep">teaching</span></td><td>寫教學文件</td><td>直接俾 .md file · 唔問「要唔要 PDF/v2/加章節」</td></tr>
+<tr><td><span class="tag tag-keep">ot-rt</span></td><td>快速執行模式</td><td>OT✅RT✅ — 做完先報，唔使逐 step confirm</td></tr>
+<tr><td><span class="tag tag-keep">stepwise</span></td><td>逐步執行模式</td><td>每步報 result，等 the user 確認先繼續</td></tr>
+</table>
+
+<p><strong>Switch:</strong> <code>baw --tone business "寫 proposal"</code> 或 session 中 <code>/tone casual</code>。</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- 5 - Cost -->
+<!-- ============================================================ -->
+
+<h2 id="cost">5 — Cost Transparency</h2>
+
+<div class="section">
+<p>每句 response 自動 show cost，唔使另整 skill：</p>
+
+<pre>$ baw "list files"
+→ core/loop.py  core/llm.py  core/tools.py
+  [tokens: 127 in · 45 out · $0.0003 | session total: $0.02]
+</pre>
+
+<h4>Built-in 嘅 cost features：</h4>
+<ul>
+  <li><strong>Per-request meter</strong> — 每句 dialogue show token count + cost</li>
+  <li><strong>Session total</strong> — 呢個 session 用咗幾多</li>
+  <li><strong>Daily / monthly budget alert</strong> — threshold 到咗自動 warn</li>
+  <li><strong>Model tier auto-selection</strong> — simple task → cheap model（上面 router 已做）</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- 6 - Permission -->
+<!-- ============================================================ -->
+
+<h2 id="perm">6 — Permission by Risk Level</h2>
+
+<div class="section">
+<p>唔係 binary approve/deny。係 <strong>risk-based</strong>：</p>
+
+<table>
+<tr><th>Risk level</th><th>行為</th><th>例子</th></tr>
+<tr><td><span class="tag tag-p0">🔴 high</span></td><td>一定要問 the user</td><td>改 /etc/ · rm -rf · deploy production · 用新 API key</td></tr>
+<tr><td><span class="tag tag-p1">🟡 medium</span></td><td>問一次，可以「always allow this session」</td><td>write_file · bash · network access</td></tr>
+<tr><td><span class="tag tag-keep">🟢 low</span></td><td>自動 allow</td><td>read_file · web_search · 日常操作</td></tr>
+</table>
+
+<p>呢個係 BAW 區別於 Hermes 嘅關鍵 — Hermes 要 create auto-allowlist skill 先做到，BAW 係 built-in。</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- 7 - Tool Graceful Degradation -->
+<!-- ============================================================ -->
+
+<h2 id="tool">7 — Graceful Tool Degradation</h2>
+
+<div class="section">
+<p>Tool fail 自動 fallback，唔係 error — 唔使 create fallback skill：</p>
+
+<pre>// Built-in fallback chain for each tool
+vision_analyze:
+  → MiniMax M3 vision
+  → mmx vision CLI
+  → "呢張圖我睇唔到，請描述"
+
+web_search:
+  → web_search API
+  → curl fallback
+  → "search 暫時 unavailable"
+
+TTS:
+  → MiniMax TTS
+  → edge-tts
+  → "TTS 暫時 unavailable"</pre>
+
+<p>每個 tool 有 <strong>health status</strong> — 知道邊個 work 邊個唔 work，唔使試完先知。</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- 8 - Scheduler -->
+<!-- ============================================================ -->
+
+<h2 id="sched">8 — Scheduler + Health Dashboard</h2>
+
+<div class="section">
+<h4>Scheduler：</h4>
+<ul>
+  <li>Cron syntax + interval + one-shot</li>
+  <li><strong>Dependency chain</strong> — Job A 完咗 auto-trigger Job B</li>
+  <li><strong>Path safety</strong> — 全部 absolute path，唔用 ~</li>
+  <li><strong>Central output</strong> — <code>baw job list</code> 睇所有 job 嘅 status/output/error</li>
+  <li><strong>Auto-retry</strong> — fail 咗自動 retry 3 次</li>
+</ul>
+
+<h4>Health Dashboard：</h4>
+<pre>$ baw status
+System:       🟢 所有 subsystem 正常
+Model API:    🟢 MiniMax · DeepSeek
+Memory:       🟢 342 entries, avg score 0.61
+Scheduler:    🟢 5 jobs, 0 failed
+Storage:      🟢 62G/458G (15%)
+Last restart: 2h ago
+</pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- 9 - Delegation -->
+<!-- ============================================================ -->
+
+<h2 id="delegate">9 — Async Delegation</h2>
+
+<div class="section">
+<p>Delegation 係 <strong>async</strong>，唔係 synchronous：</p>
+
+<pre>$ baw "研究下呢個 topic，做完話我知"
+→ [Task #42 已放 background]
+→ BAW 繼續做其他嘢
+→ [Task #42 done] 研究結果：...
+
+// 可以 check status
+$ baw task status 42
+→ In progress: 3/5 sources scraped, estimated 2 min remaining
+
+// Subagent 可以返嚟問問題（唔係一 fail 就死）
+$ baw task 42
+→ Subagent: 「我見到兩個唔同嘅 price，邊個啱？」
+</pre>
+
+<h4>Key improvements vs Hermes：</h4>
+<ul>
+  <li>Background execution — parent 中斷唔會 kill subagent</li>
+  <li>Cost estimate before delegate — 「呢個 task 預計 $0.05，繼續？」</li>
+  <li>Subagent can ask questions — 唔係 black box fail</li>
+  <li>State inspection — 可以睇 subagent 做到邊</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- 10 - Checkpoint -->
+<!-- ============================================================ -->
+
+<h2 id="checkpoint">10 — Checkpoint + Verify（每步評分）</h2>
+
+<div class="section">
+<p>任何 state-changing op → auto checkpoint → spawn Verify agent（fresh, no memory, no prefix）→ 評分 0-10 → < 7 最多 loop 3 次。</p>
+
+<p><span class="tag tag-p0">Built-in</span> — 唔係 skill，唔係外掛。</p>
+
+<pre class="flow">
+Main Agent 完成 step
+  │
+  ├─→ Auto save checkpoint（change log 寫一條）
+  │
+  └─→ Spawn Verify agent（fresh, no context）
+        │
+        ├─ Score ≥ 7 → ✅ → 繼續
+        │
+        └─ Score < 7 → ❌ → 修正 → 再 Verify（max 3 次）
+                                │
+                          3 次都 fail → 等 the user 決定
+</pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- 11 - Keep vs Nope -->
+<!-- ============================================================ -->
+
+<h2 id="keep">11 — Keep from Hermes / 唔好要做嘅嘢</h2>
+
+<div class="section">
+
+<h4>🟢 一定要保留（Hermes 做得好嘅）：</h4>
+<table>
+<tr><th>Feature</th><th>點解好</th></tr>
+<tr><td><strong>Skills system</strong></td><td>Modular, reusable, git-tracked. Killer feature</td></tr>
+<tr><td><strong>Subagent delegation</strong></td><td>Parallel work 極有用（但要改做 async + cost transparency）</td></tr>
+<tr><td><strong>Multi-platform delivery</strong></td><td>Telegram + file 一次過出</td></tr>
+<tr><td><strong>Granular tools</strong></td><td>tools > prompts。Tool 有明確 contract</td></tr>
+<tr><td><strong>Vision tool</strong></td><td>第一時間睇圖</td></tr>
+<tr><td><strong>TTS</strong></td><td>Cantonese voice message 好有用</td></tr>
+<tr><td><strong>Image generation</strong></td><td>Built-in, no extra setup</td></tr>
+</table>
+
+<h4>🔴 唔好要（over-engineering）：</h4>
+<table>
+<tr><th>Feature</th><th>原因</th></tr>
+<tr><td>多層次記憶 system expose 俾 agent</td><td>一層夠，多層只係麻煩</td></tr>
+<tr><td>Self-evolution engine</td><td>冇用，transparency > automation</td></tr>
+<tr><td>External memory service（Honcho）</td><td>自己 local 搞掂</td></tr>
+<tr><td>Multiple API format support</td><td>全部行 unified API</td></tr>
+<tr><td>Gateway 做 agent routing</td><td>Agent 直接 call model</td></tr>
+<tr><td>Nested delegation > 2 levels</td><td>Flat + parallel > deep nesting</td></tr>
+<tr><td>Plugin system</td><td>Skills + tools 夠，plugin 係 overhead</td></tr>
+<tr><td>Open source upstream sync</td><td>自己 platform 唔使 upstream sync</td></tr>
+<tr><td>System prompt injection / prefix</td><td>用 explicit context 代替</td></tr>
+<tr><td>Cron path ~ mess</td><td>全部 absolute path</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- 12 - Implementation -->
+<!-- ============================================================ -->
+
+<h2 id="steps">12 — Implementation（5 步）</h2>
+
+<div class="section">
+
+<h3>Step 1 — Core Loop + Permission + Memory</h3>
+<p><span class="tag tag-p0">P0</span></p>
+<p>Agent loop + unified LLM + permission engine + memory store（JSONL append-only）</p>
+
+<h3>Step 2 — Fact Checker + Tone Profiles + Cost Meter</h3>
+<p><span class="tag tag-p0">P0</span></p>
+<p>Core layer constraints: fact verification, tone transformation, per-request cost tracking</p>
+
+<h3>Step 3 — Checkpoint + Verify + Tool Degradation</h3>
+<p><span class="tag tag-p1">P1</span></p>
+<p>Auto-checkpoint on state change, Verify subagent, graceful fallback chains</p>
+
+<h3>Step 4 — Async Delegation + Scheduler + Health</h3>
+<p><span class="tag tag-p1">P1</span></p>
+<p>Background task execution, cron with dependency chain, health dashboard</p>
+
+<h3>Step 5 — Telegram Gateway + Skills System</h3>
+<p><span class="tag tag-p2">P2</span></p>
+<p>Telegram bot interface, SKILL.md loading + invocation</p>
+</div>
+
+<hr>
+
+<p style="color: #8b949e; text-align: center;">BAW v3 — 2026-06-07<br>
+基於 the user 6 個月 Hermes 實戰經驗<br>
+P0: Unified Memory · Fact Checker · Model Router · Tone Profiles · Cost Transparency</p>
+
+</body>
+</html>
