@@ -9,14 +9,19 @@ from __future__ import annotations
 
 # ── Strip long plan descriptions ──
 
-def _shorten(desc: str, max_len: int = 60) -> str:
-    """Shorten a step description: strip tool/outcome after ' — '."""
-    # Take only the action part (before first em-dash or hyphen-dash)
-    for sep in (" — ", " - ", " — "):
+def _shorten(desc: str, max_len: int = 50) -> str:
+    """Shorten a step description: strip tool/outcome/details."""
+    # Strip common verbose patterns
+    for sep in (" — ", " —", " - ", " — ", "by running ", "to get ", "to see ",
+                "to confirm ", "to check ", "to determine ", "to verify ",
+                " — ", "– ", "- ", ": "):
         if sep in desc:
             desc = desc.split(sep)[0].strip()
+    # Also cut at first period if it's long
+    if len(desc) > max_len and ". " in desc:
+        desc = desc.split(". ")[0].strip()
     if len(desc) > max_len:
-        desc = desc[:max_len] + "…"
+        desc = desc[:max_len-1] + "…"
     return desc
 
 
