@@ -219,13 +219,15 @@ User prompt
 - **原因**: 用戶養咗兩隻狗（黑白配），Angel/Devil 哲學更貼切
 - **影響**: 所有檔案名、CLI 入口、變數名全部改曬
 
-### D-002: Angel/Devil 雙魂法庭
+### D-002: Angel/Devil 雙魂法庭（v2 — 同步獨立分析）
 
-- **日期**: 2026-06-07
-- **Decision**: Devil 永遠先發言，零執行權限。Angel 聽完先回應同執行。
-- **原因**: 傳統 agent 無 internal critic，容易出錯。法庭式對抗提高安全性
-- **格式**: `[Devil: X/10]` + `[Angel: Y/10]` — score parsing 決定 BLOCK
-- **注意**: Devil persona 係 auto-generated foil，唔係 hardcoded
+- **日期**: 2026-06-07（初始版），2026-06-07（v2 重寫）
+- **v1 設計（已廢棄）**: Devil 永遠先發言，Angel 聽完再回應。順序分析會 bias Angel 嘅判斷。
+- **v2 新設計**: Devil 同 Angel 同步獨立分析同一個目標，各自評分，互不知情。
+- **原因**: 避免順序 bias。兩個聲音都反映真實獨立觀點。BAW 以中立角色聆聽雙方。
+- **格式**: `[Devil: X/10]` + `[Angel: Y/10]` — 獨立評分，無先後次序
+- **法庭 vs 執行分離**: Court phase 冇執行權限；Execution phase 冇法庭。結論確立後直接執行。
+- **用戶態度**: BAW 回覆時保持中立，唔討好用家，會勇於反駁。用家想法唔一定合理。
 
 ### D-003: 協議無關 LLM 架構
 
@@ -439,32 +441,48 @@ register_search_provider(
 
 ---
 
-## 8. 天使/魔鬼法庭細則
+## 8. 天使/魔鬼法庭細則（v2 — 同步獨立分析）
 
-### 8.1 Devil 角色
+### 8.1 Devil 角色（Independent Critic）
 
-- **人設**: 自動生成嘅 foil — Angel 越 trustful，Devil 越 skeptical
-- **權限**: 零執行權限 — 冇 tools、冇 bash、冇寫 file
+- **人設**: 自動生成嘅 foil — 分析目標時從風險/問題角度出發
+- **權限**: 零執行權限 — 冇 tools、冇 bash、冇寫 file（法庭階段）
+- **獨立性**: 唔知道天使講咗咩，純粹從自己角度分析
 - **輸出**: 純文字分析 + `[Devil: X/10]` 分數
-- **目的**: 保護 Angel 唔好犯錯，唔係為反對而反對
+- **目的**: 提供真實嘅反對觀點，確保 BAW 唔會盲目同意
 
-### 8.2 Angel 角色
+### 8.2 Angel 角色（Independent Supporter）
 
-- **人設**: 由 SOUL.md + config 決定
-- **權限**: 有齊所有工具
-- **流程**: 聽完 Devil 先決定點做
-- **輸出**: 回應 + `[Angel: Y/10]` 分數
+- **人設**: 自動生成嘅 complement — 分析目標時從可行性/價值角度出發
+- **權限**: 零執行權限（法庭階段）
+- **獨立性**: 唔知道魔鬼講咗咩，純粹從自己角度分析
+- **輸出**: 純文字分析 + `[Angel: Y/10]` 分數
+- **目的**: 提供真實嘅支持觀點，確保 BAW 睇到機會同可能性
 
-### 8.3 分數決策
+### 8.3 BAW 中立角色
 
-| 條件 | 結果 |
-|------|------|
-| Angel > Devil | ✅ 繼續執行 |
-| Devil > Angel | ⛔ BLOCK，上報用戶 |
-| Devil 分數 >= `flag_threshold` | Flag 標記 |
-| Devil 分數 >= `warn_threshold` | Warn + 可以 override |
+- BAW（系統本身）唔係天使，而係中立嘅聆聽者
+- 收到兩個獨立分析後，BAW 用常識同判斷力 synthesise
+- BAW 嘅回應唔係「天使嘅回應」—— 係 BAW 自己嘅中立判斷
+- 可以同意魔鬼多啲、天使多啲、或者兩邊都唔完全同意
+- **唔討好用家** — 用家要求唔一定合理，BAW 會指出
 
-### 8.4 熄咗法庭
+### 8.4 辯論階段（互動模式）
+
+- BAW 俾出中立分析後，用家可以回應
+- 用家 ↔ Agent 來回討論
+- BAW 可以堅持己見、讓步、或者提出替代方案
+- 直至雙方達成最終共識
+
+### 8.5 執行階段（法庭之後）
+
+- 結論確立後，BAW 進入執行模式
+- 唔會重新開庭（結論已確立）
+- Plan → Step → Verify → Recover
+- 執行失敗時唔問用家 — 自動 retry/replan/rollback
+- 所有策略用盡先通知
+
+### 8.6 熄咗法庭
 
 ```bash
 baw --cfg set adversarial.enabled false

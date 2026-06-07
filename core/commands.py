@@ -325,18 +325,23 @@ def _cmd_rethink(args: list[str], config: dict, data_dir: Path, verbose: bool) -
 
 
 def _cmd_court() -> str:
-    """Show the last Angel/Devil court verdict."""
+    """Show the last court verdict — both voices, independent."""
     global LAST_COURT_VERDICT
     if not LAST_COURT_VERDICT:
         return "No previous court verdict. Run a prompt with adversarial enabled first."
 
+    d = LAST_COURT_VERDICT
     return (
-        f"👿 **Devil Score**: {LAST_COURT_VERDICT.get('devil_score', '?')}/10\n"
-        f"😇 **Angel Score**: {LAST_COURT_VERDICT.get('angel_score', '?')}/10\n"
-        f"**Decision**: {LAST_COURT_VERDICT.get('decision', '?')}\n"
-        f"**Should stop**: {LAST_COURT_VERDICT.get('should_stop', '?')}\n\n"
-        f"**Devil said:**\n{LAST_COURT_VERDICT.get('devil', {}).get('content', 'N/A')}\n\n"
-        f"**Angel said:**\n{LAST_COURT_VERDICT.get('angel', {}).get('content', 'N/A')}"
+        f"⚖️ **BAW Court — Independent Analysis**\n\n"
+        f"👿 **Devil (Independent Critique)** — Risk: {d.get('devil_score', '?')}/10\n"
+        f"{d.get('devil', {}).get('content', 'N/A')}\n\n"
+        f"😇 **Angel (Independent Support)** — Feasibility: {d.get('angel_score', '?')}/10\n"
+        f"{d.get('angel', {}).get('content', 'N/A')}\n\n"
+        f"━━━ **Assessment** ───\n"
+        f"Agreement level: {d.get('agreement_level', '?')} "
+        f"(gap: {d.get('score_gap', '?')} pts)\n"
+        f"Neither voice has execution power in court. "
+        f"BAW synthesizes both perspectives neutrally."
     )
 
 

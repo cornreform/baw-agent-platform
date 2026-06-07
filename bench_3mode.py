@@ -64,7 +64,7 @@ def run_mode(mode_name: str) -> dict:
 
     court = AdversarialCourt(model, system_prompt, config)
     from core import render as html
-    from core.loop import build_system_prompt, _format_verdict, format_cost_summary, record_cost, reset_cost
+    from core.loop import build_system_prompt, format_cost_summary, record_cost, reset_cost
 
     reset_cost()
     session_cost = 0.0
