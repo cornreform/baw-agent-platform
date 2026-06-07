@@ -105,7 +105,7 @@ def court_verdict(verdict: dict) -> str:
 # ── BTW ──
 
 def btw_header() -> str:
-    return "⚡ Quick Reply"
+    return "⚡ Quick Reply\n"
 
 
 # ── Front desk delegation ──
