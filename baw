@@ -212,12 +212,33 @@ Examples:
         status = (task_dir / "status.txt").read_text(encoding="utf-8").strip() if (task_dir / "status.txt").exists() else "unknown"
         prompt_text = (task_dir / "prompt.txt").read_text(encoding="utf-8") if (task_dir / "prompt.txt").exists() else ""
         stdout_text = (task_dir / "stdout.txt").read_text(encoding="utf-8") if (task_dir / "stdout.txt").exists() else ""
+        stderr_text = (task_dir / "stderr.txt").read_text(encoding="utf-8") if (task_dir / "stderr.txt").exists() else ""
+        pid_text = (task_dir / "pid.txt").read_text(encoding="utf-8").strip() if (task_dir / "pid.txt").exists() else ""
+
+        # Status icon
+        status_icon = {"running": "▶️", "done": "✅", "failed": "❌", "cancelled": "⛔", "error": "❌"}.get(status, "❓")
+
         print(f"📋 Task: {args.task_id}")
-        print(f"   Status: {status}")
+        print(f"   {status_icon} Status: {status}")
         if prompt_text:
-            print(f"   Goal: {prompt_text[:100]}")
+            print(f"   📝 Goal: {prompt_text[:120]}")
+        if pid_text:
+            # Check if PID is still alive
+            import os as _os
+            pid_alive = False
+            try:
+                pid = int(pid_text)
+                _os.kill(pid, 0)
+                pid_alive = True
+            except (ValueError, OSError, ProcessLookupError):
+                pass
+            print(f"   🔢 PID: {pid_text} {'🟢 alive' if pid_alive else '⚫ exited'}")
+        if status == "running":
+            print(f"   ⏳ Still running — check again later with: baw --task-id {args.task_id}")
         if stdout_text:
-            print(f"\n{stdout_text[:1000]}")
+            print(f"\n📄 Output:\n{stdout_text[:1000]}")
+        if stderr_text:
+            print(f"\n⚠️ Stderr:\n{stderr_text[:500]}")
         return
 
     # ── Background executor mode: run and save to task dir ──
