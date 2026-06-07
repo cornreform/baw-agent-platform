@@ -122,6 +122,10 @@ Examples:
     subcommands.add_argument("--skill-run", metavar="NAME", help="Run a skill by name")
     subcommands.add_argument("--skill-args", default="",
                              help="Arguments to pass to the skill (use with --skill-run)")
+    subcommands.add_argument("--learn-skill", metavar="DESCRIPTION",
+                             help="Autonomously learn and create a skill from a description")
+    subcommands.add_argument("--learn-url", metavar="URL",
+                             help="Fetch a URL and learn a skill from its content")
     subcommands.add_argument("--board", action="store_true", help="Generate HTML dashboard")
 
     args = parser.parse_args()
@@ -353,6 +357,43 @@ Examples:
         from baw.core.board import generate as gen_board
         path = gen_board(data_dir)
         print(f"📊 Dashboard: {path}")
+        return
+
+    # ── Learn skill ──
+    if args.learn_skill:
+        from baw.core.learn import learn_from_description
+        if not args.learn_skill.strip():
+            print("❌ Please provide a skill description")
+            sys.exit(1)
+        print(f"🧠 Learning skill from description...")
+        result = learn_from_description(args.learn_skill, data_dir, config,
+                                         verbose=args.verbose, dry_run=args.dry_run)
+        if result["error"]:
+            print(f"❌ {result['error']}")
+        else:
+            print(f"✅ Created skill '{result['name']}' — {result['steps']} steps")
+            if result["file"]:
+                print(f"   Saved: {result['file']}")
+            if args.verbose:
+                print(f"\n─── Analysis ───\n{result['analysis'][:500]}")
+        return
+
+    if args.learn_url:
+        from baw.core.learn import learn_from_url
+        if not args.learn_url.strip():
+            print("❌ Please provide a URL")
+            sys.exit(1)
+        print(f"🌐 Fetching {args.learn_url}...")
+        result = learn_from_url(args.learn_url, data_dir, config,
+                                 verbose=args.verbose, dry_run=args.dry_run)
+        if result["error"]:
+            print(f"❌ {result['error']}")
+        else:
+            print(f"✅ Created skill '{result['name']}' — {result['steps']} steps")
+            if result["file"]:
+                print(f"   Saved: {result['file']}")
+            if args.verbose:
+                print(f"\n─── Analysis ───\n{result['analysis'][:500]}")
         return
 
     # Agent mode
