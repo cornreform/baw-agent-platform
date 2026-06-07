@@ -427,13 +427,24 @@ git clone https://github.com/cornreform/baw-agent-platform.git ~/baw
 cd ~/baw
 
 <span class="cmt"># Install dependencies</span>
-pip install pyyaml duckduckgo-search
+pip install pyyaml httpx duckduckgo-search croniter
 
 <span class="cmt"># Create CLI link</span>
 ln -sf ~/baw/baw ~/.local/bin/baw
 
 <span class="cmt"># Confirm</span>
 baw --version</pre>
+
+      <div class="callout warn">
+        <h4>⚠️ <span class="lang-zh">如果 `baw: command not found`</span><span class="lang-en">If `baw: command not found`</span></h4>
+        <p>
+          <span class="lang-zh">將 <code>~/.local/bin</code> 加入 PATH：</span>
+          <span class="lang-en">Add <code>~/.local/bin</code> to your PATH:</span><br>
+          <strong>Bash:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc</code><br>
+          <strong>Zsh:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc</code><br>
+          <strong>Fish:</strong> <code>fish_add_path "$HOME/.local/bin"</code>
+        </p>
+      </div>
 
       <h3>
         <span class="lang-zh">設定 API Keys</span>
