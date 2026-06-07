@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.12
+#!/usr/bin/env -S uv run python
 """
 BAW Agent Platform — CLI Entry Point
 Linux + macOS compatible
@@ -114,6 +114,15 @@ Examples:
     subcommands.add_argument("--dream", action="store_true", help="Run weekly self-curation (silent)")
     subcommands.add_argument("--search-provider", nargs="+",
                              help="Commands: list | guide <name> | api <name> | test <name> <query>")
+    subcommands.add_argument("--schedule-list", action="store_true", help="List all scheduled tasks")
+    subcommands.add_argument("--schedule-add", nargs=3, metavar=("NAME", "CRON", "COMMAND"),
+                             help="Add a scheduled task: --schedule-add mytask '0 9 * * *' 'do something'")
+    subcommands.add_argument("--schedule-rm", metavar="NAME", help="Remove a scheduled task")
+    subcommands.add_argument("--skill-list", action="store_true", help="List all available skills")
+    subcommands.add_argument("--skill-run", metavar="NAME", help="Run a skill by name")
+    subcommands.add_argument("--skill-args", default="",
+                             help="Arguments to pass to the skill (use with --skill-run)")
+    subcommands.add_argument("--board", action="store_true", help="Generate HTML dashboard")
 
     args = parser.parse_args()
 
@@ -278,6 +287,72 @@ Examples:
         report = dream(data_dir, dry_run=args.dry_run)
         if report["changes"]:
             print(json.dumps(report, ensure_ascii=False, indent=2))
+        return
+
+    # ── Schedule commands ──
+    if args.schedule_list:
+        from baw.core.scheduler import Scheduler
+        sched = Scheduler(data_dir)
+        print(sched.status_report())
+        return
+
+    if args.schedule_add:
+        name, cron_expr, command = args.schedule_add
+        from baw.core.scheduler import Scheduler, ScheduledTask
+        sched = Scheduler(data_dir)
+        sched.add_task(ScheduledTask(name=name, cron=cron_expr, command=command))
+        print(f"✅ Scheduled '{name}' — `{cron_expr}` → `{command[:60]}`")
+        return
+
+    if args.schedule_rm:
+        from baw.core.scheduler import Scheduler
+        sched = Scheduler(data_dir)
+        if sched.remove_task(args.schedule_rm):
+            print(f"✅ Removed '{args.schedule_rm}'")
+        else:
+            print(f"❌ Task '{args.schedule_rm}' not found")
+        return
+
+    # ── Skill commands ──
+    if args.skill_list:
+        from baw.core.skills import SkillRegistry
+        reg = SkillRegistry(data_dir)
+        print(reg.status_report())
+        return
+
+    if args.skill_run:
+        from baw.core.skills import SkillRegistry
+        from baw.tools import register_all as reg_tools
+        from baw.core.loop import run_agent
+        reg_tools()
+        reg = SkillRegistry(data_dir)
+        skill = reg.get_skill(args.skill_run)
+        if not skill:
+            print(f"❌ Skill '{args.skill_run}' not found")
+            sys.exit(1)
+        # Run each step sequentially
+        for i, step in enumerate(skill.steps):
+            prompt = skill.build_prompt(i, args.skill_args)
+            print(f"🧠 Skill step {i+1}/{len(skill.steps)}: {step.get('name', '?')}")
+            resp, info = run_agent(
+                prompt=prompt,
+                config=config,
+                data_dir=data_dir,
+                mode=skill.get_mode(),
+                verbose=args.verbose,
+                interactive=False,
+            )
+            print(resp)
+            if info.get("adversarial") == "flagged":
+                print(f"⛔ Blocked at step {i+1}")
+                break
+        return
+
+    # ── Board / Dashboard ──
+    if args.board:
+        from baw.core.board import generate as gen_board
+        path = gen_board(data_dir)
+        print(f"📊 Dashboard: {path}")
         return
 
     # Agent mode
