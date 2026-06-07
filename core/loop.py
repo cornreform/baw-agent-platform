@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from .llm import get_model, call_llm, calculate_cost
+from .llm import get_model, call_llm, call_llm_with_fallback, calculate_cost
 from .context import Context
 from .tools import get_openai_tools, execute_tool, list_tools
 from .permission import PermissionEngine
@@ -267,12 +267,15 @@ def run_agent(
 
         response = angel_response
     else:
-        # No court — direct LLM call
-        response = call_llm(
-            model,
+        # No court — direct LLM call with fallback
+        fb_result = call_llm_with_fallback(
+            config,
             ctx.to_openai_messages(),
             tools=get_openai_tools(),
+            temperature=0.7,
         )
+        response = fb_result.response
+        model_used = fb_result.model_used
 
         cost = calculate_cost(model, response.input_tokens, response.output_tokens)
         session_cost += cost
@@ -374,12 +377,16 @@ def run_agent(
             ctx.add_assistant("", [tc])
             ctx.add_tool_result(tc.get("id", ""), name, result)
 
-        # Next LLM call with tool results
-        response = call_llm(
-            model,
+        # Next LLM call with tool results — use fallback
+        fb_result = call_llm_with_fallback(
+            config,
             ctx.to_openai_messages(),
             tools=get_openai_tools(),
+            temperature=0.7,
         )
+        response = fb_result.response
+        if fb_result.model_used == "fallback":
+            model_used = "fallback"
         total_llm_calls += 1
 
         cost = calculate_cost(model, response.input_tokens, response.output_tokens)

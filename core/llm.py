@@ -308,3 +308,83 @@ def calculate_cost(model: ModelDef, input_tokens: int, output_tokens: int) -> fl
         (input_tokens / 1_000_000) * model.cost_per_1m_input
         + (output_tokens / 1_000_000) * model.cost_per_1m_output
     )
+
+
+# ── Auto-fallback ──────────────────────────────────────────────
+
+
+@dataclass
+class FallbackResult:
+    response: LLMResponse
+    model_used: str  # "primary" | "fallback"
+    primary_model: str
+    fallback_model: str | None = None
+    error: str | None = None
+
+
+def call_llm_with_fallback(
+    config: dict,
+    messages: list[dict],
+    tools: Optional[list[dict]] = None,
+    primary_id: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: Optional[int] = None,
+) -> FallbackResult:
+    """Call LLM with auto-fallback.
+
+    Tries primary model first. On network/auth/timeout error,
+    automatically falls back to the configured fallback model.
+
+    Config:
+      model.default  -> primary model ID
+      model.fallback -> fallback model ID
+
+    Returns FallbackResult with which model was used.
+    """
+    model_cfg = config.get("model", {})
+    primary_id = primary_id or model_cfg.get("default", "deepseek-v4-flash")
+    fallback_id = model_cfg.get("fallback", "")
+
+    # Try primary
+    try:
+        model = get_model(config, primary_id)
+        resp = _call_with_timeout(model, messages, tools, temperature, max_tokens)
+        return FallbackResult(
+            response=resp,
+            model_used="primary",
+            primary_model=primary_id,
+        )
+    except (RuntimeError, httpx.HTTPStatusError, httpx.TimeoutException,
+            httpx.ConnectError, ConnectionError, TimeoutError) as e:
+        error_msg = str(e)
+        if not fallback_id:
+            raise  # No fallback configured — let it propagate
+
+    # Fallback
+    try:
+        model = get_model(config, fallback_id)
+        resp = _call_with_timeout(model, messages, tools, temperature, max_tokens)
+        return FallbackResult(
+            response=resp,
+            model_used="fallback",
+            primary_model=primary_id,
+            fallback_model=fallback_id,
+            error=error_msg,
+        )
+    except Exception as e2:
+        # Both failed — raise combined error
+        raise RuntimeError(
+            f"Primary ({primary_id}) failed: {error_msg}\n"
+            f"Fallback ({fallback_id}) failed: {e2}"
+        )
+
+
+def _call_with_timeout(
+    model: ModelDef,
+    messages: list[dict],
+    tools: Optional[list[dict]] = None,
+    temperature: float = 0.7,
+    max_tokens: Optional[int] = None,
+) -> LLMResponse:
+    """Wrapper for call_llm with a reasonable timeout."""
+    return call_llm(model, messages, tools, temperature, max_tokens)

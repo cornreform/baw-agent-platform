@@ -40,15 +40,16 @@ Never hold back. The Angel will hear you and decide. Your job is to be the voice
 class DevilVoice:
     """The opposing counsel — speaks first, no execution power."""
 
-    def __init__(self, model: "ModelDef", angel_persona: str):
+    def __init__(self, model: "ModelDef", angel_persona: str, config: Optional[dict] = None):
         self.model = model
+        self.config = config or {}
         self.system_prompt = DEVIL_SYSTEM_PROMPT_TEMPLATE.format(
             angel_persona=angel_persona
         )
 
     def speak(self, user_input: str, context: str = "") -> dict:
         """Call the Devil voice. Text-only, no tools."""
-        from .llm import call_llm, calculate_cost
+        from .llm import call_llm_with_fallback, calculate_cost
 
         messages = [{"role": "system", "content": self.system_prompt}]
         if context:
@@ -60,7 +61,11 @@ class DevilVoice:
             "content": f"Analyze this user request:\n\n{user_input}",
         })
 
-        response = call_llm(self.model, messages, tools=None, temperature=0.8)
+        fb_result = call_llm_with_fallback(
+            self.config, messages, tools=None,
+            primary_id=self.model.id, temperature=0.8,
+        )
+        response = fb_result.response
 
         score_match = re.search(
             r"\[Devil:\s*(\d+(?:\.\d+)?)\s*/\s*10\]",
@@ -84,8 +89,9 @@ class DevilVoice:
 class AngelVoice:
     """The executor personality — user-defined persona with tool access."""
 
-    def __init__(self, model: "ModelDef", system_prompt: str):
+    def __init__(self, model: "ModelDef", system_prompt: str, config: Optional[dict] = None):
         self.model = model
+        self.config = config or {}
         self.system_prompt = system_prompt
 
     def respond(
@@ -95,7 +101,7 @@ class AngelVoice:
         memory_context: str = "",
     ) -> dict:
         """Call the Angel voice with Devil's analysis injected. Has tool access."""
-        from .llm import call_llm, calculate_cost
+        from .llm import call_llm_with_fallback, calculate_cost
         from .tools import get_openai_tools
 
         enhanced = (
@@ -120,9 +126,11 @@ class AngelVoice:
             )
         messages.append({"role": "user", "content": enhanced})
 
-        response = call_llm(
-            self.model, messages, tools=get_openai_tools(), temperature=0.7
+        fb_result = call_llm_with_fallback(
+            self.config, messages, tools=get_openai_tools(),
+            primary_id=self.model.id, temperature=0.7,
         )
+        response = fb_result.response
 
         score_match = re.search(
             r"\[Angel:\s*(\d+(?:\.\d+)?)\s*/\s*10\]",
@@ -156,8 +164,8 @@ class AdversarialCourt:
     ):
         self.model = model
         self.config = config or {}
-        self.devil = DevilVoice(model, system_prompt)
-        self.angel = AngelVoice(model, system_prompt)
+        self.devil = DevilVoice(model, system_prompt, config)
+        self.angel = AngelVoice(model, system_prompt, config)
 
     def hold_court(
         self, user_input: str, memory_context: str = ""
