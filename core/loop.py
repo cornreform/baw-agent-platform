@@ -425,10 +425,12 @@ def run_agent(
     # Request a plan from the LLM — use separate context (no tool_calls issue)
     plan_prompt = (
         f"[ORCHESTRATOR] Goal: {prompt}\n\n"
-        f"Write a detailed step-by-step execution plan. "
+        f"Write a step-by-step execution plan.\n"
         f"Each step must be SMALL (max 1-2 tool calls).\n"
+        f"Describe each step in Traditional Chinese / Cantonese — "
+        f"use human language, NOT raw commands.\n"
         f"Format each step as:\n"
-        f"  Step N: <action> — <expected tool> — <expected outcome>\n\n"
+        f"  Step N: <粵語描述步驟做咩> — <tool> — <expected outcome>\n\n"
         f"Reply with ONLY the plan, numbered 1..N."
     )
     _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": plan_prompt}]
@@ -471,9 +473,9 @@ def run_agent(
     _display_log: list[str] = []
     # Capture the plan text as a display of the LLM's analysis
     if _execution_plan:
-        _display_log.append(dsp.phase_plan(_execution_plan))
-        if verbose:
-            print(dsp.phase_plan(_execution_plan))
+        _plan_display = dsp.phase_plan(_execution_plan)
+        _display_log.append(_plan_display)
+        print(_plan_display)
 
     # ── Phase 3: Execute plan step by step ──
     max_iterations = 40  # More iterations for plan-following
