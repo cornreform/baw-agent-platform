@@ -9,6 +9,21 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+# ── Session state (set by CLI after each run_agent call) ──────
+
+LAST_PROMPT: str | None = None
+LAST_COURT_VERDICT: dict | None = None
+
+
+def set_last_run(prompt: str, info: dict):
+    """Store the last prompt and court verdict for /rethink and /court."""
+    global LAST_PROMPT, LAST_COURT_VERDICT
+    LAST_PROMPT = prompt
+    if info and info.get("adversarial_raw"):
+        LAST_COURT_VERDICT = info["adversarial_raw"]
+
+
+# ── Router ─────────────────────────────────────────────────────
 
 def handle_slash(command: str, args: list[str],
                  config: dict, data_dir: Path, verbose: bool = False) -> Optional[str]:
@@ -64,26 +79,43 @@ def handle_slash(command: str, args: list[str],
     if cmd == "tools":
         return _cmd_tools()
 
+    # ── New P1 commands ──
+    if cmd in ("rethink", "rt"):
+        return _cmd_rethink(args, config, data_dir, verbose)
+
+    if cmd in ("court", "ct"):
+        return _cmd_court()
+
+    if cmd in ("fresh", "fr", "raw"):
+        return _cmd_fresh(args, config, data_dir, verbose)
+
     # Not a slash command
     return None
 
+
+# ── Command handlers ───────────────────────────────────────────
 
 def _cmd_help() -> str:
     lines = [
         "BAW Slash Commands:",
         "",
-        "  /help, /h, /?     Show this help",
-        "  /version, /v      Show BAW version + last commit",
-        "  /status, /s       Show BAW status (model, memory, tools)",
-        "  /remember, /r     Store a memory entry",
-        "  /search, /q       Search memory",
-        "  /model, /m        Switch model (check config.yaml)",
-        "  /tone, /t         Switch tone profile",
-        "  /dream, /d        Run weekly self-curation",
-        "  /tools            List available tools",
-        "  /provider, /sp    Search provider: list | api <name> | test <name> <query>",
-        "  /clear, /c        Clear screen",
-        "  Ctrl+D            Exit interactive mode",
+        "  /help, /h, /?         Show this help",
+        "  /version, /v          Show BAW version + last commit",
+        "  /status, /s           Show BAW status (model, memory, tools)",
+        "  /remember, /r         Store a memory entry",
+        "  /search, /q           Search memory",
+        "  /model, /m            Switch model (check config.yaml)",
+        "  /tone, /t             Switch tone profile",
+        "  /dream, /d            Run weekly self-curation",
+        "  /tools                List available tools",
+        "  /provider, /sp        Search provider: list | api <name> | test <name> <query>",
+        "  /clear, /c            Clear screen",
+        "",
+        "  [P1] /rethink, /rt    Re-run last prompt, force alternative analysis",
+        "  [P1] /court, /ct      Show last Angel/Devil court verdict",
+        "  [P1] /fresh, /fr, /raw  Fresh start: no soul, no memories, raw model",
+        "",
+        "  Ctrl+D                Exit interactive mode",
         "",
         "Anything else is sent to the BAW agent as a prompt.",
     ]
@@ -106,7 +138,6 @@ def _cmd_status(config: dict, data_dir: Path) -> str:
     from .memory import MemoryStore
     from .tools import list_tools
 
-    # Ensure tools are registered
     try:
         from ..tools import register_all
         register_all()
@@ -133,7 +164,6 @@ def _cmd_status(config: dict, data_dir: Path) -> str:
     tools = [t.name for t in list_tools()]
     lines.append(f"  Tools ({len(tools)}): {', '.join(tools)}")
 
-    # Git status
     try:
         dirty = subprocess.run(
             ["git", "status", "--short"],
@@ -258,3 +288,80 @@ def _cmd_tools() -> str:
     for t in tools:
         lines.append(f"  {t.name}: {t.description[:80]}")
     return "\n".join(lines)
+
+
+# ── P1: New commands ────────────────────────────────────────────
+
+def _cmd_rethink(args: list[str], config: dict, data_dir: Path, verbose: bool) -> str:
+    """Force the model to rethink the last prompt and give alternative results."""
+    from ..tools import register_all
+    register_all()
+    from .loop import run_agent
+
+    prompt = " ".join(args) if args else LAST_PROMPT
+    if not prompt:
+        return "No previous prompt to rethink. Run a prompt first."
+
+    rethink_prompt = (
+        f"[RETHINK] The user asked: {prompt}\n\n"
+        f"Your previous answer may have been wrong or incomplete.\n"
+        f"Challenge ALL assumptions. Consider alternatives you dismissed.\n"
+        f"Provide a different perspective or approach.\n"
+        f"If the original answer was sound, explain WHY it's the best choice.\n"
+        f"Think step by step."
+    )
+
+    try:
+        response, info = run_agent(
+            prompt=rethink_prompt,
+            config=config,
+            data_dir=data_dir,
+            verbose=verbose,
+            interactive=True,
+        )
+        return response
+    except Exception as e:
+        return f"Rethink failed: {e}"
+
+
+def _cmd_court() -> str:
+    """Show the last Angel/Devil court verdict."""
+    global LAST_COURT_VERDICT
+    if not LAST_COURT_VERDICT:
+        return "No previous court verdict. Run a prompt with adversarial enabled first."
+
+    return (
+        f"👿 **Devil Score**: {LAST_COURT_VERDICT.get('devil_score', '?')}/10\n"
+        f"😇 **Angel Score**: {LAST_COURT_VERDICT.get('angel_score', '?')}/10\n"
+        f"**Decision**: {LAST_COURT_VERDICT.get('decision', '?')}\n"
+        f"**Should stop**: {LAST_COURT_VERDICT.get('should_stop', '?')}\n\n"
+        f"**Devil said:**\n{LAST_COURT_VERDICT.get('devil', {}).get('content', 'N/A')}\n\n"
+        f"**Angel said:**\n{LAST_COURT_VERDICT.get('angel', {}).get('content', 'N/A')}"
+    )
+
+
+def _cmd_fresh(args: list[str], config: dict, data_dir: Path, verbose: bool) -> str:
+    """Run with no soul, no memories — raw model judgment."""
+    from ..tools import register_all
+    register_all()
+    from .loop import run_agent
+
+    prompt = " ".join(args) if args else LAST_PROMPT
+    if not prompt:
+        if args:
+            prompt = " ".join(args)
+        else:
+            return "Usage: /fresh <prompt>  or  /fresh  (re-run last prompt with raw model)"
+
+    try:
+        response, info = run_agent(
+            prompt=prompt,
+            config=config,
+            data_dir=data_dir,
+            verbose=verbose,
+            interactive=True,
+            fresh_start=True,
+        )
+        return response
+    except Exception as e:
+        return f"Fresh start failed: {e}"

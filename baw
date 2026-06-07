@@ -74,6 +74,9 @@ Slash commands (interactive mode):
   /dream      Run self-curation
   /tools      List registered tools
   /provider   Search provider ops
+  /rethink    Rerun last prompt with alternative analysis
+  /court      Show last Angel/Devil verdict
+  /fresh      Raw model — no soul, no memories
 
 Examples:
   baw "list files in current directory"
@@ -239,6 +242,10 @@ def _run_single(prompt: str, config: dict, args, data_dir: Path):
         if args.verbose:
             cost_line = f"[{info['model']}] iterations: {info.get('iterations', '?')} ${info['cost']:.6f}"
             print(f"\n{cost_line}")
+
+        # Save state for /rethink and /court
+        from baw.core.commands import set_last_run
+        set_last_run(prompt, info)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         if args.verbose:

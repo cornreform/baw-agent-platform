@@ -123,8 +123,19 @@ def reset_cost():
 
 # ── System prompt ──────────────────────────────────────────────
 
-def build_system_prompt(config: dict, data_dir: Optional[Path] = None) -> str:
-    """Build the Angel's system prompt from SOUL.md + dynamic context."""
+def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
+                        fresh_start: bool = False) -> str:
+    """Build the Angel's system prompt from SOUL.md + dynamic context.
+
+    If fresh_start=True, returns a minimal prompt with no SOUL.md or memories.
+    """
+    if fresh_start:
+        return (
+            "You are an AI assistant. No prior context, no memories, no soul profile.\n"
+            "Respond to this prompt with your raw, unfiltered judgment.\n"
+            "Be direct and honest. Do not assume any prior conversation.\n"
+        )
+
     base_path = data_dir or Path.home() / ".baw"
     soul_path = base_path / "SOUL.md"
 
@@ -188,9 +199,11 @@ def run_agent(
     data_dir: Optional[Path] = None,
     verbose: bool = False,
     interactive: bool = False,
+    fresh_start: bool = False,
 ) -> tuple[str, dict]:
     """Run BAW agent with self-improving loop.
 
+    If fresh_start=True, SOUL.md and memories are bypassed entirely.
     Returns: (response_text, info_dict)
     """
     # ── Initialise ──
@@ -208,7 +221,7 @@ def run_agent(
         pass
 
     # Init adversarial court (for step-level checks)
-    system_prompt = build_system_prompt(config, data_dir)
+    system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
     from .adversarial import AdversarialCourt
     court = AdversarialCourt(model, system_prompt, config)
 
@@ -219,7 +232,7 @@ def run_agent(
     tone_change = False
     if new_tone and new_tone != old_tone:
         config.setdefault("tone", {})["default"] = new_tone
-        system_prompt = build_system_prompt(config, data_dir)
+        system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
         court = AdversarialCourt(model, system_prompt, config)
         tone_change = True
 
@@ -276,6 +289,7 @@ def run_agent(
                 "model": f"{model.provider}/{model.id}",
                 "iterations": 0,
                 "adversarial": "flagged",
+                "adversarial_raw": verdict if verdict else None,
             }
 
         # ✅ Goal approved — add Angel's first response to context
@@ -313,6 +327,9 @@ def run_agent(
             "cost": round(session_cost, 4),
             "model": f"{model.provider}/{model.id}",
             "iterations": 1,
+            "steps": 0,
+            "adversarial": verdict["decision"] if verdict else None,
+            "adversarial_raw": verdict if verdict else None,
         }
 
     # Build output
@@ -555,6 +572,7 @@ def run_agent(
         "iterations": total_llm_calls,
         "steps": steps_completed,
         "adversarial": verdict["decision"] if verdict else None,
+        "adversarial_raw": verdict if verdict else None,
     }
     return output, info
 
