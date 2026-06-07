@@ -401,6 +401,35 @@ def run_agent(
 
             # ── Handle step result with strategy-based recovery ──
             if step_success:
+                # ── Verify step result ──
+                # Uses LLM to score the output against the goal
+                verifier_enabled = config.get("verify", {}).get("enabled", False)
+                if verifier_enabled:
+                    from .verifier import verify_step
+                    v_result = verify_step(
+                        goal=prompt,
+                        tool_name=name,
+                        tool_args=args,
+                        tool_result=exe_result,
+                        config=config,
+                        model_id=model_id,
+                    )
+                    if verbose:
+                        print(f"  🔍 Verify [{name}]: {v_result['score']}/10 {'✅' if v_result['passed'] else '❌'} {v_result['reason'][:80]}")
+
+                    if not v_result["passed"]:
+                        # Verification failed — treat as step failure
+                        consecutive_failures += 1
+                        checkpointer.record_attempt()
+                        strategy_desc = f"verify({name}): {v_result['reason'][:60]}"
+                        _current_strategies.append(strategy_desc)
+                        checkpointer.record_strategy(strategy_desc)
+                        ctx.add_tool_result(tc.get("id", ""), name,
+                            f"[VERIFY_FAIL] {v_result['reason']}\nActionable: {v_result['actionable']}\n---\n{exe_result}")
+                        if verbose:
+                            print(f"  ⛔ Verify failed: {v_result['reason'][:80]}")
+                        continue  # Don't commit, let recovery handle it
+
                 # Commit checkpoint, record success
                 checkpointer.commit()
                 consecutive_failures = 0
