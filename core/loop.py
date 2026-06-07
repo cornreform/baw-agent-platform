@@ -38,34 +38,87 @@ from .file_history import FileHistory
 from .autosave import auto_commit, get_commit_log
 from . import render as html
 
-# ── Cost tracking ──────────────────────────────────────────────
+# ── Cost tracking (thread-safe class) ──────────────────────────
 
-_COST_ACCUMULATOR: dict = {"total": 0.0, "calls": []}
+import threading
+
+
+class CostTracker:
+    """Thread-safe cost accumulator. One instance per session."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.total = 0.0
+        self.calls: list[dict] = []
+
+    def record(self, model_name: str, tokens_in: int, tokens_out: int, cost: float):
+        with self._lock:
+            self.calls.append({
+                "model": model_name, "tokens_in": tokens_in,
+                "tokens_out": tokens_out, "cost": round(cost, 6),
+            })
+            self.total += cost
+
+    def summary(self) -> str:
+        with self._lock:
+            if not self.calls:
+                return ""
+            calls_info = " | ".join(
+                f"{c['tokens_in']}↑{c['tokens_out']}↓${c['cost']:.4f}"
+                for c in self.calls
+            )
+            return f"📊 [{len(self.calls)} LLM calls] {calls_info} | **total: ${self.total:.4f}**"
+
+    def html_summary(self) -> str:
+        """HTML version for Telegram-friendly reporting."""
+        with self._lock:
+            if not self.calls:
+                return ""
+            calls_info = " | ".join(
+                f"{c['tokens_in']}↑{c['tokens_out']}↓<code>${c['cost']:.4f}</code>"
+                for c in self.calls
+            )
+            return (
+                f"📊 <b>[{len(self.calls)} LLM calls]</b> {calls_info} | "
+                f"<b>total: ${self.total:.4f}</b>"
+            )
+
+    def reset(self):
+        with self._lock:
+            self.total = 0.0
+            self.calls = []
+
+
+# ── Helper functions that use the tracker ──
+# These exist for backward compatibility with existing call sites.
+# New code should create a CostTracker instance directly.
+
+_TRACKER: CostTracker | None = None
+
+
+def _get_tracker() -> CostTracker:
+    global _TRACKER
+    if _TRACKER is None:
+        _TRACKER = CostTracker()
+    return _TRACKER
 
 
 def record_cost(model_name: str, tokens_in: int, tokens_out: int, cost: float):
-    _COST_ACCUMULATOR["calls"].append({
-        "model": model_name, "tokens_in": tokens_in,
-        "tokens_out": tokens_out, "cost": round(cost, 6),
-    })
-    _COST_ACCUMULATOR["total"] += cost
+    _get_tracker().record(model_name, tokens_in, tokens_out, cost)
 
 
 def format_cost_summary() -> str:
-    total = _COST_ACCUMULATOR["total"]
-    n = len(_COST_ACCUMULATOR["calls"])
-    if n == 0:
-        return ""
-    calls_info = " | ".join(
-        f"{c['tokens_in']}↑{c['tokens_out']}↓${c['cost']:.4f}"
-        for c in _COST_ACCUMULATOR["calls"]
-    )
-    return f"📊 [{n} LLM calls] {calls_info} | **total: ${total:.4f}**"
+    """Markdown cost summary (used within agent context)."""
+    return _get_tracker().summary()
+
+
+def html_cost_summary() -> str:
+    """HTML cost summary (for user-facing output)."""
+    return _get_tracker().html_summary()
 
 
 def reset_cost():
-    _COST_ACCUMULATOR["total"] = 0.0
-    _COST_ACCUMULATOR["calls"] = []
+    _get_tracker().reset()
 
 
 # ── System prompt ──────────────────────────────────────────────
@@ -442,28 +495,39 @@ def run_agent(
         if final_reply and final_reply not in output:
             output += f"\n{final_reply}"
 
-    # Fact check final output
-    try:
-        from .fact_checker import FactChecker
-        fc = FactChecker(config)
-        last_text = ""
-        if ctx.messages:
-            last_msg = ctx.messages[-1]
-            if hasattr(last_msg, 'content'):
-                last_text = last_msg.content or ""
-            else:
-                last_text = last_msg.get("content", "") or ""
-        action, fc_result = fc.check(last_text or "", prompt)
-        if action == "block":
-            output += f"\n\n{fc_result['message']}"
-        elif action == "flag":
-            output += f"\n\n_⚠️ {len(fc_result['claims'])} unverified claims flagged_"
-    except Exception:
-        pass
+        # ── Fact check final output (with web search verification) ──
+        try:
+            from .fact_checker import FactChecker
+            fc = FactChecker(config)
+            last_text = ""
+            if ctx.messages:
+                last_msg = ctx.messages[-1]
+                if hasattr(last_msg, "content"):
+                    last_text = last_msg.content or ""
+                else:
+                    last_text = last_msg.get("content", "") or ""
+            # First-pass regex check
+            action, fc_result = fc.check(last_text or "", prompt)
+            if action == "block":
+                output += f"\n\n{fc_result['message']}"
+            elif action == "flag":
+                output += f"\n\n<i>⚠️ {len(fc_result['claims'])} unverified claims flagged</i>"
+                # Second-pass: web search verification
+                try:
+                    search_action, search_result = fc.verify_with_search(last_text or "", prompt)
+                    if search_action == "block":
+                        msg = search_result.get("message", "blocked by web search")
+                        output += f"\n\n{html.italic('Web search: ' + msg)}"
+                    elif search_action == "flag" and search_result.get("flagged"):
+                        n_flagged = len(search_result["flagged"])
+                        output += f"\n\n{html.italic(f'Web search: {n_flagged} claims unverifiable')}"
+                except Exception:
+                    pass  # web search check is best-effort
+        except Exception:
+            pass
 
-    # Cost summary
-    # Cost summary (HTML format)
-    output += f"\n\n{format_cost_summary()}"
+        # Cost summary (HTML format)
+        output += f"\n\n{html_cost_summary()}"
 
     # Auto-save: commit any changes
     last_commit = None
@@ -496,21 +560,21 @@ def run_agent(
 
 
 def _format_verdict(verdict: dict) -> str:
-    """Format adversarial court output."""
+    """Format adversarial court output in HTML (Telegram-compatible)."""
     devil = verdict.get("devil")
     angel = verdict.get("angel")
     if not devil or not angel:
         return ""
 
     lines = [
-        f"👿 **Devil (Opposing Counsel)** — Risk: {devil['score']}/10",
-        devil["content"],
+        f"👿 <b>Devil (Opposing Counsel)</b> — Risk: {devil['score']}/10",
+        html.blockquote(devil["content"]),
         "",
-        f"😇 **Angel (Executor)** — Feasibility: {angel['score']}/10",
+        f"😇 <b>Angel (Executor)</b> — Feasibility: {angel['score']}/10",
     ]
     if verdict.get("should_stop"):
         lines.append(
-            f"\n⚠️ **Devil ({devil['score']}/10) > Angel ({angel['score']}/10)**\n"
+            f"\n⚠️ <b>Devil ({devil['score']}/10) &gt; Angel ({angel['score']}/10)</b>\n"
             f"⛔ BAW has significant concerns. Stopped before any action.\n"
         )
     elif verdict.get("decision") == "warn":

@@ -2,6 +2,41 @@
 """
 BAW Agent Platform — CLI Entry Point
 Linux + macOS compatible
+
+Usage:
+  baw <prompt>                    Run agent with a prompt
+  baw --help                      Show this help
+  baw --version                   Show version
+
+Subcommands:
+  baw --remember <text>           Store a memory entry
+  baw --search <query>            Search stored memories
+  baw --status                    Show BAW status (model, memory, tools)
+  baw --dream                     Run weekly self-curation (silent unless changes)
+  baw --search-provider list      List available web search providers
+  baw --search-provider guide <name>  Show setup guide for a provider
+  baw --search-provider api <name>    Show API reference for a provider
+  baw --search-provider test <name> <query>  Test a search provider
+
+Options:
+  --model, -m  <id>               Override model (e.g. MiniMax-M3, deepseek-v4-flash)
+  --tone, -t   <profile>          Override tone (casual / business / teaching / client-doc / ot-rt / stepwise)
+  --verbose, -v                   Verbose output with LLM call info
+  --dry-run, -n                   Dry run — no file changes
+  --config     <path>             Path to custom config.yaml
+
+Available tools:
+  bash        Execute shell commands
+  read_file   Read file contents
+  write_file  Write content to a file
+  web_search  Search the web (DuckDuckGo, no API key required)
+
+Architecture:
+  BAW runs a self-improving agent loop with Angel/Devil adversarial court,
+  auto-fallback between models, auto-save to git, file history tracking,
+  and web search for fact checking. See SOUL.md for behaviour rules.
+
+Default model: Kimi K2.6 (fallback: DeepSeek V4 Flash)
 """
 
 import sys
@@ -15,39 +50,55 @@ BAW_ROOT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(BAW_ROOT))
 sys.path.insert(0, str(BAW_ROOT.parent.resolve()))
 
+BAW_VERSION = "1.0.0"
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="BAW (Black And White) — Agent Platform",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
+        epilog="""Examples:
   baw "list files in current directory"
   baw --model MiniMax-M3 "describe this image"
   baw --tone business "write a proposal"
   baw --verbose "debug the server"
-  baw remember "always use Traditional Chinese"
-  baw search "memory keyword"
-  baw status
+  baw --remember "always use Traditional Chinese"
+  baw --search "memory keyword"
+  baw --status
+  baw --search-provider list
+  baw --search-provider test duckduckgo "latest Linux kernel version"
         """,
     )
     parser.add_argument("prompt", nargs="*", help="Prompt for the agent")
     parser.add_argument("--model", "-m", help="Override model (e.g. MiniMax-M3)")
-    parser.add_argument("--tone", "-t", help="Override tone profile")
+    parser.add_argument("--tone", "-t", help="Override tone (casual / business / teaching / client-doc / ot-rt / stepwise)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--dry-run", "-n", action="store_true", help="Dry run (no changes)")
     parser.add_argument("--config", help="Path to config.yaml")
+    parser.add_argument("--version", action="store_true", help="Show BAW version and exit")
 
     # Subcommands
     subcommands = parser.add_argument_group("subcommands")
     subcommands.add_argument("--remember", help="Store a memory entry")
     subcommands.add_argument("--search", help="Search memory")
     subcommands.add_argument("--status", action="store_true", help="Show BAW status")
-    subcommands.add_argument("--dream", action="store_true", help="Run weekly self-curation (silent unless changes)")
+    subcommands.add_argument("--dream", action="store_true", help="Run weekly self-curation (silent)")
     subcommands.add_argument("--search-provider", nargs="+",
-                             help="Search provider commands: list | guide <name> | api <name> | test <name> <query>")
+                             help="Commands: list | guide <name> | api <name> | test <name> <query>")
 
     args = parser.parse_args()
+
+    # --version
+    if args.version:
+        try:
+            log = os.popen("cd " + str(BAW_ROOT) + " && git log --oneline -1 2>/dev/null").read().strip()
+        except Exception:
+            log = "unknown"
+        print(f"BAW (Black And White) Agent Platform v{BAW_VERSION}")
+        print(f"Commit: {log}")
+        print(f"Home: {BAW_ROOT}")
+        print("Architecture: self-improving loop with Angel/Devil adversarial court")
+        return
 
     # Load config
     from baw.core.llm import load_config
@@ -75,7 +126,7 @@ Examples:
         from baw.core.memory import MemoryStore
         mem = MemoryStore(data_dir)
         result = mem.remember(args.remember)
-        print(f"✅ Remembered (score: {result['score']:.2f})")
+        print(f"Remembered (score: {result['score']:.2f})")
         return
 
     if args.search:
@@ -98,7 +149,7 @@ Examples:
         from baw.core.memory import MemoryStore
         mem = MemoryStore(data_dir)
         stats = mem.stats()
-        print(f"🐾 BAW Status")
+        print("BAW Status")
         print(f"  Memory: {stats['total']} entries")
         if stats['total'] > 0:
             print(f"  Avg score: {stats['avg_score']:.2f}")
@@ -112,15 +163,12 @@ Examples:
         report = dream(data_dir, dry_run=args.dry_run)
         if report["changes"]:
             print(json.dumps(report, ensure_ascii=False, indent=2))
-        else:
-            pass  # Silent — nothing changed
         return
 
     # Agent mode
     prompt = " ".join(args.prompt) if args.prompt else None
     if not prompt:
-        # Interactive REPL mode
-        print("🐾 BAW Interactive Mode (Ctrl+D to exit)")
+        print("BAW Interactive Mode (Ctrl+D to exit)")
         from baw.core.memory import MemoryStore
         mem = MemoryStore(data_dir)
         while True:
@@ -138,12 +186,10 @@ Examples:
 
 def _run_single(prompt: str, config: dict, args, data_dir: Path):
     """Run a single prompt and print result."""
-    # Register built-in tools (avoid Python's builtins module name conflict)
     from baw.tools import register_all
     from baw.core.loop import run_agent
     register_all()
 
-    # Run agent
     try:
         response, info = run_agent(
             prompt=prompt,
@@ -173,7 +219,6 @@ def _handle_search_provider(args: list[str]):
     action = args[0]
     BAW_ROOT = Path(__file__).parent.resolve()
 
-    # Init search providers
     sys.path.insert(0, str(BAW_ROOT))
     from baw.core.search import (
         list_providers, get_setup_guide, get_api_reference, search,
@@ -186,10 +231,10 @@ def _handle_search_provider(args: list[str]):
         if not providers:
             print("No search providers registered.")
             return
-        print("🔍 Available Search Providers:")
+        print("Available Search Providers:")
         print()
         for p in providers:
-            key_status = "🔑 API key required" if p["requires_api_key"] else "✅ No API key needed"
+            key_status = "API key required" if p["requires_api_key"] else "No API key needed"
             print(f"  {p['name']}")
             print(f"    {p['description']}")
             print(f"    {key_status}")
@@ -215,7 +260,7 @@ def _handle_search_provider(args: list[str]):
     elif action == "test" and len(args) >= 3:
         provider = args[1]
         query = " ".join(args[2:])
-        print(f"🔍 Testing {provider} with query: {query!r}")
+        print(f"Testing {provider} with query: {query!r}")
         print()
         try:
             results = search(query, provider=provider, limit=3)
@@ -227,9 +272,9 @@ def _handle_search_provider(args: list[str]):
                 print(f"    URL: {r['url']}")
                 print(f"    {r['snippet'][:200]}")
                 print()
-            print(f"✅ {len(results)} results from {provider}")
+            print(f"  {len(results)} results from {provider}")
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"Error: {e}")
 
     else:
         print("Usage: baw --search-provider list|guide <name>|api <name>|test <name> <query>")
