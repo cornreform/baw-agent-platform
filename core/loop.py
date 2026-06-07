@@ -34,6 +34,9 @@ from .tools import get_openai_tools, execute_tool, list_tools
 from .permission import PermissionEngine
 from .memory import MemoryStore
 from .checkpoint import Checkpointer
+from .file_history import FileHistory
+from .autosave import auto_commit, get_commit_log
+from . import render as html
 
 # ── Cost tracking ──────────────────────────────────────────────
 
@@ -272,6 +275,7 @@ def run_agent(
     response = angel_response
     total_llm_calls = 1
     consecutive_failures = 0
+    _current_strategies: list[str] = []
     steps_completed = 0
 
     for iteration in range(max_iterations):
@@ -305,6 +309,13 @@ def run_agent(
                 ctx.messages, tool_name=name, tool_args=args,
             )
 
+            # ── Record file history for write operations ──
+            _file_history = FileHistory(data_dir)
+            if name == "write_file" and "path" in args and "content" in args:
+                _file_history.record_write(args["path"], args["content"],
+                    action="create" if not Path(args["path"]).expanduser().exists() else "update",
+                    metadata={"source": "agent_tool", "step": checkpointer._step_count})
+
             # ── Execute tool ──
             if perm_result["decision"] == "allow":
                 exe_result = execute_tool(name, args)
@@ -318,36 +329,68 @@ def run_agent(
                 short = exe_result[:200].replace("\n", " ")
                 print(f"  🛠️  {name}(...) → {'✅' if step_success else '❌'} {short}...")
 
-            # ── Handle step result ──
+            # ── Handle step result with strategy-based recovery ──
             if step_success:
                 # Commit checkpoint, record success
                 checkpointer.commit()
                 consecutive_failures = 0
                 steps_completed += 1
+                _current_strategies.clear()
 
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
+
+                # Auto-commit after successful write operation
+                if name == "write_file":
+                    try:
+                        auto_commit(
+                            data_dir or Path.home() / ".baw",
+                            f"write: {args.get('path', '?')}"
+                        )
+                    except Exception:
+                        pass
+                elif name == "bash" and "git commit" in args.get("command", ""):
+                    try:
+                        auto_commit(data_dir or Path.home() / ".baw", "git operation")
+                    except Exception:
+                        pass
             else:
-                # Step failed — self-recover
+                # Step failed — strategy-based recovery
                 consecutive_failures += 1
                 checkpointer.record_attempt()
+
+                # Track the strategy that failed
+                strategy_desc = f"{name}({args.get('path', args.get('command', '?'))})"
+                _current_strategies.append(strategy_desc)
+                checkpointer.record_strategy(strategy_desc)
 
                 # Add the failure to context
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
 
                 if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                    # All alternatives exhausted — notify user with summary
+                    # All strategies exhausted — notify user with analysis
                     error_summary = (
-                        f"⚠️ **BAW encountered persistent issues**\n\n"
-                        f"After {consecutive_failures} consecutive failures, "
-                        f"I'm changing strategy. Here's what happened:\n"
-                        f"- Tool: `{name}`\n"
-                        f"- Last error: _{exe_result[:200]}_\n\n"
-                        f"I'll try a completely different approach."
+                        f"<b>🔄 BAW Strategy Recovery</b>\n\n"
+                        f"After {len(_current_strategies)} strategy attempts, "
+                        f"this approach is not working:\n"
+                        f"{'<br>'.join(f'❌ {s}' for s in _current_strategies)}\n\n"
                     )
+
+                    # Check if we should try a completely different approach
+                    if consecutive_failures < MAX_CONSECUTIVE_FAILURES * 2:
+                        error_summary += (
+                            f"<b>Changing strategy to a different approach...</b>\n"
+                            f"Previous approaches blocked/already tried."
+                        )
+                        _current_strategies.clear()
+                    else:
+                        error_summary += (
+                            f"<b>⛔ All approaches exhausted.</b>\n"
+                            f"Angel/Devil evaluation required for next steps."
+                        )
+
                     if not output.endswith("\n"):
                         output += "\n"
                     output += error_summary + "\n"
-                    # Reset and continue with next LLM iteration
                     consecutive_failures = 0
                     break
 
@@ -419,7 +462,22 @@ def run_agent(
         pass
 
     # Cost summary
+    # Cost summary (HTML format)
     output += f"\n\n{format_cost_summary()}"
+
+    # Auto-save: commit any changes
+    last_commit = None
+    try:
+        last_commit = auto_commit(
+            Path.home() / "baw",
+            f"agent: {prompt[:80]}"
+        )
+    except Exception:
+        pass
+
+    # If auto-committed, add to report
+    if last_commit:
+        output += f"\n💾 <i>Auto-saved: {last_commit}</i>"
 
     # Save to memory
     try:
