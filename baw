@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 """
 BAW Agent Platform — CLI Entry Point
 Linux + macOS compatible
@@ -44,6 +44,8 @@ Examples:
     subcommands.add_argument("--search", help="Search memory")
     subcommands.add_argument("--status", action="store_true", help="Show BAW status")
     subcommands.add_argument("--dream", action="store_true", help="Run weekly self-curation (silent unless changes)")
+    subcommands.add_argument("--search-provider", nargs="+",
+                             help="Search provider commands: list | guide <name> | api <name> | test <name> <query>")
 
     args = parser.parse_args()
 
@@ -85,6 +87,11 @@ Examples:
             return
         for r in results:
             print(f"[{r['score']:.2f}] {r['content'][:100]}")
+        return
+
+    # Search provider subcommands
+    if args.search_provider:
+        _handle_search_provider(args.search_provider)
         return
 
     if args.status:
@@ -155,6 +162,77 @@ def _run_single(prompt: str, config: dict, args, data_dir: Path):
         if args.verbose:
             import traceback
             traceback.print_exc()
+
+
+def _handle_search_provider(args: list[str]):
+    """Handle --search-provider subcommand."""
+    if not args:
+        print("Usage: baw --search-provider list|guide <name>|api <name>|test <name> <query>")
+        return
+
+    action = args[0]
+    BAW_ROOT = Path(__file__).parent.resolve()
+
+    # Init search providers
+    sys.path.insert(0, str(BAW_ROOT))
+    from baw.core.search import (
+        list_providers, get_setup_guide, get_api_reference, search,
+    )
+    from baw.core.search import _auto_discover as _init_search
+    _init_search()
+
+    if action == "list":
+        providers = list_providers()
+        if not providers:
+            print("No search providers registered.")
+            return
+        print("🔍 Available Search Providers:")
+        print()
+        for p in providers:
+            key_status = "🔑 API key required" if p["requires_api_key"] else "✅ No API key needed"
+            print(f"  {p['name']}")
+            print(f"    {p['description']}")
+            print(f"    {key_status}")
+            if p["env_var"]:
+                print(f"    Env var: {p['env_var']}")
+            print()
+
+    elif action == "guide" and len(args) >= 2:
+        try:
+            guide = get_setup_guide(args[1])
+            print(guide)
+        except ValueError as e:
+            print(f"Error: {e}")
+            print(f"Available: {[p['name'] for p in list_providers()]}")
+
+    elif action == "api" and len(args) >= 2:
+        try:
+            ref = get_api_reference(args[1])
+            print(ref)
+        except ValueError as e:
+            print(f"Error: {e}")
+
+    elif action == "test" and len(args) >= 3:
+        provider = args[1]
+        query = " ".join(args[2:])
+        print(f"🔍 Testing {provider} with query: {query!r}")
+        print()
+        try:
+            results = search(query, provider=provider, limit=3)
+            if not results:
+                print("No results returned.")
+                return
+            for i, r in enumerate(results, 1):
+                print(f"[{i}] {r['title']}")
+                print(f"    URL: {r['url']}")
+                print(f"    {r['snippet'][:200]}")
+                print()
+            print(f"✅ {len(results)} results from {provider}")
+        except Exception as e:
+            print(f"❌ Error: {e}")
+
+    else:
+        print("Usage: baw --search-provider list|guide <name>|api <name>|test <name> <query>")
 
 
 if __name__ == "__main__":
