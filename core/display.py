@@ -28,14 +28,13 @@ def _shorten(desc: str, max_len: int = 50) -> str:
 # ── Plan: show once at start, compact ──
 
 def phase_plan(steps: list[dict]) -> str:
-    """Compact plan: one line with numbered steps."""
+    """Compact plan: each step on its own line."""
     if not steps:
         return ""
-    parts = []
+    lines = ["  📋 Plan:"]
     for s in steps:
-        parts.append(f"{s['num']}. {_shorten(s['desc'], 50)}")
-    plan_line = "  📋 Plan: " + "  |  ".join(parts)
-    return f"{plan_line}\n  ── {len(steps)} steps\n"
+        lines.append(f"    {s['num']}. {_shorten(s['desc'], 50)}")
+    return "\n".join(lines) + "\n"
 
 
 # ── Step progress: concise per-step line ──

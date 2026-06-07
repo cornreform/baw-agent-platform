@@ -745,6 +745,9 @@ def run_agent(
         # Prepend display log if we have one (plan + step progress)
         if _display_log:
             output += "\n".join(_display_log) + "\n"
+        # Add done summary
+        if steps_completed > 0:
+            output += dsp.done(steps_completed, len(_execution_plan), 0, 0) + "\n"
         if final_reply and final_reply not in output:
             output += f"\n{final_reply}"
 
