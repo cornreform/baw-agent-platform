@@ -2,7 +2,7 @@
 <!--
 ╔══════════════════════════════════════════════════════════╗
 ║  BAW — Black And White Agent Platform                   ║
-║  Bilingual README (Traditional Chinese + English)        ║
+║  Bilingual README (English + Traditional Chinese)        ║
 ╚══════════════════════════════════════════════════════════╝
 -->
 
@@ -15,13 +15,160 @@
 </p>
 
 <h1 align="center">⚫ BAW — Black And White ⚪</h1>
-<p align="center"><strong>由零打造嘅 Agent Platform • Built from scratch agent platform</strong></p>
+<p align="center"><strong>Built from scratch agent platform • 由零打造嘅 Agent Platform</strong></p>
 <p align="center">
-  🤍🖤 Angel/Devil 雙魂法庭 • Protocol-agnostic LLM • 永不放棄哲學<br>
-  🤍🖤 Angel/Devil Dual-Soul Court • Protocol-agnostic LLM • Never Surrender
+  🤍🖤 Angel/Devil Dual-Soul Court • Protocol-agnostic LLM • Never Surrender<br>
+  🤍🖤 Angel/Devil 雙魂法庭 • Protocol-agnostic LLM • 永不放棄哲學
 </p>
 
 ---
+
+<!-- ═══ English ═══ -->
+<h2>📖 English</h2>
+
+<h3>What is BAW?</h3>
+
+<p><strong>BAW (Black And White)</strong> is an agent platform built entirely from scratch — no LangChain, no AutoGPT, no vendor framework. Named after two dogs (black & white), it embodies the core philosophy of <strong>🤍 Angel (executor)</strong> vs <strong>🖤 Devil (opposition)</strong> courtroom-style adversarial debate.</p>
+
+<h3>🚀 Quick Start</h3>
+
+<pre>
+# Install
+git clone https://github.com/cornreform/baw-agent-platform.git
+cd baw-agent-platform
+pip install pyyaml duckduckgo-search
+ln -sf $PWD/baw ~/.local/bin/baw
+
+# Set API Key (~/.baw/.env)
+echo "DEEPSEEK_API_KEY=*** >> ~/.baw/.env
+
+# ✨ Go!
+baw "list files in current directory"
+baw --tone business "write a proposal"
+baw --btw "What time is it?"
+baw --setup           # Interactive setup wizard
+baw                   # Interactive Chat mode
+</pre>
+
+<h3>🎯 Core Features</h3>
+
+<table>
+  <tr><th>Feature</th><th>Description</th></tr>
+  <tr><td>⚖️ Angel/Devil Court</td><td>Devil speaks first with ZERO execution power. Angel listens then acts. Devil score > Angel → STOP</td></tr>
+  <tr><td>🧠 Never Surrender</td><td>Fail → retry → replan → rollback. Exhausts 6 strategies before reporting — never asks user</td></tr>
+  <tr><td>🔌 Protocol-agnostic LLM</td><td>OpenAI / Anthropic / Google protocols. One-line config switch, built-in cost tracking</td></tr>
+  <tr><td>⚙️ 3 Execution Modes</td><td>Quick (fastest) / Hybrid (balanced) / Tight (full court+plan+verify)</td></tr>
+  <tr><td>🗣️ 6 Tone Profiles</td><td>casual / business / teaching / client-doc / ot-rt / stepwise, switch anytime</td></tr>
+  <tr><td>📝 Self-Learning Skills</td><td><code>--learn-skill "description"</code> auto-analyzes and generates YAML skill</td></tr>
+  <tr><td>🔄 Cron Scheduler</td><td>Cron-expression scheduled tasks, 60s background daemon</td></tr>
+  <tr><td>📁 Async Background Tasks</td><td><code>--delegate</code> runs in background, main terminal freed instantly, max 3 concurrent</td></tr>
+  <tr><td>🐙 GitHub Integration</td><td>issues / PRs / CI / repos directly from CLI</td></tr>
+  <tr><td>🔍 Open Search Provider</td><td>Built-in DuckDuckGo (free, no key), pluggable upgrade</td></tr>
+  <tr><td>💾 Unified Memory + Fact Check</td><td>JSONL append-only + internal scoring + 3-level fact verification</td></tr>
+  <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block sudo/rm -rf) / Medium (warn) / Low (allow)</td></tr>
+  <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates a dark-themed system dashboard</td></tr>
+  <tr><td>💬 Interactive CLI Chat</td><td>Colored banner + Tab completion + 20 slash commands</td></tr>
+  <tr><td>⚙️ Setup Wizard + Config CLI</td><td><code>--setup</code> / <code>--cfg set/get/list</code> — real-time config</td></tr>
+  <tr><td>📁 File History + Auto Git</td><td>Every write logged with SHA256 + ISO timestamp + auto commit</td></tr>
+</table>
+
+<h3>⚙️ Full Command Reference</h3>
+
+<pre>
+baw "prompt"                     # Run agent (single-shot)
+baw                              # Interactive Chat mode
+baw --mode quick/hybrid/tight    # Execution mode
+baw --tone &lt;profile&gt;             # Tone override
+baw --model &lt;id&gt;                # Model override
+baw --verbose                    # Verbose output + cost
+baw --dry-run                    # Dry run (no changes)
+baw --btw "question"             # Quick LLM question
+baw --delegate "task"            # Background task
+baw --task-id &lt;id&gt;              # Check task status
+baw --tasks                      # List background tasks
+baw --task-cancel &lt;id&gt;          # Cancel background task
+baw --version                    # Show version
+baw --status                     # System status
+baw --remember "text"            # Save memory
+baw --search "query"             # Search memory
+baw --dream                      # Self-curation
+baw --setup                      # Setup wizard
+baw --cfg list|get|set|help      # Config CLI
+baw --board                      # HTML Dashboard
+baw --gh issues|prs|ci|repos     # GitHub operations
+baw --schedule-list|add|rm       # Schedule management
+baw --skill-list|run             # Skill management
+baw --learn-skill "desc"         # Self-learn skill
+baw --learn-url &lt;url&gt;           # Learn from URL
+baw --search-provider list|test  # Search provider mgmt
+</pre>
+
+<h3>🏗️ Architecture</h3>
+
+<pre>
+baw/                        ← Code repo
+├── baw                     CLI entrypoint (Python)
+├── core/                   Core modules
+│   ├── loop.py             Agent loop (plan → execute → report)
+│   ├── llm.py              Multi-protocol LLM abstraction
+│   ├── adversarial.py      Angel/Devil dual-soul court
+│   ├── tools.py            Tool registry
+│   ├── permission.py       3-level permission engine
+│   ├── memory.py           JSONL memory + scoring
+│   ├── fact_checker.py     3-mode fact verification
+│   ├── tone.py             Tone profiles
+│   ├── scheduler.py        Cron scheduler daemon
+│   ├── skills.py           YAML skill system
+│   ├── learn.py            Self-learning skills
+│   ├── board.py            HTML Dashboard generator
+│   ├── task_manager.py     Async task manager
+│   ├── github.py           GitHub integration
+│   ├── search.py           Open search provider registry
+│   ├── setup.py            Setup wizard + Config CLI
+│   ├── commands.py         Slash commands
+│   ├── display.py          Step display formatter
+│   ├── dream.py            Weekly self-curation
+│   ├── checkpoint.py       Checkpoint / rollback
+│   ├── degradation.py      Tool degradation chains
+│   ├── file_history.py     File SHA256 history
+│   ├── autosave.py         Auto git commit
+│   ├── render.py           HTML renderer
+│   └── verifier.py         Per-step LLM verification
+├── tools/                  Built-in tools
+│   ├── bash.py             Shell execution
+│   ├── read_file.py        File reading
+│   ├── write_file.py       File writing
+│   └── web_search.py       Web search
+├── config.yaml             Default config
+└── docs/                   GitHub Pages documentation
+
+~/.baw/                     ← User data directory
+├── config.yaml             User config
+├── SOUL.md                 Soul / behaviour rules
+├── .env                    API keys
+├── memory/store.jsonl      Memory storage
+├── skills/*.yaml           Custom skills
+└── tasks/                  Background task output
+</pre>
+
+<h3>🔧 Configuration</h3>
+
+<pre>
+# Interactive setup wizard
+baw --setup
+
+# Real-time Config CLI
+baw --cfg list                    # Show all settings
+baw --cfg get model.default       # Query a setting
+baw --cfg set mode hybrid         # Change immediately
+baw --cfg set tone.default business
+baw --cfg set adversarial.enabled false  # Disable court
+
+# Or edit YAML directly
+vim ~/.baw/config.yaml
+</pre>
+
+<hr>
 
 <!-- ═══ 繁體中文 ═══ -->
 <h2>📖 繁體中文</h2>
@@ -165,153 +312,6 @@ baw --cfg set tone.default business
 baw --cfg set adversarial.enabled false  # 熄咗法庭
 
 # 直接編輯 YAML 都得
-vim ~/.baw/config.yaml
-</pre>
-
-<hr>
-
-<!-- ═══ English ═══ -->
-<h2>📖 English</h2>
-
-<h3>What is BAW?</h3>
-
-<p><strong>BAW (Black And White)</strong> is an agent platform built entirely from scratch — no LangChain, no AutoGPT, no vendor framework. Named after two dogs (black & white), it embodies the core philosophy of <strong>🤍 Angel (executor)</strong> vs <strong>🖤 Devil (opposition)</strong> courtroom-style adversarial debate.</p>
-
-<h3>🚀 Quick Start</h3>
-
-<pre>
-# Install
-git clone https://github.com/cornreform/baw-agent-platform.git
-cd baw-agent-platform
-pip install pyyaml duckduckgo-search
-ln -sf $PWD/baw ~/.local/bin/baw
-
-# Set API Key (~/.baw/.env)
-echo "DEEPSEEK_API_KEY=sk-your-key" >> ~/.baw/.env
-
-# ✨ Go!
-baw "list files in current directory"
-baw --tone business "write a proposal"
-baw --btw "What time is it?"
-baw --setup           # Interactive setup wizard
-baw                   # Interactive Chat mode
-</pre>
-
-<h3>🎯 Core Features</h3>
-
-<table>
-  <tr><th>Feature</th><th>Description</th></tr>
-  <tr><td>⚖️ Angel/Devil Court</td><td>Devil speaks first with ZERO execution power. Angel listens then acts. Devil score > Angel → STOP</td></tr>
-  <tr><td>🧠 Never Surrender</td><td>Fail → retry → replan → rollback. Exhausts 6 strategies before reporting — never asks user</td></tr>
-  <tr><td>🔌 Protocol-agnostic LLM</td><td>OpenAI / Anthropic / Google protocols. One-line config switch, built-in cost tracking</td></tr>
-  <tr><td>⚙️ 3 Execution Modes</td><td>Quick (fastest) / Hybrid (balanced) / Tight (full court+plan+verify)</td></tr>
-  <tr><td>🗣️ 6 Tone Profiles</td><td>casual / business / teaching / client-doc / ot-rt / stepwise, switch anytime</td></tr>
-  <tr><td>📝 Self-Learning Skills</td><td><code>--learn-skill "description"</code> auto-analyzes and generates YAML skill</td></tr>
-  <tr><td>🔄 Cron Scheduler</td><td>Cron-expression scheduled tasks, 60s background daemon</td></tr>
-  <tr><td>📁 Async Background Tasks</td><td><code>--delegate</code> runs in background, main terminal freed instantly, max 3 concurrent</td></tr>
-  <tr><td>🐙 GitHub Integration</td><td>issues / PRs / CI / repos directly from CLI</td></tr>
-  <tr><td>🔍 Open Search Provider</td><td>Built-in DuckDuckGo (free, no key), pluggable upgrade</td></tr>
-  <tr><td>💾 Unified Memory + Fact Check</td><td>JSONL append-only + internal scoring + 3-level fact verification</td></tr>
-  <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block sudo/rm -rf) / Medium (warn) / Low (allow)</td></tr>
-  <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates a dark-themed system dashboard</td></tr>
-  <tr><td>💬 Interactive CLI Chat</td><td>Colored banner + Tab completion + 20 slash commands</td></tr>
-  <tr><td>⚙️ Setup Wizard + Config CLI</td><td><code>--setup</code> / <code>--cfg set/get/list</code> — real-time config</td></tr>
-  <tr><td>📁 File History + Auto Git</td><td>Every write logged with SHA256 + ISO timestamp + auto commit</td></tr>
-</table>
-
-<h3>⚙️ Full Command Reference</h3>
-
-<pre>
-baw "prompt"                     # Run agent (single-shot)
-baw                              # Interactive Chat mode
-baw --mode quick/hybrid/tight    # Execution mode
-baw --tone &lt;profile&gt;             # Tone override
-baw --model &lt;id&gt;                # Model override
-baw --verbose                    # Verbose output + cost
-baw --dry-run                    # Dry run (no changes)
-baw --btw "question"             # Quick LLM question
-baw --delegate "task"            # Background task
-baw --task-id &lt;id&gt;              # Check task status
-baw --tasks                      # List background tasks
-baw --task-cancel &lt;id&gt;          # Cancel background task
-baw --version                    # Show version
-baw --status                     # System status
-baw --remember "text"            # Save memory
-baw --search "query"             # Search memory
-baw --dream                      # Self-curation
-baw --setup                      # Setup wizard
-baw --cfg list|get|set|help      # Config CLI
-baw --board                      # HTML Dashboard
-baw --gh issues|prs|ci|repos     # GitHub operations
-baw --schedule-list|add|rm       # Schedule management
-baw --skill-list|run             # Skill management
-baw --learn-skill "desc"         # Self-learn skill
-baw --learn-url &lt;url&gt;           # Learn from URL
-baw --search-provider list|test  # Search provider mgmt
-</pre>
-
-<h3>🏗️ Architecture</h3>
-
-<pre>
-baw/                        ← Code repo
-├── baw                     CLI entrypoint (Python)
-├── core/                   Core modules
-│   ├── loop.py             Agent loop (plan → execute → report)
-│   ├── llm.py              Multi-protocol LLM abstraction
-│   ├── adversarial.py      Angel/Devil dual-soul court
-│   ├── tools.py            Tool registry
-│   ├── permission.py       3-level permission engine
-│   ├── memory.py           JSONL memory + scoring
-│   ├── fact_checker.py     3-mode fact verification
-│   ├── tone.py             Tone profiles
-│   ├── scheduler.py        Cron scheduler daemon
-│   ├── skills.py           YAML skill system
-│   ├── learn.py            Self-learning skills
-│   ├── board.py            HTML Dashboard generator
-│   ├── task_manager.py     Async task manager
-│   ├── github.py           GitHub integration
-│   ├── search.py           Open search provider registry
-│   ├── setup.py            Setup wizard + Config CLI
-│   ├── commands.py         Slash commands
-│   ├── display.py          Step display formatter
-│   ├── dream.py            Weekly self-curation
-│   ├── checkpoint.py       Checkpoint / rollback
-│   ├── degradation.py      Tool degradation chains
-│   ├── file_history.py     File SHA256 history
-│   ├── autosave.py         Auto git commit
-│   ├── render.py           HTML renderer
-│   └── verifier.py         Per-step LLM verification
-├── tools/                  Built-in tools
-│   ├── bash.py             Shell execution
-│   ├── read_file.py        File reading
-│   ├── write_file.py       File writing
-│   └── web_search.py       Web search
-├── config.yaml             Default config
-└── docs/                   GitHub Pages documentation
-
-~/.baw/                     ← User data directory
-├── config.yaml             User config
-├── SOUL.md                 Soul / behaviour rules
-├── .env                    API keys
-├── memory/store.jsonl      Memory storage
-├── skills/*.yaml           Custom skills
-└── tasks/                  Background task output
-</pre>
-
-<h3>🔧 Configuration</h3>
-
-<pre>
-# Interactive setup wizard
-baw --setup
-
-# Real-time Config CLI
-baw --cfg list                    # Show all settings
-baw --cfg get model.default       # Query a setting
-baw --cfg set mode hybrid         # Change immediately
-baw --cfg set tone.default business
-baw --cfg set adversarial.enabled false  # Disable court
-
-# Or edit YAML directly
 vim ~/.baw/config.yaml
 </pre>
 
