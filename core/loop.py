@@ -340,13 +340,65 @@ def run_agent(
         output_parts.append(_format_verdict(verdict))
     output = "\n\n".join(output_parts) + "\n\n"
 
-    # ── Step-by-step execution ──
-    max_iterations = 20
+    # ── Phase 2: Orchestrator writes execution plan ──
+    # The LLM creates a detailed step-by-step plan BEFORE executing
+    # Each step is small (1-2 tool calls max)
+    # The plan is injected into context on each iteration
+    total_llm_calls = 1  # Count Angel's court response as first call
+    _execution_plan: list[dict] = []
+    _execution_progress: list[str] = []
+    
+    # Request a plan from the LLM — use separate context (no tool_calls issue)
+    plan_prompt = (
+        f"[ORCHESTRATOR] Goal: {prompt}\n\n"
+        f"Write a detailed step-by-step execution plan. "
+        f"Each step must be SMALL (max 1-2 tool calls).\n"
+        f"Format each step as:\n"
+        f"  Step N: <action> — <expected tool> — <expected outcome>\n\n"
+        f"Reply with ONLY the plan, numbered 1..N."
+    )
+    _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": plan_prompt}]
+    plan_fb = call_llm_with_fallback(
+        config, _plan_msgs,
+        temperature=None,  # Use model default
+    )
+    plan_response = plan_fb.response
+    total_llm_calls += 1
+    cost = calculate_cost(model, plan_response.input_tokens, plan_response.output_tokens)
+    session_cost += cost
+    record_cost(f"{model.provider}/{model.id}", plan_response.input_tokens, plan_response.output_tokens, cost)
+    
+    # Parse plan into steps
+    import re as _re
+    plan_text = plan_response.content or ""
+    for _line in plan_text.split("\n"):
+        _m = _re.match(r'\s*(?:Step\s*)?(\d+)[.:]\s*(.*)', _line.strip())
+        if _m:
+            _execution_plan.append({"num": int(_m.group(1)), "desc": _m.group(2)})
+    if not _execution_plan:
+        # Fallback: single-step plan
+        _execution_plan.append({"num": 1, "desc": plan_text[:200]})
+    
+    if verbose:
+        print(f"\n  📋 Plan ({len(_execution_plan)} steps):")
+        for _s in _execution_plan:
+            print(f"    {_s['num']}. {_s['desc'][:100]}")
+
+    # Append plan to system prompt for context
+    _plan_text_for_context = (
+        "\n[Execution Plan]\n" +
+        "\n".join(f"  Step {s['num']}: {s['desc']}" for s in _execution_plan) +
+        "\n\n[Progress: nothing completed yet]"
+    )
+    ctx.system_prompt += _plan_text_for_context
+
+    # ── Phase 3: Execute plan step by step ──
+    max_iterations = 40  # More iterations for plan-following
     response = angel_response
-    total_llm_calls = 1
     consecutive_failures = 0
     _current_strategies: list[str] = []
     steps_completed = 0
+    current_plan_step = 0
 
     for iteration in range(max_iterations):
         if not response.tool_calls:
@@ -434,7 +486,11 @@ def run_agent(
                 checkpointer.commit()
                 consecutive_failures = 0
                 steps_completed += 1
+                # Update execution progress
                 _current_strategies.clear()
+                if current_plan_step < len(_execution_plan):
+                    _execution_progress.append(f"Step {current_plan_step + 1}: ✅ {_execution_plan[current_plan_step]['desc'][:80]}")
+                    current_plan_step += 1
 
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
 
@@ -488,6 +544,9 @@ def run_agent(
                             print(f"  ✅ Degradation succeeded: {strategy_name}")
                         consecutive_failures = 0
                         steps_completed += 1
+                        if current_plan_step < len(_execution_plan):
+                            _execution_progress.append(f"Step {current_plan_step + 1}: ✅ {_execution_plan[current_plan_step]['desc'][:80]} (degraded)")
+                            current_plan_step += 1
                         checkpointer.commit()
                         ctx.add_tool_result(tc.get("id", ""), name, degraded_result)
                         continue
@@ -530,6 +589,22 @@ def run_agent(
         # ── Next LLM call ──
         if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
             consecutive_failures = 0
+
+        # Inject progress update into context before next LLM call
+        if _execution_progress:
+            _progress_text = "\n[Progress so far]\n" + "\n".join(_execution_progress)
+            if len(_execution_progress) >= len(_execution_plan):
+                _progress_text += "\n[All plan steps complete]"
+            else:
+                _next_idx = min(current_plan_step, len(_execution_plan) - 1)
+                _remaining = len(_execution_plan) - current_plan_step
+                _progress_text += f"\n[Next: Step {current_plan_step + 1}: {_execution_plan[_next_idx]['desc'][:80]}]"
+                _progress_text += f"\n[{_remaining} steps remaining]"
+            # Update system prompt with progress
+            if "[Progress" in ctx.system_prompt:
+                ctx.system_prompt = ctx.system_prompt.rsplit("\n[Progress", 1)[0] + _progress_text
+            else:
+                ctx.system_prompt += _progress_text
 
         fb_result = call_llm_with_fallback(
             config, ctx.to_openai_messages(),
