@@ -2,10 +2,22 @@
 # Copy to ~/.baw/config.yaml and fill in your API keys
 
 model:
-  default: "deepseek-v4-flash"
-  # Examples: "MiniMax-M3", "claude-sonnet-4-20250514", "gemini-2.5-pro"
+  default: "kimi-k2.6"
+  fallback: "deepseek-v4-flash"
 
 providers:
+  # ── Kimi (Moonshot AI) — Primary ──────────────────────────────
+  kimi:
+    base_url: "https://api.moonshot.ai/v1"
+    api_key_env: "MOONSHOT_API_KEY"
+    models:
+      - id: "kimi-k2.6"
+        context_window: 262144
+        vision: true
+        cost_per_1m_input: 0.95
+        cost_per_1m_output: 4.00
+
+  # ── DeepSeek — Fallback ───────────────────────────────────────
   deepseek:
     base_url: "https://api.deepseek.com/v1"
     api_key_env: "DEEPSEEK_API_KEY"
