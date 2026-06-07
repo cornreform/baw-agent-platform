@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BAW — Black And White Agent Platform</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #10101a;
+    --bg3: #14141f;
+    --border: #1a1a2e;
+    --border2: #2a2a44;
+    --text: #e0e0e8;
+    --text2: #b0b0b8;
+    --text3: #888;
+    --accent: #6666ee;
+    --accent2: #8888ff;
+    --green: #44dd88;
+    --yellow: #ffbb44;
+    --orange: #ff8844;
+    --cyan: #88ddff;
+    --purple: #bb66ff;
+    --red: #ff5555;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 70px; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+
+  /* ── Navbar ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(10,10,15,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  nav .brand {
+    font-weight: 700; font-size: 1.1em;
+    color: #fff; letter-spacing: -0.5px;
+  }
+  nav .brand span { color: var(--accent2); }
+  nav .nav-links { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  nav .nav-links a {
+    color: var(--text3); text-decoration: none;
+    font-size: 0.82em; padding: 4px 10px;
+    border-radius: 6px; transition: all 0.15s;
+  }
+  nav .nav-links a:hover {
+    color: #fff; background: var(--bg3);
+  }
+  .lang-toggle {
+    display: flex; gap: 2px; margin-left: 12px;
+    background: var(--bg3); border-radius: 6px; padding: 2px;
+  }
+  .lang-toggle button {
+    background: none; border: none; color: var(--text3);
+    font-size: 0.78em; padding: 4px 10px; border-radius: 4px;
+    cursor: pointer; transition: all 0.15s; font-family: inherit;
+  }
+  .lang-toggle button.active {
+    background: var(--accent); color: #fff;
+  }
+  .lang-toggle button:hover:not(.active) { color: #fff; }
+
+  /* ── Main layout ── */
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Hero ── */
+  .hero {
+    padding: 100px 0 60px; text-align: center;
+    border-bottom: 1px solid var(--border); margin-bottom: 50px;
+  }
+  .hero h1 {
+    font-size: 3.5em; font-weight: 800;
+    background: linear-gradient(135deg, #fff 0%, var(--accent2) 50%, #4444aa 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; letter-spacing: -2px; margin-bottom: 8px;
+  }
+  .hero .subtitle { font-size: 1.15em; color: var(--text3); font-weight: 300; }
+  .hero .badge-row { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .badge {
+    display: inline-block; padding: 5px 14px; border-radius: 20px;
+    font-size: 0.8em; font-weight: 500;
+    border: 1px solid var(--border2); color: var(--text3);
+  }
+  .badge.pri { border-color: #5555cc; color: var(--accent2); }
+  .badge.suc { border-color: #22aa66; color: var(--green); }
+  .badge.warn { border-color: #cc8833; color: var(--yellow); }
+
+  /* ── Content ── */
+  .content { padding-bottom: 80px; }
+  .section { scroll-margin-top: 76px; margin-bottom: 40px; }
+  .section h2 {
+    font-size: 1.7em; font-weight: 700; color: #fff;
+    padding-bottom: 10px; border-bottom: 2px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .section h3 {
+    font-size: 1.2em; font-weight: 600; color: var(--text2);
+    margin: 28px 0 14px;
+  }
+  .section h4 {
+    font-size: 1em; font-weight: 600; color: var(--text3);
+    margin: 20px 0 10px;
+  }
+  .section p { margin-bottom: 14px; color: var(--text2); }
+  .section ul, .section ol { margin: 0 0 14px 22px; color: var(--text2); }
+  .section li { margin-bottom: 5px; }
+  .section a { color: var(--accent2); text-decoration: none; }
+  .section a:hover { text-decoration: underline; }
+  .section strong { color: #ddd; }
+  .section code {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.85em;
+    background: var(--bg3); padding: 2px 7px; border-radius: 4px; color: var(--cyan);
+  }
+  .section .key { color: var(--green); }
+
+  /* ── Code blocks ── */
+  pre {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.82em;
+    background: #0c0c16; border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 22px; overflow-x: auto;
+    margin: 12px 0 20px; line-height: 1.55; color: var(--text);
+  }
+  pre .cmt { color: #555; }
+  pre .cm2 { color: #666; }
+  pre .fn { color: var(--cyan); }
+  pre .kw { color: var(--purple); }
+  pre .s { color: var(--yellow); }
+  pre .n { color: var(--green); }
+  pre .o { color: var(--red); }
+  pre .nl { color: var(--orange); }
+  pre .gt { color: #44dd88; }
+
+  /* ── Cards ── */
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px; margin: 16px 0;
+  }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: #3333aa; }
+  .card .icon { font-size: 1.4em; display: block; margin-bottom: 6px; }
+  .card h4 { margin: 0 0 6px; color: #fff; font-size: 0.95em; }
+  .card p { margin: 0; font-size: 0.85em; color: var(--text3); line-height: 1.5; }
+
+  /* ── Tables ── */
+  table {
+    width: 100%; border-collapse: collapse; margin: 12px 0 20px;
+    font-size: 0.88em;
+  }
+  th {
+    text-align: left; background: var(--bg3); padding: 9px 12px;
+    font-weight: 600; color: var(--text3);
+    border-bottom: 2px solid var(--border2);
+  }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text2); }
+  td.mono { font-weight: 500; color: var(--cyan); font-family: 'JetBrains Mono',monospace; font-size: 0.85em; }
+  tr:hover td { background: #12121e; }
+
+  /* ── Feature block ── */
+  .callout {
+    background: linear-gradient(135deg, #0e0e1e, #0a0a18);
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 18px 22px; margin: 14px 0 20px;
+  }
+  .callout h4 { color: #fff; margin: 0 0 8px; }
+  .callout p { margin: 0; color: var(--text2); }
+  .callout.warn { border-left-color: var(--yellow); }
+  .callout.ok { border-left-color: var(--green); }
+
+  /* ── Terminal mock ── */
+  .term {
+    background: #06060e; border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.82em;
+    line-height: 1.55; margin: 12px 0 20px; overflow-x: auto;
+  }
+  .term .prompt { color: var(--green); }
+  .term .out { color: var(--text3); }
+  .term .banner { color: var(--accent); font-weight: 500; }
+  .term .ban2 { color: var(--orange); font-weight: 500; }
+  .term .err { color: var(--red); }
+  .term .in { color: var(--text); }
+
+  /* ── TOC ── */
+  .toc-card {
+    background: #0c0c16; border: 1px solid var(--border);
+    border-radius: 12px; padding: 22px 28px; margin: 20px 0;
+  }
+  .toc-card h3 { margin: 0 0 12px; color: #fff; border: none; }
+  .toc-card ol { columns: 2; column-gap: 36px; margin: 0; }
+  .toc-card li { margin-bottom: 6px; break-inside: avoid; }
+  .toc-card a { color: var(--accent2); font-size: 0.9em; }
+
+  /* ── Language hide/show ── */
+  .lang-zh, .lang-en { display: none; }
+  body.show-zh .lang-zh { display: block; }
+  body.show-zh .lang-en { display: none; }
+  body.show-en .lang-en { display: block; }
+  body.show-en .lang-zh { display: none; }
+  body.show-zh .lang-zh-inline { display: inline; }
+  body.show-zh .lang-en-inline { display: none; }
+  body.show-en .lang-en-inline { display: inline; }
+  body.show-en .lang-zh-inline { display: none; }
+  .lang-zh, .lang-en, .lang-zh-inline, .lang-en-inline { transition: opacity 0.2s; }
+  body.show-zh .lang-zh,
+  body.show-en .lang-en,
+  body.show-zh .lang-zh-inline,
+  body.show-en .lang-en-inline { animation: fadeIn 0.25s ease; }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+  .lang-label {
+    display: inline-block; font-size: 0.72em; color: var(--text3);
+    background: var(--bg3); padding: 1px 8px; border-radius: 4px;
+    margin-right: 6px; vertical-align: middle;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 700px) {
+    .hero h1 { font-size: 2.2em; }
+    .toc-card ol { columns: 1; }
+    nav .nav-links a { font-size: 0.75em; padding: 4px 6px; }
+    .container { padding: 0 14px; }
+    pre { font-size: 0.75em; padding: 12px 14px; }
+    .cards { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 480px) {
+    .cards { grid-template-columns: 1fr; }
+    table { font-size: 0.78em; }
+    td, th { padding: 6px 8px; }
+  }
+</style>
+</head>
+<body class="show-zh">
+
+<!-- ═══ Navbar ═══ -->
+<nav>
+  <div class="brand">BAW<span>.</span></div>
+  <div class="nav-links">
+    <a href="#features"><span class="lang-en-inline">Features</span><span class="lang-zh-inline">特色</span></a>
+    <a href="#install"><span class="lang-en-inline">Install</span><span class="lang-zh-inline">安裝</span></a>
+    <a href="#usage"><span class="lang-en-inline">Usage</span><span class="lang-zh-inline">用法</span></a>
+    <a href="#modes"><span class="lang-en-inline">Modes</span><span class="lang-zh-inline">模式</span></a>
+    <a href="#architecture"><span class="lang-en-inline">Arch</span><span class="lang-zh-inline">架構</span></a>
+    <a href="https://github.com/cornreform/baw-agent-platform" target="_blank">GitHub</a>
+    <div class="lang-toggle">
+      <button onclick="switchLang('zh')" id="btn-zh">繁</button>
+      <button onclick="switchLang('en')" id="btn-en">EN</button>
+    </div>
+  </div>
+</nav>
+
+<div class="container">
+  <!-- ═══ Hero ═══ -->
+  <div class="hero">
+    <h1>BAW</h1>
+    <div class="subtitle">
+      <span class="lang-zh">由零打造嘅 Agent Platform — Angel/Devil 雙魂法庭</span>
+      <span class="lang-en">Built-from-scratch Agent Platform — Angel/Devil Dual-Soul Court</span>
+    </div>
+    <div class="badge-row">
+      <span class="badge pri">v1.0.0</span>
+      <span class="badge suc">Linux + macOS</span>
+      <span class="badge">Protocol-agnostic</span>
+      <span class="badge warn">Never Surrender</span>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ════════════════════ TOC ════════════════════ -->
+    <div class="toc-card" id="toc">
+      <h3>
+        <span class="lang-zh">📑 目錄</span>
+        <span class="lang-en">📑 Table of Contents</span>
+      </h3>
+      <ol>
+        <li><a href="#features"><span class="lang-zh">核心特色</span><span class="lang-en">Features</span></a></li>
+        <li><a href="#install"><span class="lang-zh">安裝 &amp; 設定</span><span class="lang-en">Installation</span></a></li>
+        <li><a href="#quickstart"><span class="lang-zh">快速開始</span><span class="lang-en">Quick Start</span></a></li>
+        <li><a href="#modes"><span class="lang-zh">三種執行模式</span><span class="lang-en">Execution Modes</span></a></li>
+        <li><a href="#court"><span class="lang-zh">天使/魔鬼法庭</span><span class="lang-en">Angel/Devil Court</span></a></li>
+        <li><a href="#setup-wizard"><span class="lang-zh">設定精靈</span><span class="lang-en">Setup Wizard</span></a></li>
+        <li><a href="#config-cli"><span class="lang-zh">Config CLI</span><span class="lang-en">Config CLI</span></a></li>
+        <li><a href="#chat"><span class="lang-zh">互動式 Chat</span><span class="lang-en">Interactive Chat</span></a></li>
+        <li><a href="#commands"><span class="lang-zh">指令一覽</span><span class="lang-en">Commands</span></a></li>
+        <li><a href="#slash"><span class="lang-zh">Slash 指令</span><span class="lang-en">Slash Commands</span></a></li>
+        <li><a href="#scheduler"><span class="lang-zh">Scheduler 排程</span><span class="lang-en">Scheduler</span></a></li>
+        <li><a href="#skills"><span class="lang-zh">Skills 技能</span><span class="lang-en">Skills</span></a></li>
+        <li><a href="#tasks"><span class="lang-zh">背景任務</span><span class="lang-en">Async Tasks</span></a></li>
+        <li><a href="#github"><span class="lang-zh">GitHub 整合</span><span class="lang-en">GitHub</span></a></li>
+        <li><a href="#tone"><span class="lang-zh">語氣設定</span><span class="lang-en">Tone Profiles</span></a></li>
+        <li><a href="#architecture"><span class="lang-zh">系統架構</span><span class="lang-en">Architecture</span></a></li>
+      </ol>
+    </div>
+
+    <!-- ════════════════════ Features ════════════════════ -->
+    <div class="section" id="features">
+      <h2>
+        <span class="lang-zh">✨ 核心特色</span>
+        <span class="lang-en">✨ Core Features</span>
+      </h2>
+      <div class="cards">
+        <div class="card">
+          <span class="icon">⚖️</span>
+          <h4><span class="lang-zh">Angel/Devil 法庭</span><span class="lang-en">Angel/Devil Court</span></h4>
+          <p><span class="lang-zh">Devil 先發言審查，零執行權。Angel 聽完再決定。分數比對決定執行或 BLOCK。</span><span class="lang-en">Devil speaks first with ZERO execution power. Angel listens then decides. Score comparison determines action.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">🧠</span>
+          <h4><span class="lang-zh">永不放棄</span><span class="lang-en">Never Surrender</span></h4>
+          <p><span class="lang-zh">失敗→retry→replan→rollback。6 種策略用盡先上報，唔問用戶點做。</span><span class="lang-en">Fail→retry→replan→rollback. Exhausts 6 strategies before reporting. Never asks the user.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">🔌</span>
+          <h4><span class="lang-zh">協議無關 LLM</span><span class="lang-en">Protocol-agnostic LLM</span></h4>
+          <p><span class="lang-zh">OpenAI/Anthropic/Google 協議通吃。一行 config 轉模型，內置 cost tracking。</span><span class="lang-en">OpenAI/Anthropic/Google protocols. One-line config switch, built-in cost tracking.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">⚙️</span>
+          <h4><span class="lang-zh">三種執行模式</span><span class="lang-en">3 Execution Modes</span></h4>
+          <p><span class="lang-zh">Quick（最快）/ Hybrid（平衡）/ Tight（完整 court+plan+verify）</span><span class="lang-en">Quick (fastest) / Hybrid (balanced) / Tight (full pipeline)</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">🗣️</span>
+          <h4><span class="lang-zh">6 種語氣 Profile</span><span class="lang-en">6 Tone Profiles</span></h4>
+          <p><span class="lang-zh">casual / business / teaching / client-doc / ot-rt / stepwise，隨時切換</span><span class="lang-en">casual / business / teaching / client-doc / ot-rt / stepwise, switch anytime</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">📝</span>
+          <h4><span class="lang-zh">自我學習技能</span><span class="lang-en">Self-Learning Skills</span></h4>
+          <p><span class="lang-zh">俾句描述/URL，BAW 自動分析拆解生成 YAML skill。</span><span class="lang-en">Give a description or URL — BAW analyzes, decomposes, and generates a YAML skill.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">🔄</span>
+          <h4><span class="lang-zh">Cron Scheduler</span><span class="lang-en">Cron Scheduler</span></h4>
+          <p><span class="lang-zh">Cron 表達式定時執行任務。60s 背景 polling daemon。</span><span class="lang-en">Cron-expression scheduled tasks. 60s background polling daemon.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">📁</span>
+          <h4><span class="lang-zh">背景 Async Task</span><span class="lang-en">Async Background Tasks</span></h4>
+          <p><span class="lang-zh"><code>--delegate</code> 背景執行，主 terminal 即時 free。Max 3 concurrent。</span><span class="lang-en"><code>--delegate</code> runs in background, main terminal freed. Max 3 concurrent.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">🐙</span>
+          <h4><span class="lang-zh">GitHub 整合</span><span class="lang-en">GitHub Integration</span></h4>
+          <p><span class="lang-zh">issues/PRs/CI/repos 直接從 CLI 操作。</span><span class="lang-en">issues/PRs/CI/repos directly from the CLI.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">🔍</span>
+          <h4><span class="lang-zh">開放 Search Provider</span><span class="lang-en">Open Search Provider</span></h4>
+          <p><span class="lang-zh">內置 DuckDuckGo（免費無 key），可 pluggable 升級。</span><span class="lang-en">Built-in DuckDuckGo (free, no key). Pluggable upgrade path.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">💾</span>
+          <h4><span class="lang-zh">記憶 + 事實查證</span><span class="lang-en">Memory + Fact Check</span></h4>
+          <p><span class="lang-zh">JSONL append‑only 記憶 + 內部評分 + 三級事實驗證。</span><span class="lang-en">JSONL append-only memory + internal scoring + 3-level fact verification.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">🛡️</span>
+          <h4><span class="lang-zh">三級權限引擎</span><span class="lang-en">3-Level Permission Engine</span></h4>
+          <p><span class="lang-zh">High（禁止 sudo/rm -rf）/ Medium（提示）/ Low（允許）</span><span class="lang-en">High (block sudo/rm -rf) / Medium (warn) / Low (allow)</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">📊</span>
+          <h4><span class="lang-zh">HTML Dashboard</span><span class="lang-en">HTML Dashboard</span></h4>
+          <p><span class="lang-zh"><code>--board</code> 一鍵生成深色主題系統儀錶板。</span><span class="lang-en"><code>--board</code> generates a dark-themed system dashboard.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">💬</span>
+          <h4><span class="lang-zh">互動式 CLI Chat</span><span class="lang-en">Interactive CLI Chat</span></h4>
+          <p><span class="lang-zh">彩色 banner + Tab 補全 + 20 個 slash commands。</span><span class="lang-en">Colored banner + Tab completion + 20 slash commands.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">⚙️</span>
+          <h4><span class="lang-zh">Setup Wizard + Config CLI</span><span class="lang-en">Setup Wizard + Config CLI</span></h4>
+          <p><span class="lang-zh"><code>--setup</code> / <code>--cfg set/get/list</code> 即時設定。</span><span class="lang-en"><code>--setup</code> / <code>--cfg set/get/list</code> — real-time config.</span></p>
+        </div>
+        <div class="card">
+          <span class="icon">📁</span>
+          <h4><span class="lang-zh">檔案版本 + Auto Git</span><span class="lang-en">File History + Auto Git</span></h4>
+          <p><span class="lang-zh">每次寫入 SHA256 + ISO timestamp + 自動 git commit。</span><span class="lang-en">Every write logged with SHA256 + ISO timestamp + auto git commit.</span></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════ Install ════════════════════ -->
+    <div class="section" id="install">
+      <h2>
+        <span class="lang-zh">📦 安裝 &amp; 設定</span>
+        <span class="lang-en">📦 Installation &amp; Setup</span>
+      </h2>
+
+      <h3>
+        <span class="lang-zh">最低要求</span>
+        <span class="lang-en">Requirements</span>
+      </h3>
+      <ul>
+        <li>Python 3.11+（建議 3.12）</li>
+        <li>macOS / Linux</li>
+        <li>Git（auto-commit 用）</li>
+        <li>API Key for LLM provider（DeepSeek, MiniMax, 或其他）</li>
+      </ul>
+
+      <h3>
+        <span class="lang-zh">安裝步驟</span>
+        <span class="lang-en">Installation Steps</span>
+      </h3>
+      <pre>
+<span class="cmt"># Clone repo</span>
+git clone https://github.com/cornreform/baw-agent-platform.git ~/baw
+cd ~/baw
+
+<span class="cmt"># Install dependencies</span>
+pip install pyyaml duckduckgo-search
+
+<span class="cmt"># Create CLI link</span>
+ln -sf ~/baw/baw ~/.local/bin/baw
+
+<span class="cmt"># Confirm</span>
+baw --version</pre>
+
+      <h3>
+        <span class="lang-zh">設定 API Keys</span>
+        <span class="lang-en">API Key Setup</span>
+      </h3>
+      <pre>
+<span class="cmt"># 方法一：用 .env file</span>
+echo "DEEPSEEK_API_KEY=sk-your-key-here" >> ~/.baw/.env
+echo "MINIMAX_API_KEY=your-key-here" >> ~/.baw/.env
+
+<span class="cmt"># 方法二：用環境變數</span>
+export DEEPSEEK_API_KEY=sk-your-key-here
+export MINIMAX_API_KEY=your-key-here</pre>
+    </div>
+
+    <!-- ════════════════════ Quick Start ════════════════════ -->
+    <div class="section" id="quickstart">
+      <h2>
+        <span class="lang-zh">🚀 快速開始</span>
+        <span class="lang-en">🚀 Quick Start</span>
+      </h2>
+
+      <pre>
+<span class="cmt"># 跑一個 prompt（單句模式）</span>
+baw "list files in current directory"
+
+<span class="cmt"># 指定語氣</span>
+baw --tone business "寫一份合作提案"
+
+<span class="cmt"># 快速 LLM 問題（無 court/plan）</span>
+baw --btw "Now UTC+8 幾點？"
+
+<span class="cmt"># 背景執行長時間任務</span>
+baw --delegate "scan project directory and report code stats"
+
+<span class="cmt"># 互動式設定精靈</span>
+baw --setup
+
+<span class="cmt"># 進入互動式 Chat 模式</span>
+baw</pre>
+
+      <div class="callout">
+        <h4>💡 <span class="lang-zh">第一件事</span><span class="lang-en">First thing to try</span></h4>
+        <p>
+          <span class="lang-zh">行 <code>baw --setup</code> 設定你嘅 mode / tone / court / model，然後 <code>baw "say hello"</code> 睇下 BAW 點運作。</span>
+          <span class="lang-en">Run <code>baw --setup</code> to configure mode/tone/court/model, then <code>baw "say hello"</code> to see BAW in action.</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- ════════════════════ Modes ════════════════════ -->
+    <div class="section" id="modes">
+      <h2>
+        <span class="lang-zh">⚙️ 三種執行模式</span>
+        <span class="lang-en">⚙️ Execution Modes</span>
+      </h2>
+
+      <table>
+        <tr><th><span class="lang-zh">模式</span><span class="lang-en">Mode</span></th><th>Flag</th><th>Court</th><th>Plan</th><th>Verify</th><th><span class="lang-zh">速度</span><span class="lang-en">Speed</span></th></tr>
+        <tr><td class="mono">🚀 Quick</td><td><code>--mode quick</code></td><td>❌</td><td>❌</td><td>❌</td><td><span class="lang-zh">最快</span><span class="lang-en">Fastest</span></td></tr>
+        <tr><td class="mono">⚖️ Hybrid</td><td><code>--mode hybrid</code></td><td>❌</td><td>✅</td><td>❌</td><td><span class="lang-zh">平衡</span><span class="lang-en">Balanced</span></td></tr>
+        <tr><td class="mono">🛡️ Tight</td><td><code>--mode tight</code>（default）</td><td>✅</td><td>✅</td><td>✅</td><td><span class="lang-zh">最全面</span><span class="lang-en">Most thorough</span></td></tr>
+      </table>
+
+      <h3>Quick</h3>
+      <p><span class="lang-zh">純 LLM call，無 court、無 planning、無 verify。最快，適合簡單查詢。</span><span class="lang-en">Pure LLM call — no court, no planning, no verify. Fastest. Best for simple queries.</span></p>
+
+      <h3>Hybrid</h3>
+      <p><span class="lang-zh">有 step plan 引導執行，但 skip court 同 verify。平衡速度同可控性。</span><span class="lang-en">Step plan guides execution, but skips court and verify. Balanced speed and control.</span></p>
+
+      <h3>Tight（預設）</h3>
+      <p><span class="lang-zh">完整 pipeline：Plan → Devil 審查 → Angel 執行 → 每步 verify → checkpoint → report。最安全。</span><span class="lang-en">Full pipeline: Plan → Devil review → Angel execute → per-step verify → checkpoint → report. Most secure.</span></p>
+
+      <pre>
+<span class="cmt"># 改預設模式</span>
+baw --cfg set mode hybrid
+
+<span class="cmt"># 單次 override</span>
+baw --mode quick "現在幾點？"</pre>
+    </div>
+
+    <!-- ════════════════════ Court ════════════════════ -->
+    <div class="section" id="court">
+      <h2>
+        <span class="lang-zh">⚖️ 天使/魔鬼法庭</span>
+        <span class="lang-en">⚖️ Angel/Devil Court</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">BAW 嘅核心機制。每次執行任務前，Devil 先發言挑戰，Angel 聽完先決定點做。</span>
+        <span class="lang-en">The heart of BAW. Before every task, the Devil speaks first as opposing counsel, then the Angel responds and decides.</span>
+      </p>
+
+      <h3>
+        <span class="lang-zh">流程</span>
+        <span class="lang-en">Flow</span>
+      </h3>
+      <ol>
+        <li><span class="lang-zh"><strong>用戶落指令</strong> — e.g.「delete all .log files」</span><span class="lang-en"><strong>User gives command</strong> — e.g. "delete all .log files"</span></li>
+        <li><span class="lang-zh"><strong>👿 Devil 先發言</strong> — 指出風險，但無工具權限，得把口</span><span class="lang-en"><strong>👿 Devil speaks first</strong> — identifies risks, but has ZERO execution power</span></li>
+        <li><span class="lang-zh"><strong>Devil 比風險分數</strong> — <code>[Devil: 7/10]</code></span><span class="lang-en"><strong>Devil scores risk</strong> — <code>[Devil: 7/10]</code></span></li>
+        <li><span class="lang-zh"><strong>😇 Angel 聽完回應</strong> — 有齊工具，可以執行</span><span class="lang-en"><strong>😇 Angel responds</strong> — has full tool access, can execute</span></li>
+        <li><span class="lang-zh"><strong>比對分數</strong> — Angel 分數 > Devil → 繼續；否則 BLOCK</span><span class="lang-en"><strong>Compare scores</strong> — Angel score > Devil → proceed; else BLOCK</span></li>
+        <li><span class="lang-zh"><strong>執行</strong> — Angel 用工具做嘢，逐 step checkpoint</span><span class="lang-en"><strong>Execute</strong> — Angel uses tools, step-by-step with checkpoints</span></li>
+      </ol>
+
+      <pre>
+<span class="gt">$</span> baw "清空 /tmp 嘅 .tmp 檔案"
+
+<span class="out">👿 Devil review: [Devil: 6/10]
+  危險操作。雖然係 /tmp，但可能有正在使用嘅 temp file。
+  建議先 list 出要 delete 嘅檔案，確認無 process 使用。</span>
+
+<span class="out">😇 Angel response: [Angel: 8/10]
+  同意 Devil。我會先 list files → check lsof →
+  只 delete 無使用嘅 .tmp files → 報告結果。</span>
+
+<span class="out">📋 Plan:
+  1. ls -la /tmp/*.tmp 列出目標
+  2. lsof /tmp/*.tmp 檢查使用中
+  3. rm 無使用嘅檔案
+  4. 報告共刪除 N 個檔案</span></pre>
+
+      <p>
+        <span class="lang-zh">可以用 <code>baw --cfg set adversarial.enabled false</code> 熄咗法庭。</span>
+        <span class="lang-en">Disable the court with <code>baw --cfg set adversarial.enabled false</code>.</span>
+      </p>
+    </div>
+
+    <!-- ════════════════════ Setup Wizard ════════════════════ -->
+    <div class="section" id="setup-wizard">
+      <h2>
+        <span class="lang-zh">🎯 互動式設定精靈</span>
+        <span class="lang-en">🎯 Setup Wizard</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">唔想手動改 YAML？行 <code>baw --setup</code> 就用得。</span>
+        <span class="lang-en">Don't want to edit YAML? Run <code>baw --setup</code>.</span>
+      </p>
+
+      <div class="term">
+        <span class="banner">═══════════════════════════════════</span><br>
+        <span class="banner">  BAW Setup Wizard</span><br>
+        <span class="out">  Choose how BAW executes tasks:</span><br>
+        <span class="out">    quick  = no court, no plan (fastest)</span><br>
+        <span class="out">    hybrid = plan only, no court (balanced)</span><br>
+        <span class="out">    tight  = full court + plan + verify</span><br>
+        <span class="prompt">? Execution mode</span> <span class="out">[tight]</span> _
+      </div>
+
+      <p>
+        <span class="lang-zh">逐步引導設定：</span>
+        <span class="lang-en">Guides you through:</span>
+      </p>
+      <ol>
+        <li><span class="lang-zh">Execution Mode（quick / hybrid / tight）</span><span class="lang-en">Execution Mode (quick / hybrid / tight)</span></li>
+        <li><span class="lang-zh">Tone Profile（casual / business / teaching / ...）</span><span class="lang-en">Tone Profile (casual / business / teaching / ...)</span></li>
+        <li><span class="lang-zh">Adversarial Court（enable / disable）</span><span class="lang-en">Adversarial Court (enable / disable)</span></li>
+        <li><span class="lang-zh">Fact Checking（off / normal / strict）</span><span class="lang-en">Fact Checking (off / normal / strict)</span></li>
+        <li><span class="lang-zh">Default Model（LLM 模型 ID）</span><span class="lang-en">Default Model (LLM model ID)</span></li>
+      </ol>
+      <p>
+        <span class="lang-zh">全部設定即時寫入 <code>~/.baw/config.yaml</code>，即刻生效。</span>
+        <span class="lang-en">All settings are written to <code>~/.baw/config.yaml</code> immediately.</span>
+      </p>
+    </div>
+
+    <!-- ════════════════════ Config CLI ════════════════════ -->
+    <div class="section" id="config-cli">
+      <h2>
+        <span class="lang-zh">⚡ Config CLI</span>
+        <span class="lang-en">⚡ Config CLI</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">使用中隨時用 <code>baw --cfg</code> 查看或修改設定，唔使開 editor：</span>
+        <span class="lang-en">View or change settings on-the-fly — no editor needed:</span>
+      </p>
+
+      <pre>
+<span class="cmt"># List all settings</span>
+baw --cfg list
+
+<span class="cmt"># Query a specific key (dot notation)</span>
+baw --cfg get model.default
+baw --cfg get tone.default
+baw --cfg get adversarial.enabled
+
+<span class="cmt"># Change a setting immediately</span>
+baw --cfg set mode hybrid
+baw --cfg set tone.default business
+baw --cfg set adversarial.enabled false
+
+<span class="cmt"># Show all available config keys</span>
+baw --cfg help</pre>
+    </div>
+
+    <!-- ════════════════════ Chat ════════════════════ -->
+    <div class="section" id="chat">
+      <h2>
+        <span class="lang-zh">💬 互動式 Chat 介面</span>
+        <span class="lang-en">💬 Interactive Chat</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">直接 <code>baw</code>（唔畀 prompt）就進入互動式 chat 模式：</span>
+        <span class="lang-en">Run <code>baw</code> without a prompt to enter interactive chat mode:</span>
+      </p>
+
+      <div class="term">
+        <span class="banner">◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈</span><br>
+        <span class="banner">  BAW Interactive Chat</span><br>
+        <span class="out">  Model: deepseek-v4-flash • Tone: casual • Mode: tight</span><br>
+        <span class="out">  Type /help for commands • Ctrl+D or /exit to quit</span><br>
+        <span class="banner">◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈</span><br>
+        <br>
+        <span class="prompt">BAW></span> <span class="in">list files</span><br>
+        <span class="out">📋 Plan:<br>  1. 用 bash ls 列出當前目錄<br>▶️ Step 1: 用 bash ls... ✅<br>Done — 1/1 steps</span><br>
+        <span class="prompt">BAW></span>_
+      </div>
+
+      <h3>
+        <span class="lang-zh">Tab 自動補全</span>
+        <span class="lang-en">Tab Completion</span>
+      </h3>
+      <p>
+        <span class="lang-zh">輸入 <code>/</code> 後按 Tab 會見到所有可用 slash command。</span>
+        <span class="lang-en">Type <code>/</code> and press Tab to see all available slash commands.</span>
+      </p>
+    </div>
+
+    <!-- ════════════════════ Commands ════════════════════ -->
+    <div class="section" id="commands">
+      <h2>
+        <span class="lang-zh">📋 完整指令一覽</span>
+        <span class="lang-en">📋 Full Command Reference</span>
+      </h2>
+
+      <table>
+        <tr><th>Command</th><th><span class="lang-zh">功能</span><span class="lang-en">Function</span></th></tr>
+        <tr><td class="mono">baw "prompt"</td><td><span class="lang-zh">執行 agent（單句模式）</span><span class="lang-en">Run agent (single-shot)</span></td></tr>
+        <tr><td class="mono">baw（無 prompt）</td><td><span class="lang-zh">互動式 Chat 模式</span><span class="lang-en">Interactive Chat mode</span></td></tr>
+        <tr><td class="mono">baw --mode quick/hybrid/tight</td><td><span class="lang-zh">執行模式 override</span><span class="lang-en">Execution mode override</span></td></tr>
+        <tr><td class="mono">baw --tone &lt;profile&gt;</td><td><span class="lang-zh">語氣 override</span><span class="lang-en">Tone override</span></td></tr>
+        <tr><td class="mono">baw --model &lt;id&gt;</td><td><span class="lang-zh">模型 override</span><span class="lang-en">Model override</span></td></tr>
+        <tr><td class="mono">baw --verbose</td><td><span class="lang-zh">詳細輸出 + 成本</span><span class="lang-en">Verbose output + cost</span></td></tr>
+        <tr><td class="mono">baw --dry-run</td><td><span class="lang-zh">試行（唔改 file）</span><span class="lang-en">Dry run (no changes)</span></td></tr>
+        <tr><td class="mono">baw --btw "q"</td><td><span class="lang-zh">快速 LLM 問題</span><span class="lang-en">Quick LLM question</span></td></tr>
+        <tr><td class="mono">baw --delegate "task"</td><td><span class="lang-zh">背景執行任務</span><span class="lang-en">Background task execution</span></td></tr>
+        <tr><td class="mono">baw --task-id &lt;id&gt;</td><td><span class="lang-zh">檢查背景任務狀態</span><span class="lang-en">Check background task status</span></td></tr>
+        <tr><td class="mono">baw --tasks</td><td><span class="lang-zh">列表背景任務</span><span class="lang-en">List all background tasks</span></td></tr>
+        <tr><td class="mono">baw --task-cancel &lt;id&gt;</td><td><span class="lang-zh">取消背景任務</span><span class="lang-en">Cancel a background task</span></td></tr>
+        <tr><td class="mono">baw --version</td><td><span class="lang-zh">版本資訊</span><span class="lang-en">Show version</span></td></tr>
+        <tr><td class="mono">baw --status</td><td><span class="lang-zh">系統狀態</span><span class="lang-en">System status</span></td></tr>
+        <tr><td class="mono">baw --remember "text"</td><td><span class="lang-zh">儲存記憶</span><span class="lang-en">Save memory</span></td></tr>
+        <tr><td class="mono">baw --search "q"</td><td><span class="lang-zh">搜尋記憶</span><span class="lang-en">Search memory</span></td></tr>
+        <tr><td class="mono">baw --setup</td><td><span class="lang-zh">互動設定精靈</span><span class="lang-en">Interactive setup wizard</span></td></tr>
+        <tr><td class="mono">baw --cfg list</td><td><span class="lang-zh">Config 列表</span><span class="lang-en">List configuration</span></td></tr>
+        <tr><td class="mono">baw --cfg get &lt;k&gt;</td><td><span class="lang-zh">查詢設定</span><span class="lang-en">Query a setting</span></td></tr>
+        <tr><td class="mono">baw --cfg set &lt;k&gt; &lt;v&gt;</td><td><span class="lang-zh">修改設定</span><span class="lang-en">Change a setting</span></td></tr>
+        <tr><td class="mono">baw --board</td><td><span class="lang-zh">生成 HTML Dashboard</span><span class="lang-en">Generate HTML dashboard</span></td></tr>
+        <tr><td class="mono">baw --gh &lt;cmd&gt;</td><td><span class="lang-zh">GitHub 操作</span><span class="lang-en">GitHub operations</span></td></tr>
+        <tr><td class="mono">baw --schedule-list|add|rm</td><td><span class="lang-zh">排程管理</span><span class="lang-en">Schedule management</span></td></tr>
+        <tr><td class="mono">baw --skill-list|run</td><td><span class="lang-zh">Skills 管理</span><span class="lang-en">Skill management</span></td></tr>
+        <tr><td class="mono">baw --learn-skill "desc"</td><td><span class="lang-zh">自我學習技能</span><span class="lang-en">Self-learn a skill</span></td></tr>
+        <tr><td class="mono">baw --search-provider &lt;cmd&gt;</td><td><span class="lang-zh">Search provider 管理</span><span class="lang-en">Search provider management</span></td></tr>
+      </table>
+    </div>
+
+    <!-- ════════════════════ Slash ════════════════════ -->
+    <div class="section" id="slash">
+      <h2>
+        <span class="lang-zh">🎮 Slash 指令 (Chat)</span>
+        <span class="lang-en">🎮 Slash Commands (Chat)</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">Chat 模式入面用 <code>/</code> 開頭嘅快捷指令：</span>
+        <span class="lang-en">Quick commands inside chat mode, prefixed with <code>/</code>:</span>
+      </p>
+
+      <table>
+        <tr><th>Command</th><th>Alias</th><th><span class="lang-zh">功能</span><span class="lang-en">Function</span></th></tr>
+        <tr><td class="mono">/help</td><td>/h, /?</td><td><span class="lang-zh">顯示所有指令</span><span class="lang-en">Show all slash commands</span></td></tr>
+        <tr><td class="mono">/status</td><td>/s</td><td><span class="lang-zh">BAW 狀態</span><span class="lang-en">BAW status</span></td></tr>
+        <tr><td class="mono">/version</td><td>/v</td><td><span class="lang-zh">版本 + git log</span><span class="lang-en">Version + git log</span></td></tr>
+        <tr><td class="mono">/model &lt;id&gt;</td><td>/m</td><td><span class="lang-zh">即時轉模型</span><span class="lang-en">Switch model</span></td></tr>
+        <tr><td class="mono">/tone &lt;p&gt;</td><td>/t</td><td><span class="lang-zh">即時轉語氣</span><span class="lang-en">Switch tone profile</span></td></tr>
+        <tr><td class="mono">/mode &lt;m&gt;</td><td>-</td><td><span class="lang-zh">即時轉執行模式</span><span class="lang-en">Switch execution mode</span></td></tr>
+        <tr><td class="mono">/remember</td><td>/r</td><td><span class="lang-zh">儲存記憶</span><span class="lang-en">Save memory</span></td></tr>
+        <tr><td class="mono">/search</td><td>-</td><td><span class="lang-zh">搜尋記憶</span><span class="lang-en">Search memory</span></td></tr>
+        <tr><td class="mono">/rethink</td><td>-</td><td><span class="lang-zh">用替代分析重做上次 prompt</span><span class="lang-en">Rerun last prompt with alternative analysis</span></td></tr>
+        <tr><td class="mono">/court</td><td>-</td><td><span class="lang-zh">顯示上次天使/魔鬼判決</span><span class="lang-en">Show last Angel/Devil verdict</span></td></tr>
+        <tr><td class="mono">/fresh</td><td>-</td><td><span class="lang-zh">無 soul 無 memory 嘅原始 LLM</span><span class="lang-en">Raw LLM — no soul, no memory</span></td></tr>
+        <tr><td class="mono">/btw</td><td>-</td><td><span class="lang-zh">快速 LLM 提問</span><span class="lang-en">Quick LLM question</span></td></tr>
+        <tr><td class="mono">/delegate</td><td>-</td><td><span class="lang-zh">背景執行任務</span><span class="lang-en">Background task</span></td></tr>
+        <tr><td class="mono">/tasks</td><td>-</td><td><span class="lang-zh">背景任務列表</span><span class="lang-en">List background tasks</span></td></tr>
+        <tr><td class="mono">/board</td><td>-</td><td><span class="lang-zh">生成 Dashboard</span><span class="lang-en">Generate dashboard</span></td></tr>
+        <tr><td class="mono">/exit</td><td>/quit, Ctrl+D</td><td><span class="lang-zh">離開</span><span class="lang-en">Exit</span></td></tr>
+        <tr><td class="mono">/clear</td><td>-</td><td><span class="lang-zh">清螢幕</span><span class="lang-en">Clear screen</span></td></tr>
+      </table>
+
+      <div class="callout">
+        <h4>💡 <span class="lang-zh">/rethink 用法</span><span class="lang-en">Using /rethink</span></h4>
+        <p>
+          <span class="lang-zh">當你覺得 BAW 上次做得唔好，<code>/rethink</code> 會用同一個 prompt 但完全唔同嘅分析角度重做一次。</span>
+          <span class="lang-en">If BAW's last response wasn't great, <code>/rethink</code> re-runs the same prompt with a completely different analytical approach.</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- ════════════════════ Scheduler ════════════════════ -->
+    <div class="section" id="scheduler">
+      <h2>
+        <span class="lang-zh">🔄 Scheduler 排程</span>
+        <span class="lang-en">🔄 Scheduler</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">BAW 內置 cron-based 定時任務系統：</span>
+        <span class="lang-en">BAW has a built-in cron-based scheduled task system:</span>
+      </p>
+
+      <pre>
+<span class="cmt"># 每日凌晨 3 點做 backup</span>
+baw --schedule-add daily-backup '0 3 * * *' 'backup important files'
+
+<span class="cmt"># 每小時 check disk</span>
+baw --schedule-add hourly-disk '0 * * * *' 'check disk > 90%'
+
+<span class="cmt"># 列表</span>
+baw --schedule-list
+
+<span class="cmt"># 移除</span>
+baw --schedule-rm hourly-disk</pre>
+
+      <p>
+        <span class="lang-zh">Scheduler 行 background daemon（每 60 秒 poll 一次），支援 cron 表達式、last-run 追蹤、避免 duplicate。</span>
+        <span class="lang-en">Background daemon polls every 60 seconds. Supports cron expressions, last-run tracking, and duplicate prevention.</span>
+      </p>
+    </div>
+
+    <!-- ════════════════════ Skills ════════════════════ -->
+    <div class="section" id="skills">
+      <h2>
+        <span class="lang-zh">🧩 Skills 技能系統</span>
+        <span class="lang-en">🧩 Skills System</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">Skills 係可重用嘅 YAML 任務模版。</span>
+        <span class="lang-en">Skills are reusable YAML task templates.</span>
+      </p>
+
+      <pre>
+<span class="cmt"># 列出所有 skills</span>
+baw --skill-list
+<span class="out">📋 Available Skills:
+  daily-git-push     — Auto commit & push BAW repo
+  disk-check         — Check disk usage
+  system-health      — System health report</span>
+
+<span class="cmt"># 執行 skill</span>
+baw --skill-run system-health
+
+<span class="cmt"># 自我學習（俾句描述）</span>
+baw --learn-skill "每小時 check CPU 溫度，超過 75°C 就報警"
+<span class="out">🧠 Learning from description...
+✅ Created skill 'system_temp_monitor' — 2 steps</span>
+
+<span class="cmt"># 從 URL 學習</span>
+baw --learn-url "https://example.com/backup-guide"</pre>
+    </div>
+
+    <!-- ════════════════════ Async Tasks ════════════════════ -->
+    <div class="section" id="tasks">
+      <h2>
+        <span class="lang-zh">📁 背景 Async 任務</span>
+        <span class="lang-en">📁 Async Background Tasks</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">長時間任務可以 delegate 去背景，主 terminal 即時 free：</span>
+        <span class="lang-en">Delegate long-running tasks to the background — your terminal stays free:</span>
+      </p>
+
+      <pre>
+<span class="cmt"># Delegate 去背景</span>
+baw --delegate "分析呢個 project 嘅 code quality"
+<span class="out">📋 Task ID: baw_20260607_123456_abc</span>
+
+<span class="cmt"># Check 狀態</span>
+baw --task-id baw_20260607_123456_abc
+
+<span class="cmt"># 全部任務一覧</span>
+baw --tasks
+
+<span class="cmt"># 取消</span>
+baw --task-cancel baw_20260607_123456_abc</pre>
+
+      <p>
+        <span class="lang-zh">TaskManager 自動管理 concurrency（max 3），超出嘅自動排隊。</span>
+        <span class="lang-en">TaskManager manages concurrency (max 3), queuing any excess automatically.</span>
+      </p>
+    </div>
+
+    <!-- ════════════════════ GitHub ════════════════════ -->
+    <div class="section" id="github">
+      <h2>
+        <span class="lang-zh">🐙 GitHub 整合</span>
+        <span class="lang-en">🐙 GitHub Integration</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">經 <code>gh</code> CLI 或 <code>GITHUB_TOKEN</code> 直接操作 GitHub：</span>
+        <span class="lang-en">Direct GitHub operations via <code>gh</code> CLI or <code>GITHUB_TOKEN</code>:</span>
+      </p>
+
+      <pre>
+<span class="cmt"># Setup guide</span>
+baw --gh setup
+
+<span class="cmt"># Issues</span>
+baw --gh issues cornreform/baw-agent-platform
+baw --gh create-issue myuser/myrepo "Bug: login fails" "details..."
+
+<span class="cmt"># PRs & CI</span>
+baw --gh prs cornreform/baw-agent-platform
+baw --gh ci cornreform/baw-agent-platform main
+
+<span class="cmt"># Repos</span>
+baw --gh repos cornreform
+
+<span class="cmt"># Self status</span>
+baw --gh status</pre>
+    </div>
+
+    <!-- ════════════════════ Tone ════════════════════ -->
+    <div class="section" id="tone">
+      <h2>
+        <span class="lang-zh">🎭 語氣設定</span>
+        <span class="lang-en">🎭 Tone Profiles</span>
+      </h2>
+
+      <table>
+        <tr><th>Tone</th><th><span class="lang-zh">場景</span><span class="lang-en">Scenario</span></th></tr>
+        <tr><td class="mono">casual</td><td><span class="lang-zh">日常吹水 — 粵語口語、短句、emoji OK</span><span class="lang-en">Daily chat — casual, emoji OK</span></td></tr>
+        <tr><td class="mono">business</td><td><span class="lang-zh">客戶文件 — 合作邀約 tone</span><span class="lang-en">Client documents — professional tone</span></td></tr>
+        <tr><td class="mono">teaching</td><td><span class="lang-zh">教學文件 — 直接俾 .md</span><span class="lang-en">Educational — direct .md output</span></td></tr>
+        <tr><td class="mono">client-doc</td><td><span class="lang-zh">Client facing — 零 comment 零 meta</span><span class="lang-en">Client facing — no comments, no meta</span></td></tr>
+        <tr><td class="mono">ot-rt</td><td><span class="lang-zh">快速執行 — 做完先報</span><span class="lang-en">Just do it — report when done</span></td></tr>
+        <tr><td class="mono">stepwise</td><td><span class="lang-zh">逐步執行 — 每步等 confirm</span><span class="lang-en">Step by step — confirm before proceeding</span></td></tr>
+      </table>
+
+      <pre>
+<span class="cmt"># 設定預設語氣</span>
+baw --cfg set tone.default teaching
+
+<span class="cmt"># 單次 override</span>
+baw --tone business "寫一份合作提案"
+
+<span class="cmt"># Chat 模式即時轉</span>
+BAW> /tone casual</pre>
+    </div>
+
+    <!-- ════════════════════ Architecture ════════════════════ -->
+    <div class="section" id="architecture">
+      <h2>
+        <span class="lang-zh">🏗️ 系統架構</span>
+        <span class="lang-en">🏗️ Architecture</span>
+      </h2>
+
+      <pre>
+baw/                        ← <span class="cmt">Code repo</span>
+├── baw                     <span class="cmt">CLI entry point (Python)</span>
+├── core/                   <span class="cmt">核心模組 Core modules</span>
+│   ├── loop.py             <span class="cmt">Agent loop (plan → execute → report)</span>
+│   ├── llm.py              <span class="cmt">Multi-protocol LLM abstraction</span>
+│   ├── adversarial.py      <span class="cmt">Angel/Devil 雙魂法庭 Dual-soul court</span>
+│   ├── tools.py            <span class="cmt">Tool registry</span>
+│   ├── permission.py       <span class="cmt">三級權限引擎 3-level permission</span>
+│   ├── memory.py           <span class="cmt">JSONL memory + scoring</span>
+│   ├── fact_checker.py     <span class="cmt">三級事實驗證 3-mode fact verification</span>
+│   ├── tone.py             <span class="cmt">語氣 profiles Tone profiles</span>
+│   ├── scheduler.py        <span class="cmt">Cron scheduler daemon</span>
+│   ├── skills.py           <span class="cmt">YAML skill system</span>
+│   ├── learn.py            <span class="cmt">自我學習技能 Self-learning skills</span>
+│   ├── board.py            <span class="cmt">HTML Dashboard generator</span>
+│   ├── task_manager.py     <span class="cmt">背景 Task 管理 Async task manager</span>
+│   ├── github.py           <span class="cmt">GitHub 整合 Integration</span>
+│   ├── search.py           <span class="cmt">開放 search provider registry</span>
+│   ├── setup.py            <span class="cmt">Setup wizard + Config CLI</span>
+│   ├── commands.py         <span class="cmt">Slash commands</span>
+│   ├── display.py          <span class="cmt">步驟顯示格式化 Step display</span>
+│   ├── dream.py            <span class="cmt">每週自我整理 Weekly self-curation</span>
+│   ├── checkpoint.py       <span class="cmt">Checkpoint / rollback</span>
+│   ├── degradation.py      <span class="cmt">Tool degradation chains</span>
+│   ├── file_history.py     <span class="cmt">檔案版本 SHA256 history</span>
+│   ├── autosave.py         <span class="cmt">自動 git commit Auto save</span>
+│   ├── render.py           <span class="cmt">HTML renderer</span>
+│   └── verifier.py         <span class="cmt">Per-step LLM verification</span>
+├── tools/                  <span class="cmt">內置工具 Built-in tools</span>
+│   ├── bash.py             <span class="cmt">Shell 執行 Execution</span>
+│   ├── read_file.py        <span class="cmt">讀檔案 File reading</span>
+│   ├── write_file.py       <span class="cmt">寫檔案 File writing</span>
+│   └── web_search.py       <span class="cmt">Web 搜索 Search</span>
+├── config.yaml             <span class="cmt">預設配置 Default config</span>
+└── docs/                   <span class="cmt">GitHub Pages 文檔 Docs</span>
+
+~/.baw/                     ← <span class="cmt">用戶設定 User data</span>
+├── config.yaml             <span class="cmt">用戶配置 User config</span>
+├── SOUL.md                 <span class="cmt">Soul / 行為規則 Behaviour rules</span>
+├── .env                    <span class="cmt">API keys</span>
+├── memory/store.jsonl      <span class="cmt">記憶儲存 Memory storage</span>
+├── skills/*.yaml           <span class="cmt">自訂 skills Custom skills</span>
+└── tasks/                  <span class="cmt">背景任務 Background task output</span></pre>
+
+      <h3>
+        <span class="lang-zh">核心設計原則</span>
+        <span class="lang-en">Core Design Principles</span>
+      </h3>
+      <ul>
+        <li><strong><span class="lang-zh">永不問用戶</span><span class="lang-en">Never Ask the User</span></strong> — <span class="lang-zh">BAW 自己 planning → executing → recovering，唔會拋問題返俾用戶。</span><span class="lang-en">BAW plans, executes, and recovers on its own — never defers decisions to the user.</span></li>
+        <li><strong><span class="lang-zh">永不放棄</span><span class="lang-en">Never Surrender</span></strong> — <span class="lang-zh">6 種策略用盡先上報。Tool timeout → 加倍 timeout → parent dir fallback → replan → rollback。</span><span class="lang-en">Exhausts 6 strategies before reporting. Tool timeout → double timeout → parent dir fallback → replan → rollback.</span></li>
+        <li><strong><span class="lang-zh">協議無關</span><span class="lang-en">Protocol Agnostic</span></strong> — <span class="lang-zh">OpenAI / Anthropic / Google 任你揀，config.yaml 一行搞定。</span><span class="lang-en">OpenAI / Anthropic / Google — one line in config.yaml.</span></li>
+        <li><strong><span class="lang-zh">開放可插拔</span><span class="lang-en">Open and Pluggable</span></strong> — <span class="lang-zh">Search provider、LLM protocol、tools 全部可以註冊擴展。</span><span class="lang-en">Search providers, LLM protocols, and tools are all registerable and extensible.</span></li>
+      </ul>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /container -->
+
+<script>
+function switchLang(lang) {
+  document.body.className = lang === 'zh' ? 'show-zh' : 'show-en';
+  document.getElementById('btn-zh').classList.toggle('active', lang === 'zh');
+  document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+  localStorage.setItem('baw-lang', lang);
+}
+// Restore saved preference
+const saved = localStorage.getItem('baw-lang') || 'zh';
+switchLang(saved);
+</script>
+
+</body>
+</html>
