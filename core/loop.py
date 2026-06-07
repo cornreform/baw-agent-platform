@@ -200,6 +200,7 @@ def run_agent(
     verbose: bool = False,
     interactive: bool = False,
     fresh_start: bool = False,
+    mode: Optional[str] = None,
 ) -> tuple[str, dict]:
     """Run BAW agent with self-improving loop.
 
@@ -247,11 +248,84 @@ def run_agent(
     reset_cost()
     session_cost = 0.0
 
+    # ── Resolve execution mode ──
+    _mode = (mode or config.get("mode", "tight")).lower()
+    if _mode not in ("quick", "hybrid", "tight"):
+        _mode = "tight"
+
     # ── Phase 1: Build context ──
     ctx = Context(system_prompt=system_prompt, temperature=0.7)
     ctx.add_user(prompt)
     if mem_text:
         ctx.add_user(f"Relevant memories:\n{mem_text}")
+
+    # ── Quick Mode: no court, no plan, just execute ──
+    if _mode == "quick":
+        skip_verify = True
+        skip_adversarial = True
+        skip_plan = True
+        max_recovery = 1
+        fb = call_llm_with_fallback(
+            config, ctx.to_openai_messages(),
+            tools=get_openai_tools(), temperature=0.7,
+        )
+        quick_resp = fb.response
+        q_cost = calculate_cost(model, quick_resp.input_tokens, quick_resp.output_tokens)
+        session_cost += q_cost
+        record_cost(f"{model.provider}/{model.id}", quick_resp.input_tokens, quick_resp.output_tokens, q_cost)
+        ctx.add_assistant(quick_resp.content, quick_resp.tool_calls)
+
+        # Execute any tool calls
+        while quick_resp.tool_calls:
+            for tc in quick_resp.tool_calls:
+                func = tc.get("function", {})
+                name = func.get("name", "")
+                raw_args = func.get("arguments", "{}")
+                try:
+                    args = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    args = {}
+                perm_result = perm.check(name, args)
+                if perm_result["decision"] == "deny":
+                    ctx.add_tool_result(tc.get("id", ""), name, f"[BLOCKED] {perm_result['reason']}")
+                    continue
+                exe_result = execute_tool(name, args)
+                ctx.add_tool_result(tc.get("id", ""), name, exe_result)
+
+            # Next LLM call
+            fb = call_llm_with_fallback(
+                config, ctx.to_openai_messages(),
+                tools=get_openai_tools(), temperature=0.7,
+            )
+            quick_resp = fb.response
+            q_cost = calculate_cost(model, quick_resp.input_tokens, quick_resp.output_tokens)
+            session_cost += q_cost
+            record_cost(f"{model.provider}/{model.id}", quick_resp.input_tokens, quick_resp.output_tokens, q_cost)
+            ctx.add_assistant(quick_resp.content, quick_resp.tool_calls)
+
+        # Collect output
+        output = ""
+        if tone_change:
+            output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
+        final = ""
+        for msg in ctx.messages:
+            role = msg.role if hasattr(msg, 'role') else msg.get("role", "")
+            content = msg.content or "" if hasattr(msg, 'content') else msg.get("content", "") or ""
+            if role == "assistant" and content:
+                final = content
+        output += final
+        output += f"\n\n{format_cost_summary()}"
+        try:
+            mem.remember(f"User asked: {prompt[:200]}")
+        except Exception:
+            pass
+        return output, {
+            "cost": round(session_cost, 4),
+            "model": f"{model.provider}/{model.id}",
+            "iterations": 0,
+            "steps": 0,
+            "mode": "quick",
+        }
 
     # ── Adversarial Court (goal-level) ──
     adv_cfg = config.get("adversarial", {})
@@ -260,7 +334,7 @@ def run_agent(
     devil_output = None
     verdict = None
 
-    if court_enabled:
+    if court_enabled and _mode != "hybrid":
         verdict = court.hold_court(prompt, mem_text)
         devil_output = verdict.get("devil")
         session_cost += (verdict["devil"]["cost"] + verdict["angel"]["cost"])
@@ -392,6 +466,15 @@ def run_agent(
     )
     ctx.system_prompt += _plan_text_for_context
 
+    # ── Display: show plan to user ──
+    from . import display as dsp
+    _display_log: list[str] = []
+    # Capture the plan text as a display of the LLM's analysis
+    if _execution_plan:
+        _display_log.append(dsp.phase_plan(_execution_plan))
+        if verbose:
+            print(dsp.phase_plan(_execution_plan))
+
     # ── Phase 3: Execute plan step by step ──
     max_iterations = 40  # More iterations for plan-following
     response = angel_response
@@ -455,7 +538,7 @@ def run_agent(
             if step_success:
                 # ── Verify step result ──
                 # Uses LLM to score the output against the goal
-                verifier_enabled = config.get("verify", {}).get("enabled", False)
+                verifier_enabled = config.get("verify", {}).get("enabled", False) and _mode == "tight"
                 if verifier_enabled:
                     from .verifier import verify_step
                     v_result = verify_step(
@@ -489,7 +572,13 @@ def run_agent(
                 # Update execution progress
                 _current_strategies.clear()
                 if current_plan_step < len(_execution_plan):
-                    _execution_progress.append(f"Step {current_plan_step + 1}: ✅ {_execution_plan[current_plan_step]['desc'][:80]}")
+                    _step_desc = _execution_plan[current_plan_step]['desc'][:80]
+                    _execution_progress.append(f"Step {current_plan_step + 1}: ✅ {_step_desc}")
+                    # Display: show step completion
+                    _dsp = dsp.phase_step_done(current_plan_step + 1, len(_execution_plan), _step_desc)
+                    _display_log.append(_dsp)
+                    if verbose:
+                        print(_dsp)
                     current_plan_step += 1
 
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
@@ -545,7 +634,12 @@ def run_agent(
                         consecutive_failures = 0
                         steps_completed += 1
                         if current_plan_step < len(_execution_plan):
-                            _execution_progress.append(f"Step {current_plan_step + 1}: ✅ {_execution_plan[current_plan_step]['desc'][:80]} (degraded)")
+                            _step_desc = _execution_plan[current_plan_step]['desc'][:80]
+                            _execution_progress.append(f"Step {current_plan_step + 1}: ✅ {_step_desc} (degraded)")
+                            _dsp = dsp.phase_step_done(current_plan_step + 1, len(_execution_plan), _step_desc, f"via {strategy_name}")
+                            _display_log.append(_dsp)
+                            if verbose:
+                                print(_dsp)
                             current_plan_step += 1
                         checkpointer.commit()
                         ctx.add_tool_result(tc.get("id", ""), name, degraded_result)
@@ -558,7 +652,7 @@ def run_agent(
                         if verbose:
                             print(f"  ❌ Degradation also failed: {strategy_name}")
 
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                if consecutive_failures >= (1 if _mode == "hybrid" else MAX_CONSECUTIVE_FAILURES):
                     # All strategies exhausted — notify user with analysis
                     error_summary = (
                         f"<b>🔄 BAW Strategy Recovery</b>\n\n"
@@ -568,7 +662,8 @@ def run_agent(
                     )
 
                     # Check if we should try a completely different approach
-                    if consecutive_failures < MAX_CONSECUTIVE_FAILURES * 2:
+                    _max_fails = 1 if _mode == "hybrid" else MAX_CONSECUTIVE_FAILURES
+                    if consecutive_failures < _max_fails * 2:
                         error_summary += (
                             f"<b>Changing strategy to a different approach...</b>\n"
                             f"Previous approaches blocked/already tried."
@@ -587,7 +682,7 @@ def run_agent(
                     break
 
         # ── Next LLM call ──
-        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+        if consecutive_failures >= (1 if _mode == "hybrid" else MAX_CONSECUTIVE_FAILURES):
             consecutive_failures = 0
 
         # Inject progress update into context before next LLM call
@@ -644,9 +739,12 @@ def run_agent(
         if role == "assistant" and content:
             assistant_responses.append(content)
 
-    # Add the final response
+    # Add the final response, prefixed with display log
     if assistant_responses:
         final_reply = assistant_responses[-1]
+        # Prepend display log if we have one (plan + step progress)
+        if _display_log:
+            output += "\n".join(_display_log) + "\n"
         if final_reply and final_reply not in output:
             output += f"\n{final_reply}"
 

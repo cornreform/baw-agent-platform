@@ -7,6 +7,7 @@ Usage:
   baw <prompt>                    Run agent with a prompt
   baw --help                      Show this help
   baw --version                   Show version
+  baw --version                   Show version
 
 Subcommands:
   baw --remember <text>           Store a memory entry
@@ -92,6 +93,8 @@ Examples:
     )
     parser.add_argument("prompt", nargs="*", help="Prompt for the agent")
     parser.add_argument("--model", "-m", help="Override model (e.g. MiniMax-M3)")
+    parser.add_argument("--mode", choices=["quick", "hybrid", "tight"], default=None,
+                        help="Execution mode: quick (no court/plan), hybrid (plan only), tight (full court+plan)")
     parser.add_argument("--tone", "-t", help="Override tone (casual / business / teaching / client-doc / ot-rt / stepwise)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--dry-run", "-n", action="store_true", help="Dry run (no changes)")
@@ -237,6 +240,7 @@ def _run_single(prompt: str, config: dict, args, data_dir: Path):
             data_dir=data_dir,
             verbose=args.verbose,
             interactive=True,
+            mode=args.mode,
         )
         print(f"\n{response}")
         if args.verbose:
