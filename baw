@@ -44,6 +44,7 @@ import sys
 import os
 import json
 import argparse
+import shutil
 from pathlib import Path
 
 # Add BAW paths
@@ -131,6 +132,9 @@ Examples:
     subcommands.add_argument("--learn-url", metavar="URL",
                              help="Fetch a URL and learn a skill from its content")
     subcommands.add_argument("--board", action="store_true", help="Generate HTML dashboard")
+    subcommands.add_argument("--setup", action="store_true", help="Interactive setup wizard")
+    subcommands.add_argument("--cfg", nargs="+",
+                             help="Config commands: list | get <key> | set <key> <value> | help")
 
     args = parser.parse_args()
 
@@ -452,6 +456,29 @@ Examples:
         print(f"📊 Dashboard: {path}")
         return
 
+    # ── Setup wizard ──
+    if args.setup:
+        from baw.core.setup import cmd_setup
+        cmd_setup(data_dir)
+        return
+
+    # ── Config commands ──
+    if args.cfg:
+        from baw.core.setup import cmd_config_list, cmd_config_get, cmd_config_set, cmd_config_help
+        cmd = args.cfg[0]
+        rest = args.cfg[1:]
+        if cmd == "list":
+            cmd_config_list(data_dir)
+        elif cmd == "get" and rest:
+            cmd_config_get(data_dir, rest[0])
+        elif cmd == "set" and len(rest) >= 2:
+            cmd_config_set(data_dir, rest[0], " ".join(rest[1:]))
+        elif cmd == "help":
+            cmd_config_help()
+        else:
+            print("Usage: --cfg {list | get <key> | set <key> <value> | help}")
+        return
+
     # ── Learn skill ──
     if args.learn_skill:
         from baw.core.learn import learn_from_description
@@ -492,25 +519,66 @@ Examples:
     # Agent mode
     prompt = " ".join(args.prompt) if args.prompt else None
     if not prompt:
-        print("BAW Interactive Mode (Ctrl+D to exit)")
+        from baw.core.setup import C
+        # ── Interactive Chat Interface ──
+        w, _ = shutil.get_terminal_size()
+        mode_name = args.mode or config.get("mode", "tight")
+        tone_name = config.get("tone", {}).get("default", "casual")
+        model_name = args.model or config.get("model", {}).get("default", "?")
+        print(f"\n{C.BOLD}{C.CYAN}{'◈' * min(w, 50)}{C.RESET}")
+        print(f"{C.BOLD}{C.WHITE}  BAW Interactive Chat{C.RESET}")
+        print(f"  {C.DIM}Model: {model_name} • Tone: {tone_name} • Mode: {mode_name}{C.RESET}")
+        print(f"  {C.DIM}Type /help for commands • Ctrl+D or /exit to quit{C.RESET}")
+        print(f"{C.CYAN}{'◈' * min(w, 50)}{C.RESET}\n")
+
         from baw.core.commands import handle_slash
+        import readline
+
+        # Enable tab completion for slash commands
+        SLASH_COMMANDS = ["/help", "/status", "/model", "/tone", "/mode",
+                          "/remember", "/search", "/rethink", "/court", "/fresh",
+                          "/btw", "/delegate", "/tasks", "/skill-list", "/board",
+                          "/exit", "/quit", "/clear", "/dream", "/tools", "/provider"]
+
+        def completer(text, state):
+            if text.startswith("/"):
+                candidates = [c for c in SLASH_COMMANDS if c.startswith(text)]
+                return candidates[state] if state < len(candidates) else None
+            return None
+
+        readline.set_completer(completer)
+        readline.parse_and_bind("tab: complete")
+        readline.set_completer_delims(" \t\n;")
+
         while True:
             try:
-                user_input = input("\n>> ")
-                if not user_input.strip():
+                user_input = input(f"{C.GREEN}BAW{C.RESET}> ").strip()
+                if not user_input:
                     continue
-                # Check for slash command
+
+                # Slash commands
                 if user_input.startswith("/"):
                     parts = user_input[1:].strip().split(None, 1)
                     cmd = parts[0] if parts else ""
                     cmd_args = parts[1].split() if len(parts) > 1 else []
+                    if cmd in ("exit", "quit"):
+                        print(f"{C.YELLOW}👋 Bye!{C.RESET}")
+                        break
+                    if cmd == "clear":
+                        os.system("clear" if os.name == "posix" else "cls")
+                        continue
                     result = handle_slash(cmd, cmd_args, config, data_dir, args.verbose)
                     if result is not None:
-                        print(result)
-                        continue
+                        print(f"\n{result}\n")
+                    continue
+
+                # Regular prompt
+                print(f"{C.DIM}─── Processing ───{C.RESET}")
                 _run_single(user_input, config, args, data_dir)
-            except (EOFError, KeyboardInterrupt):
                 print()
+
+            except (EOFError, KeyboardInterrupt):
+                print(f"\n{C.YELLOW}👋 Bye!{C.RESET}")
                 break
     else:
         # Check for slash command in single-shot mode
