@@ -258,7 +258,7 @@ def run_agent(
     system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start, quick_mode=_is_quick)
 
     # ── Phase 1: Build context ──
-    ctx = Context(system_prompt=system_prompt, temperature=0.7)
+    ctx = Context(system_prompt=system_prompt, temperature=model_temperature)
 
     # Inject conversation history (between system prompt and current prompt)
     _history_msg_count = 1  # system message at index 0
@@ -279,6 +279,16 @@ def run_agent(
                     _content or "",
                 )
                 _history_msg_count += 1
+
+        # ── Sequence validation: strip dangling tool_calls from last message ──
+        if ctx.messages:
+            _last = ctx.messages[-1]
+            if _last.role == "assistant" and _last.tool_calls:
+                logger.warning(
+                    f"[Loop] Stripped dangling tool_calls from trailing assistant message "
+                    f"(history truncated / interrupted session)"
+                )
+                _last.tool_calls = None
 
     # ── Quick Mode marker for new-message extraction ──
     _pre_prompt_count = _history_msg_count
@@ -313,7 +323,7 @@ def run_agent(
         max_recovery = 1
         fb = call_llm_with_fallback(
             config, ctx.to_openai_messages(),
-            tools=get_openai_tools(), temperature=0.7,
+            tools=get_openai_tools(), temperature=model_temperature,
         )
         quick_resp = fb.response
         q_cost = calculate_cost(model, quick_resp.input_tokens, quick_resp.output_tokens)
@@ -353,7 +363,7 @@ def run_agent(
             # Next LLM call
             fb = call_llm_with_fallback(
                 config, ctx.to_openai_messages(),
-                tools=get_openai_tools(), temperature=0.7,
+                tools=get_openai_tools(), temperature=model_temperature,
             )
             quick_resp = fb.response
             q_cost = calculate_cost(model, quick_resp.input_tokens, quick_resp.output_tokens)
@@ -668,7 +678,7 @@ def run_agent(
 
         fb = call_llm_with_fallback(
             config, ctx.to_openai_messages(),
-            temperature=0.7,
+            temperature=model_temperature,
         )
         response = fb.response
         total_llm_calls += 1
