@@ -386,16 +386,40 @@ def run_agent(
         output = ""
         if tone_change:
             output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
-        final = ""
-        for msg in ctx.messages:
-            role = msg.role if hasattr(msg, 'role') else msg.get("role", "")
-            content = msg.content or "" if hasattr(msg, 'content') else msg.get("content", "") or ""
-            if role == "assistant" and content:
-                final = content
-        output += final
+
+        # Determine final response content
+        final_content = quick_resp.content or ""
+
+        # If final LLM response is empty but we executed tool calls,
+        # auto-generate a completion summary from tool results
+        if not final_content and ctx.messages:
+            tool_summaries = []
+            # Extract last N tool results for summary
+            for m in reversed(ctx.messages):
+                role = m.role if hasattr(m, 'role') else m.get("role", "")
+                content = m.content or "" if hasattr(m, 'content') else m.get("content", "") or ""
+                if role == "tool" and content:
+                    # Truncate long tool output
+                    tool_summaries.append(content[:300])
+                    if len(tool_summaries) >= 3:
+                        break
+            if tool_summaries:
+                final_content = "✅ Done.\n\n" + "\n".join(
+                    f"• {s.strip()}" for s in reversed(tool_summaries)
+                )
+
+        # Fallback: use last non-empty assistant message
+        if not final_content:
+            for msg in ctx.messages:
+                role = msg.role if hasattr(msg, 'role') else msg.get("role", "")
+                content = msg.content or "" if hasattr(msg, 'content') else msg.get("content", "") or ""
+                if role == "assistant" and content:
+                    final_content = content
+
+        output += final_content
         output += f"\n\n{format_cost_summary()}"
         try:
-            mem.remember(f"User: {prompt[:150]} → BAW: {final[:150]}")
+            mem.remember(f"User: {prompt[:150]} → BAW: {final_content[:150]}")
         except Exception:
             pass
         return output, {
@@ -726,11 +750,20 @@ def run_agent(
 
     if assistant_responses:
         final_reply = assistant_responses[-1]
+    elif _delegation_results:
+        # Synthesis response was empty — auto-generate summary from delegation results
+        final_reply = "✅ Completed " + ", ".join(
+            r.strip()[:200] for r in _delegation_results[-3:]
+        )
+    else:
+        final_reply = ""
+
+    if final_reply:
         if _display_log:
             output += "\n".join(_display_log) + "\n"
         if steps_completed > 0:
             output += dsp.done(steps_completed, len(_execution_plan), 0, 0) + "\n"
-        if final_reply and final_reply not in output:
+        if final_reply not in output:
             output += f"\n{final_reply}"
 
         # ── Fact check final output ──
