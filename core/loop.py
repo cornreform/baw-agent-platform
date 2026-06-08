@@ -112,10 +112,12 @@ def reset_cost():
 # ── System prompt ──────────────────────────────────────────────
 
 def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
-                        fresh_start: bool = False) -> str:
+                        fresh_start: bool = False,
+                        quick_mode: bool = False) -> str:
     """Build system prompt from SOUL.md + dynamic context.
 
-    If fresh_start=True, returns a minimal prompt with no SOUL.md or memories.
+    quick_mode=True: loads only core identity, skips heavy court/tool rules.
+    fresh_start=True: returns a minimal prompt with no SOUL.md or memories.
     """
     if fresh_start:
         return (
@@ -128,7 +130,29 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     soul_path = base_path / "SOUL.md"
 
     if soul_path.exists():
-        system_prompt = soul_path.read_text(encoding="utf-8")
+        soul_text = soul_path.read_text(encoding="utf-8")
+        if quick_mode:
+            # Quick mode: only identity + core philosophy (first ~600 chars)
+            # Skip court rules, tool descriptions, permission rules
+            lines = soul_text.splitlines()
+            trimmed = []
+            for line in lines:
+                trimmed.append(line)
+                if "## 核心靈魂" in line:
+                    for inner in lines[lines.index(line)+1:]:
+                        if inner.startswith("## "):
+                            break
+                        trimmed.append(inner)
+                    break
+            system_prompt = "\n".join(trimmed)
+            system_prompt += (
+                "\n\n## Quick mode\n"
+                "- Respond briefly in casual Traditional Chinese (Cantonese)\n"
+                "- Lead with result, 1-2 short paragraphs max\n"
+                "- No court, no tools, no plan — just direct response"
+            )
+        else:
+            system_prompt = soul_text
     else:
         system_prompt = (
             "You are BAW (Black And White), Sunny's agent platform.\n"
@@ -137,19 +161,20 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "Never ask the user what to do — figure it out yourself."
         )
 
-    # Dynamic context
-    tone = config.get("tone", {}).get("default", "casual")
-    fact_mode = config.get("fact_check", {}).get("mode", "normal")
-    tools_list = ", ".join(t.name for t in list_tools())
+    if not quick_mode:
+        # Dynamic context (only for full modes)
+        tone = config.get("tone", {}).get("default", "casual")
+        fact_mode = config.get("fact_check", {}).get("mode", "normal")
+        tools_list = ", ".join(t.name for t in list_tools())
 
-    system_prompt += (
-        f"\n\n## Dynamic context\n"
-        f"- Current tone: {tone}\n"
-        f"- Fact check mode: {fact_mode}\n"
-        f"- Available tools: {tools_list}\n"
-        f"- Cost transparency: per-call cost shown after each response\n"
-        f"- Core rule: NEVER ask the user what to do. Analyse, plan, execute, recover."
-    )
+        system_prompt += (
+            f"\n\n## Dynamic context\n"
+            f"- Current tone: {tone}\n"
+            f"- Fact check mode: {fact_mode}\n"
+            f"- Available tools: {tools_list}\n"
+            f"- Cost transparency: per-call cost shown after each response\n"
+            f"- Core rule: NEVER ask the user what to do. Analyse, plan, execute, recover."
+        )
 
     return system_prompt
 
@@ -221,6 +246,10 @@ def run_agent(
     _mode = (mode or config.get("mode", "tight")).lower()
     if _mode not in ("quick", "hybrid", "tight"):
         _mode = "tight"
+
+    # ── Build system prompt ──
+    _is_quick = (_mode == "quick")
+    system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start, quick_mode=_is_quick)
 
     # ── Phase 1: Build context ──
     ctx = Context(system_prompt=system_prompt, temperature=0.7)

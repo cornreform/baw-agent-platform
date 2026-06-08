@@ -172,47 +172,85 @@ class BaseConnector(ABC):
         # Default: pass to BAW
         return self._run_baw(text)
 
-    def _run_baw(self, prompt: str) -> str:
-        """Run a BAW command and return the output."""
-        import subprocess as sp
-        import shlex
-        import shutil
-        try:
-            # Resolve `baw` CLI — not always in PATH from systemd
-            baw_cmd = shutil.which("baw")
-            if not baw_cmd:
-                # Fallback to known locations
-                for p in [
-                    Path.home() / ".local" / "bin" / "baw",
-                    Path(__file__).parent.parent / "baw",
-                ]:
-                    if p.exists():
-                        baw_cmd = str(p)
-                        break
-            if not baw_cmd:
-                return "❌ BAW CLI not found. Install with: cd ~/baw && ./install.sh"
+    # ── In-process BAW engine (lazy-loaded) ──
+    _BAW = None  # {'run_agent': fn, 'config': dict, 'data_dir': Path}
 
-            result = sp.run(
-                [baw_cmd, "--mode", self.config.get("mode", "quick"), prompt],
-                capture_output=True, text=True, timeout=120,
-                cwd=str(Path.home() / "baw"),
-            )
-            output = ""
-            if result.stdout:
-                output = result.stdout
-            elif result.stderr and result.returncode != 0:
-                output = f"❌ BAW error ({result.returncode}): {result.stderr[-300:]}"
+    def _baw_ensure(self):
+        """Lazy-import BAW modules in-process (no subprocess)."""
+        if self._BAW is not None:
+            return self._BAW
+        import os, sys, yaml
+        from pathlib import Path
+
+        # Add BAW to sys.path (same as baw script does)
+        baw_root = Path(__file__).parent.parent.resolve()  # ~/baw/
+        sys.path.insert(0, str(baw_root))
+        sys.path.insert(0, str(baw_root.parent))
+
+        # Import once
+        from baw.core.loop import run_agent
+        from baw.tools import register_all as reg_tools
+        reg_tools()
+
+        # Load config
+        data_dir = Path.home() / ".baw"
+        config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
+
+        # Load env vars (API keys)
+        env_file = data_dir / ".env"
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    v = v.strip().strip('"').strip("'")
+                    if v:
+                        os.environ.setdefault(k.strip(), v)
+
+        self._BAW = {"run_agent": run_agent, "config": config, "data_dir": data_dir}
+        return self._BAW
+
+    def _run_baw(self, prompt: str) -> str:
+        """Run BAW in-process (no subprocess)."""
+        import re
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
+        try:
+            baw = self._baw_ensure()
+            run_agent = baw["run_agent"]
+            config = baw["config"]
+            data_dir = baw["data_dir"]
+
+            # mode from telegram config or default to quick
+            mode = self.config.get("mode", "quick")
+
+            # Run BAW with a timeout via thread pool
+            with ThreadPoolExecutor(1) as pool:
+                fut = pool.submit(
+                    run_agent,
+                    prompt=prompt,
+                    config=config,
+                    data_dir=data_dir,
+                    mode=mode,
+                    verbose=False,
+                )
+                try:
+                    response, info = fut.result(timeout=60)
+                except TimeoutError:
+                    fut.cancel()
+                    return "⏳ BAW took too long (>60s). Try a simpler request."
+
+            output = response or ""
+
             # Strip HTML tags for Telegram display
-            import re
             output = re.sub(r'<[^>]+>', '', output)
             # Limit to 4000 chars
             if len(output) > 4000:
                 output = output[:3997] + "..."
             return output.strip()
-        except sp.TimeoutExpired:
-            return "⏳ BAW took too long (>2min). Try a simpler request."
+
         except Exception as e:
-            return f"❌ Error: {e}"
+            return f"❌ BAW error: {e}"
 
     @staticmethod
     def _help_text() -> str:
