@@ -22,6 +22,7 @@ import re
 import json
 from pathlib import Path
 from typing import Optional
+from typing import Callable
 
 from .llm import get_model, call_llm_with_fallback, calculate_cost, FallbackResult
 from .context import Context, Message
@@ -196,6 +197,7 @@ def run_agent(
     fresh_start: bool = False,
     mode: Optional[str] = None,
     conversation_history: Optional[list[dict]] = None,
+    progress_callback: Optional[Callable[[], None]] = None,
 ) -> tuple[str, dict]:
     """Run BAW agent with debate-first, execute-second flow.
 
@@ -205,6 +207,7 @@ def run_agent(
 
     If fresh_start=True, SOUL.md and memories are bypassed entirely.
     conversation_history: list of {role, content, ...} dicts from previous turns.
+    progress_callback: called on each tool call or milestone (for timeout refresh).
     Returns: (response_text, info_dict)
     """
     # ── Initialise ──
@@ -320,6 +323,8 @@ def run_agent(
 
         # Execute any tool calls
         while quick_resp.tool_calls:
+            if progress_callback:
+                progress_callback()
             for tc in quick_resp.tool_calls:
                 func = tc.get("function", {})
                 name = func.get("name", "")
@@ -453,6 +458,8 @@ def run_agent(
         # Execute any tool calls from the neutral response (live progress)
         _resp = neutral_response
         while _resp.tool_calls:
+            if progress_callback:
+                progress_callback()
             for tc in _resp.tool_calls:
                 func = tc.get("function", {})
                 name = func.get("name", "")
@@ -607,6 +614,8 @@ def run_agent(
             break
 
         for tc in response.tool_calls:
+            if progress_callback:
+                progress_callback()
             func = tc.get("function", {})
             name = func.get("name", "")
             raw_args = func.get("arguments", "{}")
