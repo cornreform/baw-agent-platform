@@ -395,6 +395,18 @@ class BaseConnector(ABC):
                 except Exception as e:
                     return f"❌ Evolution stats error: {e}"
 
+            # ── Top-level session aliases ──
+            if cmd == "new":
+                return self._handle_task_command(msg.chat_id, "new", arg)
+            if cmd == "list":
+                return self._handle_task_command(msg.chat_id, "list", "")
+            if cmd == "resume" and arg:
+                return self._handle_task_command(msg.chat_id, "resume", arg)
+            if cmd == "resume":
+                return "Usage: /resume <session_id>\nUse /list to see available sessions."
+            if cmd == "summarize":
+                return self._summarize_session(msg.chat_id)
+
             # ── Per-chat config commands ──
             if cmd == "mode" and arg:
                 cfg = self._chat_config.setdefault(msg.chat_id, {})
@@ -532,6 +544,39 @@ class BaseConnector(ABC):
                 "  `/task forget <id>` — Delete a saved task\n"
                 "  `/task info` — Show current task details"
             )
+
+    def _summarize_session(self, chat_id: str) -> str:
+        """Summarize the current session via LLM."""
+        ses = self._get_or_create_session(chat_id)
+        msgs = ses.get("messages", [])
+        if not msgs:
+            return "📭 No messages in current session to summarize."
+
+        # Build summary prompt from session messages
+        summary_text = "\n".join(
+            f"[{m.get('role','?')}] {m.get('content','')[:200]}"
+            for m in msgs[-20:]  # Last 20 exchanges
+        )
+
+        try:
+            baw = self._baw_ensure()
+            run_agent = baw["run_agent"]
+            config = baw["config"]
+            prompt = (
+                f"Summarize the following conversation in Traditional Chinese (Cantonese). "
+                f"Extract key decisions, important facts, and any pending actions. "
+                f"Format as bullet points. Keep it concise.\n\n{summary_text}"
+            )
+            response, info = run_agent(
+                prompt=prompt,
+                config=config,
+                data_dir=baw["data_dir"],
+                mode="quick",
+                fresh_start=True,
+            )
+            return f"📋 **Session Summary** (`{ses['id'][:12]}`)\n\n{response}"
+        except Exception as e:
+            return f"❌ Summarization failed: {e}"
 
     # ── In-process BAW engine (lazy-loaded) ──
     _BAW = None  # {'run_agent': fn, 'config': dict, 'data_dir': Path}
@@ -860,6 +905,10 @@ class BaseConnector(ABC):
             "/search `<query>` — Search memories\n"
             "/board — Generate HTML dashboard\n"
             "/version — BAW version\n"
+            "/new [name] — Start a new session (alias for /task new)\n"
+            "/list — List saved sessions (alias for /task list)\n"
+            "/resume <id> — Resume a saved session\n"
+            "/summarize — Summarize current session to memory\n"
             "/task `<action>` — Task session manager\n"
             "/help — This message\n\n"
             "**Task commands:**\n"
