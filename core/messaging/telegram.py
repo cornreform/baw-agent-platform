@@ -43,6 +43,8 @@ class TelegramConnector(BaseConnector):
         self._restart_chat_id: str | None = None
         self._tts_enabled = self.config.get("tts_enabled", False)
         self._tts_voice = self.config.get("tts_voice", "male-tone-1")
+        self._MODELS = ["deepseek-v4-flash", "kimi-k2.6", "MiniMax-M3"]
+        self._selector_msg_id: int | None = None
 
     def connect(self) -> bool:
         """Test connection by fetching bot info."""
@@ -131,9 +133,12 @@ class TelegramConnector(BaseConnector):
             self._client = None
 
     def send(self, chat_id: str, text: str) -> bool:
-        """Send a message to a Telegram chat. Supports MEDIA: tags."""
+        """Send a message to a Telegram chat. Supports MEDIA: tags and inline keyboards."""
         if not self._client or not self._token:
             return False
+        # ── Intercept model selector ——
+        if text.startswith("[MODEL_SELECT]\n"):
+            return self._send_model_selector_text(chat_id, text)
         try:
             # ── Extract MEDIA: tags ──
             import re as _re
@@ -1020,3 +1025,85 @@ class TelegramConnector(BaseConnector):
                     pass
         finally:
             self._release_slot()
+
+    # ── Inline keyboard for model selection ──
+
+    def _send_model_selector_text(self, chat_id: str, text: str) -> bool:
+        """Parse [MODEL_SELECT] formatted text and send as inline keyboard."""
+        lines = text.strip().split("\n")
+        title = lines[1] if len(lines) > 1 else "Select model"
+        current = lines[2] if len(lines) > 2 else ""
+        models_str = lines[3] if len(lines) > 3 else ""
+        models = [m.strip() for m in models_str.split(",") if m.strip()]
+        if not models:
+            return self._send_text(chat_id, title)
+        rows = []
+        for m in models:
+            label = f"\u25cf {m}" if m == current else f"  {m}"
+            rows.append([{"text": label, "callback_data": f"model_select:{m}"}])
+        try:
+            resp = self._client.post(
+                f"{self._api_base}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": title,
+                    "reply_markup": __import__("json").dumps({"inline_keyboard": rows}),
+                    "parse_mode": "Markdown",
+                },
+                timeout=5,
+            )
+            data = resp.json()
+            if data.get("ok"):
+                self._selector_msg_id = data["result"]["message_id"]
+            return data.get("ok", False)
+        except Exception as e:
+            logger.warning(f"[Telegram] Model selector send error: {e}")
+            return False
+
+    def _handle_callback(self, cb: dict):
+        """Handle inline keyboard callback (model selection)."""
+        data = cb.get("data", "")
+        msg = cb.get("message", {})
+        chat_id = str(msg["chat"]["id"])
+        cb_id = cb["id"]
+        if data.startswith("model_select:"):
+            model_name = data.split(":", 1)[1]
+            route_msg = Message(
+                platform="telegram",
+                chat_id=chat_id,
+                user_id=str(cb["from"]["id"]),
+                text=f"/m [{model_name}]",
+            )
+            result = self.route(route_msg)
+            self._client.post(
+                f"{self._api_base}/answerCallbackQuery",
+                json={"callback_query_id": cb_id, "text": f"Switched to {model_name}"},
+                timeout=5,
+            )
+            if hasattr(self, "_selector_msg_id") and self._selector_msg_id:
+                models = self._MODELS
+                rows = []
+                for m in models:
+                    label = f"\u25cf {m}" if m == model_name else f"  {m}"
+                    rows.append([{"text": label, "callback_data": f"model_select:{m}"}])
+                try:
+                    self._client.post(
+                        f"{self._api_base}/editMessageText",
+                        json={
+                            "chat_id": chat_id,
+                            "message_id": self._selector_msg_id,
+                            "text": f"\u2705 Current: {model_name}",
+                            "reply_markup": __import__("json").dumps({"inline_keyboard": rows}),
+                        },
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
+            if result:
+                self.send(chat_id, result)
+        else:
+            self._client.post(
+                f"{self._api_base}/answerCallbackQuery",
+                json={"callback_query_id": cb_id, "text": "Unknown"},
+                timeout=5,
+            )

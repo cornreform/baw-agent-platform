@@ -433,19 +433,23 @@ class BaseConnector(ABC):
                 return f"Current tone: {current}\nAvailable: {', '.join(tones)}"
 
             if cmd in ("model", "m") and arg:
-                if arg not in self._MODELS:
-                    return f"Model '{arg}' not found. Available: {', '.join(self._MODELS)}"
+                # Handle [modelname] syntax from inline keyboard callback
+                clean_arg = arg.strip("[]")
+                if clean_arg not in self._MODELS:
+                    return f"Model '{clean_arg}' not found. Available: {', '.join(self._MODELS)}"
                 cfg = self._chat_config.setdefault(msg.chat_id, {})
-                cfg["model"] = arg
-                return f"✅ Chat model set to: {arg}"
+                cfg["model"] = clean_arg
+                return f"✅ Chat model set to: {clean_arg}"
 
             if cmd in ("model", "models"):
                 cc = self._chat_config.get(msg.chat_id, {})
                 current = cc.get("model") or "deepseek-v4-flash"
+                # Return model selector format for Telegram inline keyboard
                 return (
-                    f"Current model: {current}\n"
-                    f"Available:\n"
-                    + "\n".join(f"  /model {m}" for m in self._MODELS)
+                    f"[MODEL_SELECT]\n"
+                    f"**Select model:**\n"
+                    f"{current}\n"
+                    f"{','.join(self._MODELS)}"
                 )
 
 
