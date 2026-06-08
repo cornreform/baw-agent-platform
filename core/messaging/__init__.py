@@ -931,8 +931,9 @@ class BaseConnector(ABC):
             "/stop — Stop current processing and cancel (per-chat)\n"
             "/restart — Restart BAW engine (per-chat)\n"
             "/btw `<text>` — Quick answer (no court)\n"
-            "/model `<name>` — Switch model (deepseek / kimi / minimax)\n"
-            "/models — List available models\n"
+            '/model `<name>` — Switch model (deepseek / kimi / minimax)\n'
+            '/models — List available models (tap to select)\n'
+            '  To set default: use /model, or edit ~/.baw/config.yaml → model.default\n'
             "/mode `quick|hybrid|tight` — Switch execution mode\n"
             "/tone `<profile>` — Switch tone\n"
             "/status — BAW system status\n"
