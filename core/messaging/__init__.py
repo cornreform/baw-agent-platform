@@ -529,7 +529,7 @@ class BaseConnector(ABC):
                 # Poll for result with cancel checking every 1s
                 import time as _time
                 _elapsed = 0
-                _max_wait = 120  # increased from 60s for complex tasks
+                _max_wait = 60
                 while _elapsed < _max_wait:
                     try:
                         response, info = fut.result(timeout=1)
@@ -542,7 +542,7 @@ class BaseConnector(ABC):
                 else:
                     # Timeout after 120s without result
                     fut.cancel()
-                    return "⏳ BAW took too long (>120s). Try a simpler request."
+                    return "⏳ BAW took too long (>60s). Try a simpler request."
 
             output = response or ""
 
