@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BAW 系統健康報告</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --warning: #ca8a04;
+            --danger: #dc2626;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+        
+        .container { max-width: 1200px; margin: 0 auto; }
+        
+        h1 { font-size: 2rem; margin-bottom: 0.5rem; color: var(--primary); }
+        h2 { font-size: 1.5rem; margin: 2rem 0 1rem; border-bottom: 2px solid var(--primary); padding-bottom: 0.5rem; }
+        h3 { font-size: 1.1rem; margin: 1rem 0 0.5rem; }
+        
+        .card {
+            background: var(--card);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+        
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { padding: 0.75rem; text-align: left; border: 1px solid var(--border); }
+        th { background: var(--primary); color: white; }
+        tr:nth-child(even) { background: #f1f5f9; }
+        
+        .badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; }
+        .badge-success { background: #dcfce7; color: var(--success); }
+        .badge-warning { background: #fef9c3; color: var(--warning); }
+        .badge-danger { background: #fee2e2; color: var(--danger); }
+        .badge-primary { background: #dbeafe; color: var(--primary); }
+        
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: var(--primary); }
+        .stat-label { font-size: 0.85rem; color: #64748b; }
+        
+        .progress { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+        .progress-bar { height: 100%; background: var(--success); transition: width 0.3s; }
+        
+        ul { margin-left: 1.5rem; }
+        li { margin: 0.5rem 0; }
+        
+        .header { text-align: center; margin-bottom: 2rem; }
+        .timestamp { color: #64748b; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 BAW 系統健康報告</h1>
+            <p class="timestamp">生成時間: <span id="timestamp"></span></p>
+        </div>
+
+        <!-- 系統現狀 -->
+        <section class="card">
+            <h2>📊 系統現狀</h2>
+            
+            <div class="grid">
+                <div>
+                    <h3>記憶體使用量</h3>
+                    <p class="stat-value">110 筆</p>
+                    <p class="stat-label">約 33KB / store.jsonl</p>
+                </div>
+                <div>
+                    <h3>已安裝技能</h3>
+                    <p class="stat-value">6 個</p>
+                    <p class="stat-label">daily-git-push, disk-check, git-commit-summarizer, platform-test, system-health, system_temp_monitor</p>
+                </div>
+                <div>
+                    <h3>歷史 Session</h3>
+                    <p class="stat-value">10 個</p>
+                    <p class="stat-label">約 112KB 上下文資料</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 宿主資源 -->
+        <section class="card">
+            <h2>💻 宿主資源健康</h2>
+            
+            <div class="grid">
+                <div>
+                    <h3>磁碟空間 (NVMe SSD)</h3>
+                    <p class="stat-value">370 GB 可用</p>
+                    <p class="stat-label">總容量 458GB / 已用 65GB (15%)</p>
+                    <div class="progress"><div class="progress-bar" style="width: 15%"></div></div>
+                    <span class="badge badge-success">良好</span>
+                </div>
+                <div>
+                    <h3>記憶體</h3>
+                    <p class="stat-value">5.9 GB 可用</p>
+                    <p class="stat-label">總容量 11GB / 已用 5.4GB (含緩衝)</p>
+                    <div class="progress"><div class="progress-bar" style="width: 54%"></div></div>
+                    <span class="badge badge-success">正常</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 配置總覽 -->
+        <section class="card">
+            <h2>⚙️ BAW 配置總覽</h2>
+            
+            <table>
+                <tr><th>功能</th><th>Provider</th><th>Model</th><th>Context/Limit</th></tr>
+                <tr><td>Chat</td><td>DeepSeek</td><td>deepseek-v4-flash</td><td>64K tokens</td></tr>
+                <tr><td>Fallback</td><td>Kimi</td><td>kimi-k2.6</td><td>262K (vision)</td></tr>
+                <tr><td>STT</td><td>MiniMax</td><td>MiniMax-M2.5</td><td>1M tokens</td></tr>
+                <tr><td>TTS</td><td>MiniMax</td><td>speech-2.8-hd</td><td>-</td></tr>
+            </table>
+            
+            <h3>風險權限</h3>
+            <ul>
+                <li><span class="badge badge-success">Low</span> read_file, web_search</li>
+                <li><span class="badge badge-warning">Medium</span> write_file, bash</li>
+            </ul>
+        </section>
+
+        <!-- 主流系統對比 -->
+        <section class="card">
+            <h2>🔄 BAW 與主流 AI Agent 系統對比</h2>
+            
+            <table>
+                <tr>
+                    <th>維度</th>
+                    <th>BAW (本系統)</th>
+                    <th>AutoGPT</th>
+                    <th>LangChain Agents</th>
+                    <th>CrewAI</th>
+                    <th>OpenAI Assistants</th>
+                </tr>
+                <tr>
+                    <td><strong>架構模式</strong></td>
+                    <td>對話式 Agent + 技能系統</td>
+                    <td>自主任務循環</td>
+                    <td>ReAct 推理框架</td>
+                    <td>多 Agent 協作</td>
+                    <td>封閉式 API</td>
+                </tr>
+                <tr>
+                    <td><strong>Provider 彈性</strong></td>
+                    <td><span class="badge badge-success">高</span> 多Provider</td>
+                    <td><span class="badge badge-warning">中</span> OpenAI為主</td>
+                    <td><span class="badge badge-success">高</span> 多模型支援</td>
+                    <td><span class="badge badge-success">高</span> 支援多種LLM</td>
+                    <td><span class="badge badge-danger">低</span> 僅OpenAI</td>
+                </tr>
+                <tr>
+                    <td><strong>資源消耗</strong></td>
+                    <td><span class="badge badge-success">低</span> ~33KB</td>
+                    <td><span class="badge badge-danger">高</span> 大量 API 調用</td>
+                    <td><span class="badge badge-warning">中</span> 取決於使用</td>
+                    <td><span class="badge badge-warning">中</span> 多 Agent 成本</td>
+                    <td><span class="badge badge-success">低</span> 按需收費</td>
+                </tr>
+                <tr>
+                    <td><strong>開源程度</strong></td>
+                    <td><span class="badge badge-success">完全開源</span></td>
+                    <td><span class="badge badge-success">完全開源</span></td>
+                    <td><span class="badge badge-success">完全開源</span></td>
+                    <td><span class="badge badge-success">完全開源</span></td>
+                    <td><span class="badge badge-danger">封閉</span></td>
+                </tr>
+                <tr>
+                    <td><strong>技能擴展</strong></td>
+                    <td><span class="badge badge-success">YAML 技能</span></td>
+                    <td>需程式碼擴展</td>
+                    <td>LangChain Tools</td>
+                    <td>Custom Tools</td>
+                    <td>Function Calling</td>
+                </tr>
+                <tr>
+                    <td><strong>記憶機制</strong></td>
+                    <td>Session + 長期記憶</td>
+                    <td>上下文記憶</td>
+                    <td>Memory 模組</td>
+                    <td>Agent Memory</td>
+                    <td>Thread 歷史</td>
+                </tr>
+                <tr>
+                    <td><strong>協調機制</strong></td>
+                    <td>對話流程</td>
+                    <td>單一 Agent</td>
+                    <td>Chain 串接</td>
+                    <td><span class="badge badge-primary">Crew 協作</span></td>
+                    <td>單一對話</td>
+                </tr>
+            </table>
+        </section>
+
+        <!-- 改進建議 -->
+        <section class="card">
+            <h2>💡 改進建議</h2>
+            
+            <div class="grid">
+                <div>
+                    <h3>1. 記憶體壓縮與優化</h3>
+                    <ul>
+                        <li>引入 <strong>壓縮演算法</strong> (如 LZ4) 減少 store.jsonl 體積</li>
+                        <li>實施 <strong>記憶體分級</strong>: 熱資料 (最近對話) / 冷資料 (歷史摘要)</li>
+                        <li>定期 <strong>合併與歸檔</strong> 舊 session 至壓縮封存</li>
+                        <li>目標: 減少 40-60% 儲存空間</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>2. 速度優化</h3>
+                    <ul>
+                        <li>啟用 <strong>快取層</strong> 減少重複 API 調用</li>
+                        <li>實現 <strong>非同步處理</strong> 背景任務 (如記憶儲存)</li>
+                        <li>優化 <strong>Session 載入</strong>: 僅載入必要上下文</li>
+                        <li>目標: 縮短 30-50% 回應時間</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>3. Provider 中立性</h3>
+                    <ul>
+                        <li>建立 <strong>Provider 抽象層</strong> 標準化介面</li>
+                        <li>實現 <strong>自動降級</strong> 機制 (現有) 需強化</li>
+                        <li>增加 <strong>更多 Provider</strong>: Claude, Gemini, 本地模型</li>
+                        <li>目標: 降低單一 Provider 依賴達 70%</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>4. 成本優化</h3>
+                    <ul>
+                        <li>實施 <strong>Token 配額管理</strong> 避免過度消耗</li>
+                        <li>引入 <strong>快取命中計費</strong> 折扣</li>
+                        <li>實現 <strong>智慧模型選擇</strong>: 簡單任務用小模型</li>
+                        <li>目標: 降低 25-40% API 成本</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 總結 -->
+        <section class="card">
+            <h2>📋 總結</h2>
+            <table>
+                <tr><th>評估維度</th><th>現狀評分</th><th>建議優先級</th></tr>
+                <tr><td>記憶體使用</td><td><span class="badge badge-success">良好</span> 33KB</td><td>中</td></tr>
+                <tr><td>系統資源</td><td><span class="badge badge-success">優秀</span> 磁碟 15%, RAM 54%</td><td>低</td></tr>
+                <tr><td>Provider 多元化</td><span class="badge badge-warning">中</span> DeepSeek/Kimi/MiniMax</td><td>高</td></tr>
+                <tr><td>擴展性</td><td><span class="badge badge-success">良好</span> 6 技能</td><td>中</td></tr>
+                <tr><td>成本效率</td><td><span class="badge badge-warning">待優化</span></td><td>高</td></tr>
+            </table>
+            
+            <h3>優先行動項目</h3>
+            <ol>
+                <li><strong>Provider 中立性強化</strong> - 增加更多模型支援，降低單一供應商依賴</li>
+                <li><strong>成本優化機制</strong> - 實作 Token 配額與智慧模型選擇</li>
+                <li><strong>記憶體壓縮</strong> - 引入分級儲存與壓縮機制</li>
+            </ol>
+        </section>
+
+        <footer style="text-align: center; margin-top: 2rem; color: #64748b; font-size: 0.85rem;">
+            <p>報告由 BAW 系統自動生成 | 資料來源: ~/.baw/</p>
+        </footer>
+    </div>
+
+    <script>
+        document.getElementById('timestamp').textContent = new Date().toLocaleString('zh-TW');
+    </script>
+</body>
+</html>

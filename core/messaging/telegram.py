@@ -43,7 +43,6 @@ class TelegramConnector(BaseConnector):
         self._restart_chat_id: str | None = None
         self._tts_enabled = self.config.get("tts_enabled", False)
         self._tts_voice = self.config.get("tts_voice", "male-tone-1")
-        self._MODELS = ["deepseek-v4-flash", "kimi-k2.6", "MiniMax-M3"]
         self._selector_msg_id: int | None = None
 
     def connect(self) -> bool:
@@ -782,7 +781,7 @@ class TelegramConnector(BaseConnector):
                     json={
                         "offset": self._offset,
                         "timeout": POLL_TIMEOUT,
-                        "allowed_updates": ["message"],
+                        "allowed_updates": ["message", "callback_query"],
                     },
                     timeout=POLL_TIMEOUT + 5,
                 )
@@ -810,6 +809,12 @@ class TelegramConnector(BaseConnector):
 
     def _handle_update(self, update: dict):
         """Process a single Telegram update (non-blocking, concurrent)."""
+        # ── Handle inline keyboard callback query ──
+        cb = update.get("callback_query")
+        if cb:
+            self._handle_callback(cb)
+            return
+
         msg = update.get("message")
         if not msg:
             return
@@ -1037,16 +1042,23 @@ class TelegramConnector(BaseConnector):
     # ── Inline keyboard for model selection (hierarchical: provider → model) ──
 
     def _get_providers_config(self) -> dict:
-        """Get provider → models mapping from config."""
+        """Get provider → models mapping from config + auto-discovered models."""
         try:
             baw = self._baw_ensure()
             config = baw["config"]
             providers = config.get("providers", {})
             result = {}
             for pname, pcfg in providers.items():
+
                 models = [m["id"] for m in pcfg.get("models", [])]
-                if models:
-                    result[pname] = models
+                result[pname] = models
+            # Try auto-discovery: fetch /v1/models for each provider
+            discovered = self._discover_provider_models(providers)
+            for pname, extra in discovered.items():
+                existing = set(result.get(pname, []))
+                new = [m for m in extra if m not in existing]
+                if new:
+                    result.setdefault(pname, []).extend(new)
             return result
         except Exception:
             # Fallback hardcoded
@@ -1055,6 +1067,35 @@ class TelegramConnector(BaseConnector):
                 "kimi": ["kimi-k2.6"],
                 "minimax": ["MiniMax-M2.5"],
             }
+
+    def _discover_provider_models(self, providers: dict) -> dict:
+        """Try to auto-discover available models from each provider's API."""
+        import os
+        discovered = {}
+        for pname, pcfg in providers.items():
+            base_url = pcfg.get("base_url", "").rstrip("/")
+            api_key = os.environ.get(pcfg.get("api_key_env", ""), "")
+            if not base_url or not api_key:
+                continue
+            models_url = f"{base_url}/models"
+            try:
+                resp = httpx.get(
+                    models_url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=5,
+                )
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                # OpenAI-compatible format: {"data": [{"id": "..."}]}
+                raw = data.get("data", [])
+                if raw and isinstance(raw, list):
+                    ids = [m.get("id", "") for m in raw if m.get("id")]
+                    if ids:
+                        discovered[pname] = ids
+            except Exception:
+                continue
+        return discovered
 
     def _send_model_selector_text(self, chat_id: str, text: str) -> bool:
         """Parse [MODEL_SELECT] formatted text and send provider-level keyboard."""
@@ -1075,7 +1116,7 @@ class TelegramConnector(BaseConnector):
                 json={
                     "chat_id": chat_id,
                     "text": f"{title}\nCurrent: `{current_model}`",
-                    "reply_markup": __import__("json").dumps({"inline_keyboard": rows}),
+                    "reply_markup": {"inline_keyboard": rows},
                     "parse_mode": "Markdown",
                 },
                 timeout=5,
@@ -1108,7 +1149,7 @@ class TelegramConnector(BaseConnector):
                     "chat_id": chat_id,
                     "message_id": msg_id,
                     "text": f"**{provider}** models:\nCurrent: `{current_model}`",
-                    "reply_markup": __import__("json").dumps({"inline_keyboard": rows}),
+                    "reply_markup": {"inline_keyboard": rows},
                     "parse_mode": "Markdown",
                 },
                 timeout=5,
@@ -1123,42 +1164,46 @@ class TelegramConnector(BaseConnector):
         chat_id = str(msg["chat"]["id"])
         cb_id = cb["id"]
         msg_id = msg.get("message_id")
+        logger.info(f"[Telegram] Callback: {data} from {chat_id}")
+
+        # ── Critical: acknowledge callback FIRST to stop Telegram loading spinner ──
+        self._client.post(
+            f"{self._api_base}/answerCallbackQuery",
+            json={"callback_query_id": cb_id},
+            timeout=5,
+        )
 
         if data.startswith("provider_select:"):
             pname = data.split(":", 1)[1]
             if pname == "__back__":
                 # Go back to provider list
-                providers = self._get_providers_config()
-                title = "**Select Provider**"
-                # Get current model from session
-                cc = getattr(self, '_chat_config', {}).get(chat_id, {})
-                current = cc.get("model", "deepseek-v4-flash")
-                rows = []
-                for pn in providers:
-                    rows.append([{"text": f"  {pn}", "callback_data": f"provider_select:{pn}"}])
-                self._client.post(
-                    f"{self._api_base}/editMessageText",
-                    json={
-                        "chat_id": chat_id,
-                        "message_id": msg_id,
-                        "text": f"{title}\nCurrent: `{current}`",
-                        "reply_markup": __import__("json").dumps({"inline_keyboard": rows}),
-                        "parse_mode": "Markdown",
-                    },
-                    timeout=5,
-                )
+                try:
+                    providers = self._get_providers_config()
+                    title = "**Select Provider**"
+                    cc = getattr(self, '_chat_config', {}).get(chat_id, {})
+                    current = cc.get("model", "deepseek-v4-flash")
+                    rows = []
+                    for pn in providers:
+                        rows.append([{"text": f"  {pn}", "callback_data": f"provider_select:{pn}"}])
+                    self._client.post(
+                        f"{self._api_base}/editMessageText",
+                        json={
+                            "chat_id": chat_id,
+                            "message_id": msg_id,
+                            "text": f"{title}\nCurrent: `{current}`",
+                            "reply_markup": {"inline_keyboard": rows},
+                            "parse_mode": "Markdown",
+                        },
+                        timeout=5,
+                    )
+                except Exception as e:
+                    logger.warning(f"[Telegram] Back button error: {e}")
             else:
                 # Show models for this provider
                 providers = self._get_providers_config()
                 cc = getattr(self, '_chat_config', {}).get(chat_id, {})
                 current = cc.get("model", "deepseek-v4-flash")
                 self._send_model_buttons(chat_id, msg_id, pname, current)
-            # Acknowledge
-            self._client.post(
-                f"{self._api_base}/answerCallbackQuery",
-                json={"callback_query_id": cb_id},
-                timeout=5,
-            )
 
         elif data.startswith("model_select:"):
             model_name = data.split(":", 1)[1]
@@ -1169,6 +1214,7 @@ class TelegramConnector(BaseConnector):
                 text=f"/m [{model_name}]",
             )
             result = self.route(route_msg)
+            # Re-acknowledge with result text for feedback
             self._client.post(
                 f"{self._api_base}/answerCallbackQuery",
                 json={"callback_query_id": cb_id, "text": f"Switched to {model_name}"},
