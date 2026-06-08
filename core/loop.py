@@ -669,61 +669,194 @@ def run_agent(
     if _execution_plan:
         _display_log.append(dsp.phase_plan(_execution_plan))
 
-    # ── Phase 3b: Delegate each plan step to MiniMax executor ──
-    # Main brain (DeepSeek) decomposes tasks → MiniMax sub-agents execute each step
-    # Sub-agents return results → DeepSeek synthesises final answer
-    import importlib.util as _dt_iu
-    _dt_spec = _dt_iu.spec_from_file_location(
-        "_tk_delegate",
-        str(Path(__file__).resolve().parent.parent / "tools" / "delegate_task.py"),
-    )
-    _dt_mod = _dt_iu.module_from_spec(_dt_spec)
-    _dt_spec.loader.exec_module(_dt_mod)
-    _delegate_fn = _dt_mod.delegate_task
-
+    # ── Phase 3b: Goal-pursuit loop ──
+    # Each step: execute → if fail → think alternative → retry
+    # Whole loop: after all steps → self-review → if goal not met → retry with new plan
+    _GOAL_PURSUIT_MAX_ATTEMPTS = 5  # Max total goal-pursuit iterations
+    _STEP_RETRIES = 3               # Max retries per step with alternative approaches
     _execution_progress: list[str] = []
     steps_completed = 0
     _delegation_results: list[str] = []
     _delegation_failed = False
+    _goal_achieved = False
 
-    for _step_idx, _step in enumerate(_execution_plan):
-        _step_goal = _step['desc']
-        if progress_callback:
-            progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal})
-
-        _step_goal = _step['desc']
-        _step_ctx = ""
-        if _delegation_results:
-            _step_ctx = "Previous steps completed:\n" + "\n---\n".join(
-                f"Step {i+1}:\n{r[:800]}" for i, r in enumerate(_delegation_results)
-            )
-
-        _step_desc_short = _step['desc'][:80]
+    for _pursuit in range(1, _GOAL_PURSUIT_MAX_ATTEMPTS + 1):
         if verbose:
-            print(f"  🤖 Delegating step {_step_idx + 1}/{len(_execution_plan)}: {_step_desc_short}")
+            print(f"\n  🎯 Goal pursuit iteration {_pursuit}/{_GOAL_PURSUIT_MAX_ATTEMPTS}")
 
-        try:
-            _result = _delegate_fn(
-                goal=_step_goal,
-                context=_step_ctx,
+        # ── Re-plan if not first attempt ──
+        if _pursuit > 1:
+            # Ask LLM for a different approach based on previous failures
+            _history_for_plan = "\n".join(
+                f"Attempt {i+1} Step {j+1}: {r[:300]}"
+                for i, results in enumerate([_delegation_results])
+                for j, r in enumerate(results) if r.startswith("[FAILED]")
+            ) if _delegation_results else ""
+
+            _adapt_prompt = (
+                f"[ORCHESTRATOR - RETRY {_pursuit - 1}/{_GOAL_PURSUIT_MAX_ATTEMPTS}]\n\n"
+                f"Original goal: {prompt}\n\n"
+                f"Previous attempts failed. Here's what went wrong:\n{_history_for_plan or 'No specific failure info'}\n\n"
+                f"Think of a COMPLETELY DIFFERENT approach to achieve the goal.\n"
+                f"Write a new step-by-step execution plan.\n"
+                f"Each step must be SMALL (max 1-2 tool calls).\n"
+                f"Format each step as:\n"
+                f"  Step N: <description> — <tool> — <expected outcome>\n\n"
+                f"Reply with ONLY the plan, numbered 1..N."
             )
-            _delegation_results.append(_result)
-            steps_completed += 1
+            _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _adapt_prompt}]
+            _plan_fb = call_llm_with_fallback(config, _plan_msgs, temperature=None)
+            _plan_resp = _plan_fb.response
+            total_llm_calls += 1
+            _cost2 = calculate_cost(model, _plan_resp.input_tokens, _plan_resp.output_tokens)
+            session_cost += _cost2
+            record_cost(f"{model.provider}/{model.id}", _plan_resp.input_tokens, _plan_resp.output_tokens, _cost2)
 
-            # Display progress
-            _execution_progress.append(f"Step {_step_idx + 1}: ✅ {_step_desc_short}")
-            _dsp = dsp.phase_step_done(_step_idx + 1, len(_execution_plan), _step_desc_short)
-            _display_log.append(_dsp)
+            # Parse new plan
+            _execution_plan = []
+            for _line in (_plan_resp.content or "").split("\n"):
+                _m = re.match(r'\s*(?:Step\s*)?(\d+)[.:]\s*(.*)', _line.strip())
+                if _m:
+                    _execution_plan.append({"num": int(_m.group(1)), "desc": _m.group(2)})
+            if not _execution_plan:
+                _execution_plan.append({"num": 1, "desc": (_plan_resp.content or "")[:200]})
+
+            # Reset delegation results for fresh run
+            _delegation_results = []
+            _delegation_failed = False
+
+            if progress_callback:
+                progress_callback("plan", "", {"iteration": _pursuit, "steps": len(_execution_plan)})
+
+        if progress_callback:
+            progress_callback("goal_iteration", "", {"iteration": _pursuit, "max": _GOAL_PURSUIT_MAX_ATTEMPTS})
+
+        # ── Execute each plan step with adaptive retry ──
+        _pursuit_step_failed = False
+        for _step_idx, _step in enumerate(_execution_plan):
+            if _pursuit_step_failed:
+                break  # This pursuit iteration failed; try new plan next iteration
+
+            _step_goal = _step['desc']
+            if progress_callback:
+                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal})
+
+            # ── Per-step retry loop ──
+            _step_succeeded = False
+            for _step_attempt in range(1, _STEP_RETRIES + 1):
+                if progress_callback:
+                    progress_callback("step_retry", "", {"step": _step_idx + 1, "attempt": _step_attempt, "goal": _step_goal})
+
+                _step_goal_actual = _step_goal
+                if _step_attempt > 1:
+                    # Adapt this specific step with alternative approach
+                    _step_goal_actual = (
+                        f"[ALTERNATIVE APPROACH {_step_attempt}/{_STEP_RETRIES}]\n"
+                        f"Original step goal: {_step['desc']}\n"
+                        f"Previous attempt failed. Think of a COMPLETELY DIFFERENT way to achieve this step.\n"
+                        f"Be creative — try a different tool, different source, different method.\n"
+                        f"Goal: {_step_goal_actual}"
+                    )
+
+                _step_ctx = ""
+                if _delegation_results:
+                    _step_ctx = "Previous steps completed:\n" + "\n---\n".join(
+                        f"Step {i+1}:\n{r[:800]}" for i, r in enumerate(_delegation_results)
+                    )
+
+                _step_desc_short = _step['desc'][:80]
+                if verbose:
+                    print(f"  🤖 Delegating step {_step_idx + 1}/{len(_execution_plan)} (attempt {_step_attempt}/{_STEP_RETRIES}): {_step_desc_short}")
+
+                try:
+                    _result = _delegate_fn(
+                        goal=_step_goal_actual,
+                        context=_step_ctx,
+                    )
+                    _delegation_results.append(_result)
+                    _step_succeeded = True
+                    steps_completed += 1
+
+                    _execution_progress.append(f"Step {_step_idx + 1}: ✅ {_step_desc_short}")
+                    _dsp = dsp.phase_step_done(_step_idx + 1, len(_execution_plan), _step_desc_short)
+                    _display_log.append(_dsp)
+                    if verbose:
+                        print(_dsp)
+                    break  # Step succeeded, move to next step
+                except Exception as _e:
+                    _delegation_results.append(f"[FAILED attempt {_step_attempt}] {_step_desc_short}: {_e}")
+                    if verbose:
+                        print(f"  ❌ Attempt {_step_attempt} failed: {_e}")
+                    if _step_attempt < _STEP_RETRIES:
+                        if verbose:
+                            print(f"  🔄 Trying alternative approach...")
+                    else:
+                        _delegation_failed = True
+                        _pursuit_step_failed = True
+                        _dsp = dsp.phase_step_error(_step_idx + 1, len(_execution_plan), _step_desc_short, str(_e)[:80])
+                        _display_log.append(_dsp)
+                        if verbose:
+                            print(f"  ❌ Step {_step_idx + 1} exhausted all {_STEP_RETRIES} approaches")
+
+        # ── Self-review: did we achieve the goal? ──
+        if not _pursuit_step_failed and _delegation_results:
+            _review_prompt = (
+                f"[SELF-REVIEW] Goal: {prompt}\n\n"
+                f"Steps completed:\n"
+                + "\n".join(f"Step {i+1}:\n{r[:500]}" for i, r in enumerate(_delegation_results))
+                + f"\n\n---\n"
+                f"Have we achieved the goal? Answer with:\n"
+                f"SCORE: <0-10> (7+ = achieved)\n"
+                f"VERDICT: <achieved | partially | failed>\n"
+                f"REASON: <brief explanation>\n"
+                f"GAP: <what's still missing, if anything>"
+            )
+            _review_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _review_prompt}]
+            _review_fb = call_llm_with_fallback(config, _review_msgs, temperature=0.3)
+            _review_resp = _review_fb.response
+            total_llm_calls += 1
+            _cost3 = calculate_cost(model, _review_resp.input_tokens, _review_resp.output_tokens)
+            session_cost += _cost3
+            record_cost(f"{model.provider}/{model.id}", _review_resp.input_tokens, _review_resp.output_tokens, _cost3)
+            _review_text = _review_resp.content or ""
+
             if verbose:
-                print(_dsp)
-        except Exception as _e:
-            _delegation_results.append(f"[FAILED] {_e}")
-            _delegation_failed = True
-            _dsp = dsp.phase_step_error(_step_idx + 1, len(_execution_plan), _step_desc_short, str(_e)[:80])
-            _display_log.append(_dsp)
+                print(f"\n  🔍 Self-review result: {_review_text[:150]}")
+
+            # Parse score
+            _score_match = re.search(r'SCORE:\s*(\d+(?:\.\d+)?)', _review_text)
+            _verdict_match = re.search(r'VERDICT:\s*(\w+)', _review_text)
+            if _score_match:
+                _score = float(_score_match.group(1))
+                if _score >= 7:
+                    _goal_achieved = True
+                    if verbose:
+                        print(f"  ✅ Goal achieved (score: {_score}/10)")
+                    break
+                else:
+                    if verbose:
+                        print(f"  ⏳ Goal not yet achieved (score: {_score}/10), retrying with new approach...")
+                    _delegation_failed = True
+                    # Keep delegation_results for plan adaptation
+                    continue  # Next pursuit iteration
+            else:
+                # Can't parse — assume partially done, let it continue
+                if verbose:
+                    print(f"  ⚠️ Couldn't parse self-review score, treating as incomplete")
+                _delegation_failed = True
+                continue
+        else:
+            # No delegation results or step failed — try new plan
             if verbose:
-                print(f"  ❌ Step {_step_idx + 1} failed: {_e}")
-            break
+                print(f"  ⏳ No successful results to review, trying new approach...")
+
+    # ── After goal loop ──
+    if _goal_achieved:
+        if verbose:
+            print("  ✅ Goal achieved — synthesising final response")
+    else:
+        if verbose:
+            print(f"  ⚠️ Goal not fully achieved after {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit attempts — synthesising partial results")
 
     # ── Phase 3c: DeepSeek synthesises final response from delegation results ──
     if _delegation_results:
