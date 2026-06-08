@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.10-blueviolet" alt="v0.10">
+  <img src="https://img.shields.io/badge/version-0.11-blueviolet" alt="v0.11">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -90,7 +90,10 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>📁 Async Background Tasks</td><td><code>--delegate</code> runs in background, main terminal freed instantly, max 3 concurrent</td></tr>
   <tr><td>🐙 GitHub Integration</td><td>issues / PRs / CI / repos directly from CLI</td></tr>
   <tr><td>🔍 Open Search Provider</td><td>Built-in DuckDuckGo (free, no key), pluggable upgrade</td></tr>
-  <tr><td>💾 Unified Memory + Fact Check</td><td>JSONL append-only + internal scoring + 3-level fact verification</td></tr>
+  <tr><td>💾 Unified Memory + Fact Check</td><td>JSONL append-only + edges.json graph + 2-hop associative spread + automatic decay</td></tr>
+  <tr><td>🧬 Self-Evolution (v0.11)</td><td>3-layer learning: tool behavior tracking → pattern detection → auto-optimize SOUL/config</td></tr>
+  <tr><td>🤖 Agent Delegation (v0.11)</td><td>Main brain (DeepSeek) decomposes tasks → MiniMax sub-agents execute each step → DeepSeek synthesises</td></tr>
+  <tr><td>🔄 Hot Reload (v0.11)</td><td><code>/reload</code> reloads tools/config/SOUL without restarting the bot process</td></tr>
   <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block sudo/rm -rf) / Medium (warn) / Low (allow)</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates a dark-themed system dashboard</td></tr>
   <tr><td>💬 Interactive CLI Chat</td><td>Colored banner + Tab completion + 20 slash commands</td></tr>
@@ -153,7 +156,8 @@ baw/                        ← Code repo
 │   ├── setup.py            Setup wizard + Config CLI
 │   ├── commands.py         Slash commands
 │   ├── display.py          Step display formatter
-│   ├── dream.py            Weekly self-curation
+│   ├── dream.py            Weekly self-curation + self-evolution
+│   ├── evolve.py           3-layer self-evolution engine (v0.11)
 │   ├── checkpoint.py       Checkpoint / rollback
 │   ├── degradation.py      Tool degradation chains
 │   ├── file_history.py     File SHA256 history
@@ -164,7 +168,8 @@ baw/                        ← Code repo
 │   ├── bash.py             Shell execution
 │   ├── read_file.py        File reading
 │   ├── write_file.py       File writing
-│   └── web_search.py       Web search
+│   ├── web_search.py       Web search
+│   └── delegate_task.py    MiniMax sub-agent delegation (v0.11)
 ├── config.yaml             Default config
 └── docs/                   GitHub Pages documentation
 
@@ -289,7 +294,10 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>📁 背景 Async Task</td><td><code>--delegate</code> 背景執行，主 terminal 即時 free，max 3 concurrent</td></tr>
   <tr><td>🐙 GitHub 整合</td><td>issues / PRs / CI / repos 直接操作</td></tr>
   <tr><td>🔍 開放 Search Provider</td><td>內置 DuckDuckGo（免費），可 pluggable 升級</td></tr>
-  <tr><td>💾 統一記憶 + 事實查證</td><td>JSONL append‑only + 內部評分 + 三級 fact check</td></tr>
+  <tr><td>💾 統一記憶 + 事實查證</td><td>JSONL append‑only + edges.json 圖譜 + 2-hop 關聯 + 自動衰退</td></tr>
+  <tr><td>🧬 自我進化 (v0.11)</td><td>三層學習：行為追蹤 → 模式偵測 → 自動優化 SOUL/config</td></tr>
+  <tr><td>🤖 Agent Delegation (v0.11)</td><td>主腦（DeepSeek）拆任務 → MiniMax 子 agent 執行 → DeepSeek 綜合</td></tr>
+  <tr><td>🔄 Hot Reload (v0.11)</td><td><code>/reload</code> 熱重載 tools/config/SOUL，唔使 restart</td></tr>
   <tr><td>🛡️ 三級權限引擎</td><td>High（禁止 sudo/rm -rf）/ Medium（提示）/ Low（允許）</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> 一鍵生成深色主題系統儀錶板</td></tr>
   <tr><td>💬 互動式 CLI Chat</td><td>彩色 banner + Tab 補全 slash commands + 20 個指令</td></tr>
@@ -352,7 +360,8 @@ baw/                        ← Code repo
 │   ├── setup.py            互動式設定精靈 + Config CLI
 │   ├── commands.py         Slash commands
 │   ├── display.py          步驟顯示格式化
-│   ├── dream.py            每週自我整理
+│   ├── dream.py            每週自我整理 + 自我進化
+│   ├── evolve.py           三層自我進化引擎 (v0.11)
 │   ├── checkpoint.py       Checkpoint / rollback
 │   ├── degradation.py      Tool degradation chains
 │   ├── file_history.py     檔案版本 SHA256
@@ -363,7 +372,8 @@ baw/                        ← Code repo
 │   ├── bash.py             Shell 執行
 │   ├── read_file.py        讀檔案
 │   ├── write_file.py       寫檔案
-│   └── web_search.py       Web search
+│   ├── web_search.py       Web search
+│   └── delegate_task.py    MiniMax 子 agent 分工 (v0.11)
 ├── config.yaml             預設配置
 └── docs/                   GitHub Pages 文檔
 

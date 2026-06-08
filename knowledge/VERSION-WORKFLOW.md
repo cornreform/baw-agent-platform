@@ -87,6 +87,7 @@ cp -a ~/baw-archive/v0.10 ~/baw      # 從基準複製全新嘅開發目錄
 | 版本 | 狀態 | 位置 |
 |------|------|------|
 | v0.10 | ✅ Baseline（凍結） | `~/baw-archive/v0.10/` |
+| v0.11 | ✅ Released | `~/baw-archive/v0.11/` + GitHub tag |
 | ~/baw/ | 🔄 活躍開發 | `~/baw/` |
 
 ---
