@@ -405,15 +405,40 @@ def run_agent(
     # ═══════════════════════════════════════════════════════════════
 
     if interactive:
-        # In interactive mode, after the neutral response, BAW returns
-        # and waits for user's next input. The debate is handled
-        # by the CLI loop calling run_agent() again with each user turn.
-        # We only handle the initial court + neutral response here.
+        # Execute any tool calls from the neutral response (live progress)
+        _resp = neutral_response
+        while _resp.tool_calls:
+            for tc in _resp.tool_calls:
+                func = tc.get("function", {})
+                name = func.get("name", "")
+                raw_args = func.get("arguments", "{}")
+                try:
+                    args = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    args = {}
+                print(f"\033[90m🔧 {name}", end="", flush=True)
+                perm_result = perm.check(name, args)
+                if perm_result["decision"] == "deny":
+                    print(f" ⛔ BLOCKED: {perm_result['reason']}\033[0m")
+                    ctx.add_tool_result(tc.get("id", ""), name, f"[BLOCKED] {perm_result['reason']}")
+                    continue
+                print(f" {str(args)[:80]}", end="", flush=True)
+                exe_result = execute_tool(name, args)
+                print(f" \033[32m✅\033[0m", flush=True)
+                ctx.add_tool_result(tc.get("id", ""), name, exe_result)
+            # Next LLM call to synthesize results
+            fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=get_openai_tools(), temperature=model_temperature)
+            _resp = fb.response
+            n_cost = calculate_cost(model, _resp.input_tokens, _resp.output_tokens)
+            session_cost += n_cost
+            record_cost(f"{model.provider}/{model.id}", _resp.input_tokens, _resp.output_tokens, n_cost)
+            ctx.add_assistant(_resp.content, _resp.tool_calls)
+
+        # Now return the final synthesized response
         output = ""
         if tone_change:
             output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
-
-        output += (neutral_response.content or "")
+        output += (_resp.content or "")
         output += f"\n\n{format_cost_summary()}"
 
         try:
