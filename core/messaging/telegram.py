@@ -425,7 +425,7 @@ class TelegramConnector(BaseConnector):
             logger.error(f"[Telegram] Document processing error: {e}")
             self.send(chat_id, f"❌ Error processing document: {e}")
         finally:
-            self._busy = False
+            self._release_slot()
 
     def _process_image_file(self, chat_id: str, photo_data: dict, msg: dict):
         """Download an image and run OCR + BAW analysis."""
@@ -456,7 +456,7 @@ class TelegramConnector(BaseConnector):
             logger.error(f"[Telegram] Image processing error: {e}")
             self.send(chat_id, f"❌ Error processing image: {e}")
         finally:
-            self._busy = False
+            self._release_slot()
 
     def _process_voice_file(self, chat_id: str, voice_data: dict, msg: dict):
         """Download audio, check STT capability, then transcribe or present options."""
@@ -624,7 +624,7 @@ class TelegramConnector(BaseConnector):
             logger.error(f"[Telegram] Voice processing error: {e}")
             self.send(chat_id, f"❌ 語音處理錯誤: {e}")
         finally:
-            self._busy = False
+            self._release_slot()
 
     @staticmethod
     def _scan_all_models(config: dict) -> list[dict]:
@@ -681,7 +681,7 @@ class TelegramConnector(BaseConnector):
                 time.sleep(POLL_RETRY_DELAY)
 
     def _handle_update(self, update: dict):
-        """Process a single Telegram update (non-blocking)."""
+        """Process a single Telegram update (non-blocking, concurrent)."""
         msg = update.get("message")
         if not msg:
             return
@@ -700,22 +700,20 @@ class TelegramConnector(BaseConnector):
             voice = msg.get("voice")
 
             if doc:
-                if self._busy:
-                    self.send(chat_id, "⏳ Still processing. Try again later.")
+                if not self._acquire_slot():
+                    self.send(chat_id, f"⏳ 目前有 {self._max_concurrency} 個任務進行中，稍後再試。")
                     return
-                self._busy = True
                 threading.Thread(
                     target=self._process_document_file,
                     args=(chat_id, doc, msg),
                     daemon=True,
                 ).start()
             elif photo:
-                if self._busy:
-                    self.send(chat_id, "⏳ Still processing. Try again later.")
+                if not self._acquire_slot():
+                    self.send(chat_id, f"⏳ 目前有 {self._max_concurrency} 個任務進行中，稍後再試。")
                     return
                 # Get the largest photo size
                 photo_data = max(photo, key=lambda p: p.get("file_size", 0))
-                self._busy = True
                 threading.Thread(
                     target=self._process_image_file,
                     args=(chat_id, photo_data, msg),
@@ -724,11 +722,10 @@ class TelegramConnector(BaseConnector):
             elif video:
                 self.send(chat_id, "🎬 收到影片，但 BAW 暫時未支援影片處理。")
             elif audio or voice:
-                if self._busy:
-                    self.send(chat_id, "⏳ Still processing. Try again later.")
+                if not self._acquire_slot():
+                    self.send(chat_id, f"⏳ 目前有 {self._max_concurrency} 個任務進行中，稍後再試。")
                     return
                 voice_data = audio or voice
-                self._busy = True
                 threading.Thread(
                     target=self._process_voice_file,
                     args=(chat_id, voice_data, msg),
@@ -744,12 +741,10 @@ class TelegramConnector(BaseConnector):
 
         logger.info(f"[Telegram] <{user_name}> {text[:80]}")
 
-        # /stop — cancel running BAW immediately + enforce debounce window
+        # /stop — cancel running BAW immediately
         if text.strip().lower().startswith("/stop"):
             self._cancel_event.set()
-            self._busy = False
-            self._debounce_until = time.time() + 1.0
-            self.send(chat_id, "⏹ Stopped.")
+            self.send(chat_id, f"⏹ Stopped {self._active_count} active task(s).")
             return
 
         # Debounce window: suppress new threads right after /stop
@@ -757,13 +752,11 @@ class TelegramConnector(BaseConnector):
             self.send(chat_id, "⏳ Please wait a moment before sending a new request.")
             return
 
-        # If busy, reject and suggest /stop
-        if self._busy:
-            self.send(chat_id, "⏳ Still processing previous request. Use /stop to cancel.")
+        # Acquire slot and start async processing in background thread
+        if not self._acquire_slot():
+            self.send(chat_id, f"⏳ 目前有 {self._max_concurrency} 個任務進行中，稍後再試。")
             return
 
-        # Start async processing in background thread
-        self._busy = True
         self._cancel_event.clear()
         threading.Thread(
             target=self._process_message,
@@ -825,4 +818,4 @@ class TelegramConnector(BaseConnector):
                 except Exception:
                     pass
         finally:
-            self._busy = False
+            self._release_slot()
