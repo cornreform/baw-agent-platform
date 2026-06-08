@@ -76,12 +76,12 @@ Examples:
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Load messaging connectors
-    from baw.core.messaging import list_connectors, get_connector
-    from baw.core.messaging.telegram import TelegramConnector
-    from baw.core.messaging.discord import DiscordConnector
-    from baw.core.messaging.signal import SignalConnector
-    from baw.core.messaging.whatsapp import WhatsAppConnector
-    from baw.core.messaging.matrix import MatrixConnector
+    from core.messaging import list_connectors, get_connector
+    from core.messaging.telegram import TelegramConnector
+    from core.messaging.discord import DiscordConnector
+    from core.messaging.signal import SignalConnector
+    from core.messaging.whatsapp import WhatsAppConnector
+    from core.messaging.matrix import MatrixConnector
 
     # Force registration by importing all connector modules
     # (The @register decorator auto-registers them)
