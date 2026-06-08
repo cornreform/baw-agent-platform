@@ -465,8 +465,9 @@ class BaseConnector(ABC):
                 cfg["model"] = clean_arg
                 return (
                     f"✅ Chat model set to: `{clean_arg}`\n\n"
-                    f"💡 To make it the permanent default:\n"
-                    f"`/set model.default {clean_arg}`"
+                    f"💡 Set as default:  `/set model.default {clean_arg}`\n"
+                    f"   Angel override: `/set adversarial.angel_model {clean_arg}`\n"
+                    f"   Devil override: `/set adversarial.devil_model {clean_arg}`"
                 )
 
             if cmd in ("model", "models"):
@@ -892,14 +893,28 @@ class BaseConnector(ABC):
             else:
                 conv_history = None
 
-            # ── Progress tracking (per-event timeout) ──
+            # ── Progress tracking + real-time Telegram updates ──
             _last_progress = time.time()
             _progress_lock = threading.Lock()
+            _progress_msg_id = None  # for possible editMessageText later
 
-            def _on_progress():
+            def _on_progress(step_type: str = "", name: str = "", args: dict = None):
                 with _progress_lock:
                     nonlocal _last_progress
                     _last_progress = time.time()
+                # Send real-time update to Telegram
+                if chat_id and step_type:
+                    try:
+                        if step_type == "tool" and name:
+                            self.send(chat_id, f"🔧 `{name}`")
+                        elif step_type == "delegate":
+                            meta = args or {}
+                            s = meta.get("step", "")
+                            t = meta.get("total", "")
+                            g = meta.get("goal", "")[:80]
+                            self.send(chat_id, f"🤖 Delegating step {s}/{t}: {g}")
+                    except Exception:
+                        pass
 
             # Run BAW with a timeout via thread pool
             with ThreadPoolExecutor(1) as pool:
@@ -936,11 +951,6 @@ class BaseConnector(ABC):
                     return "⏳ Task took too long (>5min). Try /stop to cancel, or split into smaller steps."
 
             output = response or ""
-
-            # ── Format tool call log from session messages ──
-            tool_log = self._format_tool_log(info.get("new_session_messages", []))
-            if tool_log:
-                output = tool_log + "\n\n" + output
 
             # ── Save session history ──
             if session and info:
