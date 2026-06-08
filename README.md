@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.11-blueviolet" alt="v0.11">
+  <img src="https://img.shields.io/badge/version-0.12-blueviolet" alt="v0.12">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -98,6 +98,8 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>🤖 Agent Delegation (v0.11)</td><td>Main brain (DeepSeek) decomposes tasks → MiniMax sub-agents execute each step → DeepSeek synthesises</td></tr>
   <tr><td>🔄 Hot Reload (v0.11)</td><td><code>/reload</code> reloads tools/config/SOUL without restarting the bot process</td></tr>
   <tr><td>🎙️ Voice STT (v0.11)</td><td>Telegram voice/audio auto-detected: checks model audio_input capability → configured STT method → faster-whisper local fallback. Presents setup options when none available</td></tr>
+  <tr><td>📊 Context Monitor (v0.12)</td><td>Auto-detects context usage per model's context_window. >70% → auto-summarize session + save to memory + compress to last 4 msgs. 50-70% → log monitor. Silent otherwise</td></tr>
+  <tr><td>🗂️ Session Management (v0.12)</td><td><code>/new</code>, <code>/list</code>, <code>/resume &lt;id&gt;</code>, <code>/summarize</code> — full session lifecycle without losing context. Help listing shows all top-level commands</td></tr>
   <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block sudo/rm -rf) / Medium (warn) / Low (allow)</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates a dark-themed system dashboard</td></tr>
   <tr><td>💬 Interactive CLI Chat</td><td>Colored banner + Tab completion + 20 slash commands</td></tr>
@@ -305,6 +307,8 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>🤖 Agent Delegation (v0.11)</td><td>主腦（DeepSeek）拆任務 → MiniMax 子 agent 執行 → DeepSeek 綜合</td></tr>
   <tr><td>🔄 Hot Reload (v0.11)</td><td><code>/reload</code> 熱重載 tools/config/SOUL，唔使 restart</td></tr>
   <tr><td>🎙️ Voice STT (v0.11)</td><td>Telegram 語音自動檢測：檢查模型 audio_input 能力 → STT 設定 → faster-whisper 本地 fallback。冇可用方案時列出安裝選項</td></tr>
+  <tr><td>📊 Context Monitor (v0.12)</td><td>自動檢測 context 使用量。>70% → 自動 LLM 總結 + save 落記憶 + 壓縮 session（留最後 4 句 + summary header）</td></tr>
+  <tr><td>🗂️ Session 管理 (v0.12)</td><td><code>/new</code>、<code>/list</code>、<code>/resume &lt;id&gt;</code>、<code>/summarize</code> — 完整 session lifecycle，唔再怕 context 爆</td></tr>
   <tr><td>🛡️ 三級權限引擎</td><td>High（禁止 sudo/rm -rf）/ Medium（提示）/ Low（允許）</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> 一鍵生成深色主題系統儀錶板</td></tr>
   <tr><td>💬 互動式 CLI Chat</td><td>彩色 banner + Tab 補全 slash commands + 20 個指令</td></tr>

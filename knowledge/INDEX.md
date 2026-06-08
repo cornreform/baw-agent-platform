@@ -1,7 +1,7 @@
 # BAW Knowledge Base — 開發記憶庫
 
 > **系統名稱**: BAW (Black And White)
-> **狀態**: v0.10 — Baseline（凍結基準）
+> **狀態**: v0.12 — 最新版本
 > **版本管理**: Snapshot-based — 見 [VERSION-WORKFLOW.md](VERSION-WORKFLOW.md)
 > **開始日期**: 2026-06-07
 > **開發者**: Sunny + Sticky (Hermes Agent)

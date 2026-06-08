@@ -2,6 +2,18 @@
 
 ## 新增
 
+- **Session 管理指令** — Telegram bot 新增 `/new`、`/list`、`/resume <id>`、`/summarize` 頂層指令
+  - `/new [name]` — save 當前 session + 開新 session
+  - `/list` — 列出所有 saved session
+  - `/resume <id>` — 恢復指定 session
+  - `/summarize` — 手動總結當前會話（LLM 提煉重點）
+  - Bot menu 已同步更新，唔使記 `/task` prefix
+- **Context Window 自動監控** — 每個 message 前估算 token 用量
+  - < 50% → silent
+  - 50-70% → log 記錄
+  - > 70% → 自動 LLM 總結 + **save 落記憶**（tag: session-summary, auto）+ 壓縮 session（留最後 4 句 + summary header）
+  - 直接 call `call_llm_with_fallback` 避免 recursion（唔經 `run_agent`）
+  - Model context_window 從配置動態讀取，預設 65536
 - **Agent 自我修改 Config** — BAW 可以通過對話直接修改 `config.yaml` 同 `.env`，唔使手動改 code
   - 新增 provider / model / capability 全部對話控制
   - `/reload` 指令套用修改
