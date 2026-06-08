@@ -293,6 +293,16 @@ class BaseConnector(ABC):
                 self._save_restart_chat_id(msg.chat_id)
                 return "🔄 Restarting BAW engine..."
 
+            if cmd in ("reload",):
+                return self._baw_reload()
+
+            if cmd in ("evolve", "ev"):
+                try:
+                    from ..evolve import get_evolve_stats
+                    return get_evolve_stats()
+                except Exception as e:
+                    return f"❌ Evolution stats error: {e}"
+
             # ── Per-chat config commands ──
             if cmd == "mode" and arg:
                 cfg = self._chat_config.setdefault(msg.chat_id, {})
@@ -342,6 +352,12 @@ class BaseConnector(ABC):
                 return self._handle_task_command(msg.chat_id, task_action, task_arg)
 
         # Default: pass to BAW (with chat_id for per-chat config + session history)
+        # Layer 2: Track user feedback for self-evolution
+        try:
+            from ..evolve import track_user_feedback
+            track_user_feedback(text, session_id=msg.chat_id or "")
+        except Exception:
+            pass
         return self._run_baw(text, chat_id=msg.chat_id)
 
     # ── Session / Task command handler ───────────────────────────
@@ -455,6 +471,7 @@ class BaseConnector(ABC):
         _reg(**_ld('read_file'))
         _reg(**_ld('write_file'))
         _reg(**_ld('web_search'))
+        _reg(**_ld('delegate_task'))
 
         # Load config
         data_dir = Path.home() / ".baw"
@@ -472,6 +489,66 @@ class BaseConnector(ABC):
 
         self._BAW = {"run_agent": run_agent, "config": config, "data_dir": data_dir}
         return self._BAW
+
+    def _baw_reload(self) -> str:
+        """Hot-reload tools, config, and SOUL without restarting the bot."""
+        import os, sys, yaml, importlib.util as _iu
+        from pathlib import Path
+
+        baw_root = Path(__file__).resolve().parent.parent.parent
+        if str(baw_root) not in sys.path:
+            sys.path.insert(0, str(baw_root))
+
+        # Reload tool modules from source (clear + re-register)
+        from core.tools import register as _reg, clear as _clear
+        _clear()
+
+        tool_names = ["bash", "read_file", "write_file", "web_search", "delegate_task"]
+        errors = []
+        for name in tool_names:
+            try:
+                p = os.path.join(baw_root, 'tools', f'{name}.py')
+                s = _iu.spec_from_file_location(f'_tk_{name}_r', p)
+                if s is None or s.loader is None:
+                    errors.append(f"{name}: spec not found")
+                    continue
+                m = _iu.module_from_spec(s)
+                s.loader.exec_module(m)
+                _reg(**m.TOOL_DEF)
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+
+        # Re-read config
+        data_dir = Path.home() / ".baw"
+        try:
+            config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
+        except Exception as e:
+            return f"❌ Reload failed: config error: {e}"
+
+        # Re-load env vars
+        env_file = data_dir / ".env"
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    v = v.strip().strip('"').strip("'")
+                    if v:
+                        os.environ.setdefault(k.strip(), v)
+
+        # Re-import run_agent (fresh module)
+        try:
+            import importlib as _im
+            _loop = _im.import_module("core.loop")
+            _im.reload(_loop)
+            run_agent = _loop.run_agent
+        except Exception as e:
+            return f"❌ Reload failed: loop reload error: {e}"
+
+        self._BAW = {"run_agent": run_agent, "config": config, "data_dir": data_dir}
+        status = f"✅ Reloaded {len(tool_names) - len(errors)}/{len(tool_names)} tools"
+        if errors:
+            status += f" | ⚠️ {len(errors)} errors: {'; '.join(errors[:3])}"
+        return status
 
     def _baw_cfg_set(self, key: str, value: str) -> str:
         """Set a config value both in-file and in-memory cache."""
@@ -500,35 +577,38 @@ class BaseConnector(ABC):
 
         return f"✅ Config updated: {key} → {value}"
 
+    _TOOL_ICONS = {
+        "bash": "🔎",
+        "read_file": "📖",
+        "write_file": "✏️",
+        "web_search": "🌐",
+        "web_extract": "📄",
+        "patch": "🔧",
+        "search_files": "🔍",
+        "terminal": "💻",
+        "delegate_task": "🤖",
+    }
+
     @staticmethod
     def _format_tool_log(messages: list[dict]) -> str:
-        """Extract tool calls from new_session_messages into a compact log."""
+        """Compact step log — one line per tool call, no raw args."""
         if not messages:
             return ""
-        lines = []
-        seen_tools = set()
+        tool_lines = []
+        count = 0
         for msg in messages:
             role = msg.get("role", "")
             if role == "assistant":
-                tool_calls = msg.get("tool_calls", [])
-                for tc in tool_calls:
+                for tc in msg.get("tool_calls", []):
                     fn = tc.get("function", {})
                     name = fn.get("name", "")
-                    raw_args = fn.get("arguments", "{}")
-                    # Show first 80 chars of args
-                    arg_str = str(raw_args)[:80]
-                    # Deduplicate consecutive identical tool calls
-                    key = f"{name}:{arg_str}"
-                    if key not in seen_tools:
-                        seen_tools.add(key)
-                        lines.append(f"  🔧 **{name}** `{arg_str}`")
-            elif role == "tool":
-                content = msg.get("content", "")[:100].replace("\n", " ")
-                if content:
-                    lines.append(f"     └─ {content}")
-        if not lines:
+                    count += 1
+                    icon = BaseConnector._TOOL_ICONS.get(name, "🛠️")
+                    tool_lines.append(f"  {icon} {name}")
+        if not tool_lines:
             return ""
-        return "⚙️ **Steps**\n" + "\n".join(lines)
+        header = f"⚙️ **{count} steps**"
+        return header + "\n" + "\n".join(tool_lines)
 
     def _run_baw(self, prompt: str, chat_id: str | None = None) -> str:
         """Run BAW in-process (no subprocess), with session history."""

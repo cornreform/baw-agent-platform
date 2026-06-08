@@ -101,5 +101,34 @@ def dream(data_dir: Path, dry_run: bool = False) -> dict:
                 soul += dream_line
             soul_path.write_text(soul, encoding="utf-8")
     
+    # --- Step 5: Self-evolution — behavior analysis + auto-optimize ---
+    if not dry_run:
+        try:
+            from baw.core.evolve import auto_optimize
+            evolve_result = auto_optimize(dry_run=False)
+            if evolve_result.get("patterns_found", 0) > 0:
+                report["changes"].append(
+                    f"Evolution: {evolve_result['patterns_found']} patterns detected"
+                )
+                if evolve_result.get("soul_patched"):
+                    report["changes"].append("Evolution: SOUL.md updated with learned preferences")
+                if evolve_result.get("config_patched"):
+                    report["changes"].append("Evolution: config updated with known issues")
+        except ImportError:
+            # Not installed as 'baw' package — try relative import
+            try:
+                from .evolve import auto_optimize
+                evolve_result = auto_optimize(dry_run=False)
+                if evolve_result.get("patterns_found", 0) > 0:
+                    report["changes"].append(
+                        f"Evolution: {evolve_result['patterns_found']} patterns detected"
+                    )
+                    if evolve_result.get("soul_patched"):
+                        report["changes"].append("Evolution: SOUL.md updated with learned preferences")
+                    if evolve_result.get("config_patched"):
+                        report["changes"].append("Evolution: config updated with known issues")
+            except Exception as e:
+                report["changes"].append(f"Evolution: skipped ({e})")
+    
     report["soul_patched"] = len(report["changes"]) > 0
     return report
