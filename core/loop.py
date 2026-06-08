@@ -374,7 +374,7 @@ def run_agent(
         output += final
         output += f"\n\n{format_cost_summary()}"
         try:
-            mem.remember(f"User asked: {prompt[:200]}")
+            mem.remember(f"User: {prompt[:150]} → BAW: {final[:150]}")
         except Exception:
             pass
         return output, {
@@ -494,7 +494,7 @@ def run_agent(
         output += f"\n\n{format_cost_summary()}"
 
         try:
-            mem.remember(f"User asked: {prompt[:200]}")
+            mem.remember(f"User: {prompt[:150]} → BAW: {(_resp.content or '')[:150]}")
         except Exception:
             pass
 
@@ -522,7 +522,7 @@ def run_agent(
         output += f"\n\n{format_cost_summary()}"
 
         try:
-            mem.remember(f"User asked: {prompt[:200]}")
+            mem.remember(f"User: {prompt[:150]} → BAW: {(neutral_response.content or '')[:150]}")
         except Exception:
             pass
 
@@ -894,7 +894,7 @@ def run_agent(
         output += f"\n💾 <i>Auto-saved: {last_commit}</i>"
 
     try:
-        mem.remember(f"User asked: {prompt[:200]}")
+        mem.remember(f"User: {prompt[:150]} → BAW: {(final_reply or '')[:150]}")
     except Exception:
         pass
 
