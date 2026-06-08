@@ -67,6 +67,29 @@ providers:
 # tell you what's missing and suggest installation steps.
 # stt:
 
+# ── Capability Routing ──────────────────────────────────────────
+# Assign which model/provider handles each function.
+# Model must exist in the providers section above.
+# capabilities:
+#   chat:
+#     model: "deepseek-v4-flash"
+#   stt:
+#     model: "MiniMax-M3"
+#     # OR use a named method instead of a model:
+#     # method: "faster-whisper"
+#   tts:
+#     model: "MiniMax-M3"
+#     config:
+#       api_model: "speech-2.8-hd"
+#       voice: "male-tone-1"
+# 
+# Per-model capability tags (add to model definitions):
+#   models:
+#     - id: "grok-3"
+#       capabilities: ["stt", "tts"]    # Only speech, no chat
+#     - id: "MiniMax-M3"
+#       capabilities: ["chat", "stt"]   # Chat + STT, not TTS
+
 permissions:
   risk_levels:
     high:

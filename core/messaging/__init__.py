@@ -436,6 +436,12 @@ class BaseConnector(ABC):
                     + "\n".join(f"  /model {m}" for m in self._MODELS)
                 )
 
+
+            # ── Capability commands ──
+            if cmd == "capability":
+                from core.commands_capability import handle_capability_command
+                return handle_capability_command(arg, self._baw_ensure())
+
             # ── Session / Task commands ──
             if cmd == "task" and arg:
                 sub_cmd = arg.strip().split(maxsplit=1)

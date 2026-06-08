@@ -41,6 +41,8 @@ class TelegramConnector(BaseConnector):
         self._api_base = API_BASE.format(token=self._token) if self._token else ""
         self._debounce_until = 0.0
         self._restart_chat_id: str | None = None
+        self._tts_enabled = self.config.get("tts_enabled", False)
+        self._tts_voice = self.config.get("tts_voice", "male-tone-1")
 
     def connect(self) -> bool:
         """Test connection by fetching bot info."""
@@ -108,6 +110,7 @@ class TelegramConnector(BaseConnector):
             {"command": "restart", "description": "Restart BAW engine"},
             {"command": "reload",  "description": "Hot-reload tools & config (no restart)"},
             {"command": "evolve",  "description": "Self-evolution stats & patterns"},
+            {"command": "tts",     "description": "Toggle TTS: on / off / status"},
         ]
         try:
             self._client.post(
@@ -482,9 +485,12 @@ class TelegramConnector(BaseConnector):
             current_model = next((m for m in all_models if m["id"] == default_model_id), None)
             audio_models = [m for m in all_models if m.get("audio_input")]
 
-            # ── Step 2: Check STT method from config ──
-            stt_config = config.get("stt", {})
+            # ── Step 2: Check STT capability ──
+            stt_config = config.get("capabilities", {}).get("stt", {})
             stt_method = stt_config.get("method", "").strip()
+
+            # Check if any model has "stt" capability
+            stt_models = [m for m in all_models if "stt" in m.get("capabilities", [])]
 
             # ── Step 3: Check if faster-whisper is installed ──
             fw_available = False
@@ -641,8 +647,54 @@ class TelegramConnector(BaseConnector):
                     "provider": pname,
                     "vision": m.get("vision", False),
                     "audio_input": m.get("audio_input", False),
+                    "capabilities": m.get("capabilities", []),
                 })
         return models
+
+    def _send_as_tts(self, chat_id: str, text: str):
+        """Convert response text to speech and send as audio message."""
+        import os
+        try:
+            # Load BAW config to get TTS credentials
+            baw = self._baw_ensure()
+            config = baw["config"]
+
+            # Find TTS capability
+            from core.capabilities import resolve_capability
+            tts_cap = resolve_capability(config, "tts")
+            if tts_cap is None or tts_cap["type"] != "model":
+                logger.warning("[TTS] No TTS-capable model configured")
+                return
+
+            # Get API key
+            api_key = os.environ.get(tts_cap.get("api_key_env", ""), "")
+            if not api_key:
+                logger.warning(f"[TTS] No API key for {tts_cap.get('id', '?')}")
+                return
+
+            # Get TTS config
+            tts_config = config.get("capabilities", {}).get("tts", {}).get("config", {})
+            tts_model = tts_config.get("api_model", "speech-2.8-hd")
+            voice = self._tts_voice or tts_config.get("voice", "male-tone-1")
+
+            # Call TTS
+            from core.tts import minimax_tts, save_audio_bytes
+            audio_data = minimax_tts(
+                text=text,
+                api_key=api_key,
+                voice=voice,
+                model=tts_model,
+                language="yue",
+            )
+            if audio_data is None:
+                self.send(chat_id, "⚠️ TTS 生成失敗")
+                return
+
+            audio_path = save_audio_bytes(audio_data)
+            self.send(chat_id, f"MEDIA:{audio_path}")
+
+        except Exception as e:
+            logger.error(f"[TTS] send error: {e}")
 
     def _poll_loop(self):
         """Long-polling loop."""
@@ -750,6 +802,29 @@ class TelegramConnector(BaseConnector):
             self.send(chat_id, f"⏹ Stopped {self._active_count} active task(s).")
             return
 
+        # /tts — toggle text-to-speech
+        if text.strip().lower().startswith("/tts"):
+            args = text.strip().lower().split()
+            if len(args) > 1:
+                if args[1] in ("on", "true", "1", "yes"):
+                    self._tts_enabled = True
+                    self.send(chat_id, "🔊 TTS 已開啟 — 回覆會自動轉語音")
+                elif args[1] in ("off", "false", "0", "no"):
+                    self._tts_enabled = False
+                    self.send(chat_id, "🔇 TTS 已關閉")
+                else:
+                    self._tts_voice = args[1]
+                    self.send(chat_id, f"🎤 TTS 語音設為: {args[1]}")
+            else:
+                status = "開" if self._tts_enabled else "關"
+                self.send(chat_id,
+                          f"🔊 TTS 狀態: **{status}**\n"
+                          f"   語音: `{self._tts_voice}`\n"
+                          f"   用 `/tts on` 開啟\n"
+                          f"   用 `/tts off` 關閉\n"
+                          f"   用 `/tts <voice_id>` 切換語音")
+            return
+
         # Debounce window: suppress new threads right after /stop
         if self._debounce_until and time.time() < self._debounce_until:
             self.send(chat_id, "⏳ Please wait a moment before sending a new request.")
@@ -808,6 +883,9 @@ class TelegramConnector(BaseConnector):
             if response:
                 self.send(chat_id, response)
                 self._record_batch_result(chat_id, response[:200], "text")
+                # TTS: convert response to speech if enabled
+                if self._tts_enabled and response.strip():
+                    self._send_as_tts(chat_id, response)
 
             # If restart was requested, exit cleanly so systemd restarts
             if self._restart_requested:
