@@ -280,15 +280,26 @@ def run_agent(
                 )
                 _history_msg_count += 1
 
-        # ── Sequence validation: strip dangling tool_calls from last message ──
-        if ctx.messages:
-            _last = ctx.messages[-1]
-            if _last.role == "assistant" and _last.tool_calls:
+        # ── Sequence validation: strip dangling tool_calls from any message ──
+        # (truncated history may cut tool messages mid-sequence)
+        for _i in range(len(ctx.messages) - 1):
+            _msg = ctx.messages[_i]
+            if _msg.role != "assistant" or not _msg.tool_calls:
+                continue
+            _next = ctx.messages[_i + 1]
+            if _next.role != "tool":
                 logger.warning(
-                    f"[Loop] Stripped dangling tool_calls from trailing assistant message "
-                    f"(history truncated / interrupted session)"
+                    f"[Loop] Stripped dangling tool_calls from assistant message {_i} "
+                    f"(not followed by tool response — history truncated)"
                 )
-                _last.tool_calls = None
+                _msg.tool_calls = None
+        # Also strip last message's tool_calls if it's the tail
+        if ctx.messages and ctx.messages[-1].role == "assistant" and ctx.messages[-1].tool_calls:
+            logger.warning(
+                f"[Loop] Stripped dangling tool_calls from trailing assistant message "
+                f"(history truncated / interrupted session)"
+            )
+            ctx.messages[-1].tool_calls = None
 
     # ── Quick Mode marker for new-message extraction ──
     _pre_prompt_count = _history_msg_count
@@ -458,6 +469,13 @@ def run_agent(
     session_cost += n_cost
     record_cost(f"{model.provider}/{model.id}", neutral_response.input_tokens, neutral_response.output_tokens, n_cost)
     ctx.add_assistant(neutral_response.content, neutral_response.tool_calls)
+
+    # In non-interactive mode, strip dangling tool_calls from neutral response
+    # (they won't be executed — Phase 3 uses plan+delegate instead)
+    if not interactive and neutral_response.tool_calls and ctx.messages:
+        _last = ctx.messages[-1]
+        if _last.role == "assistant" and _last.tool_calls:
+            _last.tool_calls = None
 
     # ═══════════════════════════════════════════════════════════════
     # Phase 2.5: Debate (interactive mode only)
