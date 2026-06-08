@@ -76,6 +76,25 @@
 
 ---
 
+## 🎙️ 語音辨識 — Voice STT（全新）
+
+**Telegram 語音訊息即時轉文字** — 用戶 send voice note 或 audio file，BAW 自動下載、transcribe、餵入 prompt loop：
+
+- 使用 **faster-whisper** 本地 STT，無需 API key 或網絡
+- 支援 Telegram voice note（.ogg）同 audio file（.mp3）
+- configurable model：`tiny / base / small / medium / large-v3`
+- 預設 `base` 模型，速度同準確度平衡
+- 自動辨識語言（language=None → faster-whisper auto-detect）
+
+**設定**（`~/.baw/config.yaml`）：
+```yaml
+telegram:
+  token: "***"
+  stt_model: "base"  # 可選：tiny / base / small / medium / large-v3
+```
+
+---
+
 ## 檔案變更
 
 ```

@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
+  <img src="https://img.shields.io/badge/voice-STT-brightgreen" alt="Voice STT Support">
 </p>
 
 <h1 align="center">⚫ BAW — Black And White ⚪</h1>
@@ -36,7 +37,7 @@
 # Install
 git clone https://github.com/cornreform/baw-agent-platform.git
 cd baw-agent-platform
-pip install pyyaml httpx duckduckgo-search croniter
+pip install pyyaml httpx duckduckgo-search croniter openpyxl python-docx python-pptx PyMuPDF pytesseract faster-whisper
 ln -sf $PWD/baw ~/.local/bin/baw
 
 # Set API Key (~/.baw/.env)
@@ -94,6 +95,7 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>🧬 Self-Evolution (v0.11)</td><td>3-layer learning: tool behavior tracking → pattern detection → auto-optimize SOUL/config</td></tr>
   <tr><td>🤖 Agent Delegation (v0.11)</td><td>Main brain (DeepSeek) decomposes tasks → MiniMax sub-agents execute each step → DeepSeek synthesises</td></tr>
   <tr><td>🔄 Hot Reload (v0.11)</td><td><code>/reload</code> reloads tools/config/SOUL without restarting the bot process</td></tr>
+  <tr><td>🎙️ Voice STT (v0.11)</td><td>Telegram voice/audio messages transcribed via faster-whisper locally — no API needed</td></tr>
   <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block sudo/rm -rf) / Medium (warn) / Low (allow)</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates a dark-themed system dashboard</td></tr>
   <tr><td>💬 Interactive CLI Chat</td><td>Colored banner + Tab completion + 20 slash commands</td></tr>
@@ -205,7 +207,7 @@ vim ~/.baw/config.yaml
 
 <table>
   <tr><th>Platform</th><th>Status</th><th>Setup</th></tr>
-  <tr><td>📱 Telegram</td><td>✅ Full support</td><td><code>@BotFather</code> → token → <code>baw-bot</code></td></tr>
+  <tr><td>📱 Telegram</td><td>✅ Full support (incl. voice STT)</td><td><code>@BotFather</code> → token → <code>baw-bot</code></td></tr>
   <tr><td>💬 Discord</td><td>✅ Full support</td><td>Discord Developer Portal → token → <code>baw-bot</code></td></tr>
   <tr><td>🔊 Signal</td><td>⚙️ signal-cli required</td><td><code>signal-cli</code> daemon + config</td></tr>
   <tr><td>💚 WhatsApp</td><td>⚙️ Cloud/Business API</td><td>Meta Developer account or self-hosted API</td></tr>
@@ -240,7 +242,7 @@ baw-bot --token "***"</pre>
 # 安裝
 git clone https://github.com/cornreform/baw-agent-platform.git
 cd baw-agent-platform
-pip install pyyaml httpx duckduckgo-search croniter
+pip install pyyaml httpx duckduckgo-search croniter openpyxl python-docx python-pptx PyMuPDF pytesseract faster-whisper
 ln -sf $PWD/baw ~/.local/bin/baw
 
 # 設定 API Key（~/.baw/.env）
@@ -298,6 +300,7 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>🧬 自我進化 (v0.11)</td><td>三層學習：行為追蹤 → 模式偵測 → 自動優化 SOUL/config</td></tr>
   <tr><td>🤖 Agent Delegation (v0.11)</td><td>主腦（DeepSeek）拆任務 → MiniMax 子 agent 執行 → DeepSeek 綜合</td></tr>
   <tr><td>🔄 Hot Reload (v0.11)</td><td><code>/reload</code> 熱重載 tools/config/SOUL，唔使 restart</td></tr>
+  <tr><td>🎙️ Voice STT (v0.11)</td><td>Telegram 語音訊息透過 faster-whisper 本地轉文字，唔使 API 費用</td></tr>
   <tr><td>🛡️ 三級權限引擎</td><td>High（禁止 sudo/rm -rf）/ Medium（提示）/ Low（允許）</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> 一鍵生成深色主題系統儀錶板</td></tr>
   <tr><td>💬 互動式 CLI Chat</td><td>彩色 banner + Tab 補全 slash commands + 20 個指令</td></tr>
@@ -409,7 +412,7 @@ vim ~/.baw/config.yaml
 
 <table>
   <tr><th>平台</th><th>狀態</th><th>設定方法</th></tr>
-  <tr><td>📱 Telegram</td><td>✅ 完整支援</td><td><code>@BotFather</code> 開 Bot → token → <code>baw-bot</code></td></tr>
+  <tr><td>📱 Telegram</td><td>✅ 完整支援（含語音辨識）</td><td><code>@BotFather</code> 開 Bot → token → <code>baw-bot</code></td></tr>
   <tr><td>💬 Discord</td><td>✅ 完整支援</td><td>Discord Developer Portal → token → <code>baw-bot</code></td></tr>
   <tr><td>🔊 Signal</td><td>⚙️ 需 signal-cli</td><td>安裝 signal-cli daemon + 設定電話號碼</td></tr>
   <tr><td>💚 WhatsApp</td><td>⚙️ Cloud/Business API</td><td>Meta 開發者帳號或 self-hosted API</td></tr>
