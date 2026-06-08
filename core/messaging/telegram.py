@@ -819,6 +819,14 @@ class TelegramConnector(BaseConnector):
         user_name = msg["from"].get("first_name", "User")
         text = msg.get("text", "").strip()
 
+        # ── Handle reply-to: prepend quoted message context
+        reply = msg.get("reply_to_message")
+        if reply and text:
+            reply_text = reply.get("text", "") or reply.get("caption", "") or ""
+            if reply_text:
+                reply_from = reply.get("from", {}).get("first_name", "User")
+                text = f"> {reply_from}: {reply_text[:200]}\n\n{text}"
+
         if not text:
             # ── Non-text message — process file through BAW ──
             doc = msg.get("document")
