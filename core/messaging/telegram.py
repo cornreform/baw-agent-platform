@@ -499,11 +499,9 @@ class TelegramConnector(BaseConnector):
             # Priority A: Model native audio_input
             if current_model and current_model.get("audio_input"):
                 status_lines.append(f"✅ 主模型 **{default_model_id}** 支援音訊輸入（audio_input=true）")
-                # For now, no model has native audio support, so this is future-proofing
-                self.send(chat_id, f"🧠 使用 {default_model_id} 原生音訊處理...")
-                # TODO: implement native audio API call per model
-                self.send(chat_id, "⚠️ 原生音訊處理尚未實作。嘗試其他 STT 方法...")
-                used_method = "native"
+                # Native audio handling via model API — currently falls through
+                # to configured STT methods or installed fallbacks below.
+                # Future: implement native audio API call per model here.
 
             # Priority B: Config-defined STT method
             if not used_method and stt_method:
