@@ -128,6 +128,8 @@ fact_check:
 
 adversarial:
   enabled: true
+  # angel_model: "kimi-k2.6"    # Optional: override Angel's model (default: uses model.default)
+  # devil_model: "kimi-k2.6"    # Optional: override Devil's model (default: uses model.default)
   flag_threshold: 0
   warn_threshold: 2
 
