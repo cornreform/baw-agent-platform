@@ -110,12 +110,12 @@ class BaseConnector(ABC):
             return False
 
     def _release_slot(self):
-        """Release a processing slot. Triggers batch synthesis when idle."""
+        """Release a processing slot. Triggers batch synthesis in background when idle."""
         with self._active_lock:
             self._active_count = max(0, self._active_count - 1)
             was_last = self._active_count == 0
         if was_last:
-            self._synthesize_batch()
+            threading.Thread(target=self._synthesize_batch, daemon=True).start()
 
     def _record_batch_result(self, chat_id: str, summary: str, msg_type: str = "text"):
         """Record a concurrent task's result for batch synthesis."""
