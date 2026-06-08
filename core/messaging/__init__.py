@@ -801,15 +801,47 @@ class BaseConnector(ABC):
 
                     _usage_pct = (_estimated_tokens / _cw) * 100
                     if _usage_pct > 70:
-                        _warn = (
-                            f"[System Note: Context ~{_usage_pct:.0f}% used "
-                            f"(~{_estimated_tokens:,}/{_cw:,} tokens). "
-                            f"Consider summarizing key points, saving to memory (/memory), "
-                            f"or starting a new session (/task new).]"
-                        )
-                        # Inject as user message (loop.py only handles user/assistant/tool roles)
-                        conv_history = conv_history + [{"role": "user", "content": _warn}]
-                        logger.info(f"[Context] {_usage_pct:.0f}% full — warning injected")
+                        logger.info(f"[Context] {_usage_pct:.0f}% full — auto-summarizing...")
+                        # Generate summary via direct LLM call (bypass run_agent to avoid recursion)
+                        _summary = "[Conversation auto-compressed]"
+                        try:
+                            from ..llm import get_model, call_llm_with_fallback
+                            _sum_text = "\n".join(
+                                m.get("content", "")[:200]
+                                for m in conv_history[:30]
+                            )
+                            _sum_resp = call_llm_with_fallback(
+                                config,
+                                [{"role": "user", "content": f"Summarize this conversation in Traditional Chinese, capturing key decisions, facts, and pending actions. Bullet points only.\n\n{_sum_text}"}],
+                                temperature=0.3,
+                            )
+                            _summary = _sum_resp.response.content.strip() or _summary
+                        except Exception as e:
+                            logger.warning(f"[Context] Summarization via LLM failed: {e}")
+
+                        # Save summary to memory
+                        try:
+                            from ..memory import MemoryStore
+                            _mem = MemoryStore(data_dir)
+                            _mem.remember(
+                                f"[Session Auto-Summary] {_summary}",
+                                tags=["session-summary", "auto"],
+                                source="agent",
+                            )
+                            logger.info(f"[Context] Summary saved to memory")
+                        except Exception as e:
+                            logger.warning(f"[Context] Memory save failed: {e}")
+
+                        # Compress session: keep last 4 msgs + summary header
+                        _keep = 4
+                        _compressed = conv_history[-_keep:]
+                        _compressed.insert(0, {
+                            "role": "user",
+                            "content": f"[Session auto-compressed. Earlier conversation summarized to memory.]\n{_summary}",
+                        })
+                        conv_history = _compressed
+                        session["messages"] = _compressed
+                        logger.info(f"[Context] Compressed to {len(_compressed)} messages")
                     elif _usage_pct > 50:
                         logger.info(f"[Context] {_usage_pct:.0f}% full — monitoring")
             else:
