@@ -37,7 +37,7 @@ providers:
       - id: "MiniMax-M3"
         context_window: 1048576
         vision: true
-        audio_input: false
+        audio_input: true
         cost_per_1m_input: 2.00
         cost_per_1m_output: 8.00
 
