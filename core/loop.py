@@ -443,7 +443,6 @@ def run_agent(
     angel_model = None
     devil_model = None
     try:
-        from .llm import get_model
         if angel_model_id:
             angel_model = get_model(config, angel_model_id)
         if devil_model_id:
