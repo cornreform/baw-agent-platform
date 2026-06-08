@@ -33,3 +33,17 @@ Bot 回覆慢 (~1.7–3.0s)，有時 timeout (>2min)
 - 正常回覆: ~1.0–1.5s (之前 ~1.7–3.0s)
 - No more 2-min timeout (60s timeout, in-process)
 - Model switching available via `/model` command
+
+---
+
+### 4. In-process import fix (2026-06-08 #2)
+`core/messaging/__init__.py` — `_baw_ensure()` 工具註冊重寫
+
+**問題：** `tools/__init__.py` 用 `from ..core.tools import register`（relative import），
+in-process 直接 import 時 `tools` 係 top-level package，`..` 無法 resolve。
+error 訊息顯示 `No module named 'baw'`（轉嫁錯誤）。
+
+**Fix：** 改用 `importlib.util.spec_from_file_location()` 直接 load 每個 tool 檔案，
+跳過 `tools/__init__.py` 避免 relative import 失敗。
+
+**commit:** `8b7d016`
