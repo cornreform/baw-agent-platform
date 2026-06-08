@@ -447,9 +447,8 @@ class BaseConnector(ABC):
                 # Return model selector format for Telegram inline keyboard
                 return (
                     f"[MODEL_SELECT]\n"
-                    f"**Select model:**\n"
+                    f"**Select Provider:**\n"
                     f"{current}\n"
-                    f"{','.join(self._MODELS)}"
                 )
 
 
@@ -932,7 +931,7 @@ class BaseConnector(ABC):
             "/restart — Restart BAW engine (per-chat)\n"
             "/btw `<text>` — Quick answer (no court)\n"
             '/model `<name>` — Switch model (deepseek / kimi / minimax)\n'
-            '/models — List available models (tap to select)\n'
+            '/models — Select provider, then model (tap to browse)\n'
             '  To set default: use /model, or edit ~/.baw/config.yaml → model.default\n'
             "/mode `quick|hybrid|tight` — Switch execution mode\n"
             "/tone `<profile>` — Switch tone\n"
