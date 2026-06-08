@@ -198,7 +198,7 @@ def run_agent(
     fresh_start: bool = False,
     mode: Optional[str] = None,
     conversation_history: Optional[list[dict]] = None,
-    progress_callback: Optional[Callable[[], None]] = None,
+    progress_callback: Optional[Callable[..., None]] = None,
 ) -> tuple[str, dict]:
     """Run BAW agent with debate-first, execute-second flow.
 
@@ -345,8 +345,6 @@ def run_agent(
 
         # Execute any tool calls
         while quick_resp.tool_calls:
-            if progress_callback:
-                progress_callback()
             for tc in quick_resp.tool_calls:
                 func = tc.get("function", {})
                 name = func.get("name", "")
@@ -355,6 +353,8 @@ def run_agent(
                     args = json.loads(raw_args)
                 except json.JSONDecodeError:
                     args = {}
+                if progress_callback:
+                    progress_callback("tool", name, args)
                 _show_progress = verbose or interactive
                 if _show_progress:
                     print(f"\033[90m🔧 {name}", end="", flush=True)
@@ -436,7 +436,24 @@ def run_agent(
     # Phase 1: Court — Independent dual-voice analysis
     # ═══════════════════════════════════════════════════════════════
     from .adversarial import AdversarialCourt
-    court = AdversarialCourt(model, system_prompt, config)
+    # Load per-side model config (both fall back to default model if unset)
+    adv_cfg = config.get("adversarial", {})
+    angel_model_id = adv_cfg.get("angel_model")
+    devil_model_id = adv_cfg.get("devil_model")
+    angel_model = None
+    devil_model = None
+    try:
+        from .llm import get_model
+        if angel_model_id:
+            angel_model = get_model(config, angel_model_id)
+        if devil_model_id:
+            devil_model = get_model(config, devil_model_id)
+    except Exception:
+        pass
+    court = AdversarialCourt(
+        model, system_prompt, config,
+        angel_model=angel_model, devil_model=devil_model,
+    )
     court_enabled = config.get("adversarial", {}).get("enabled", True) and _mode == "tight"
 
     if court_enabled:
@@ -511,8 +528,6 @@ def run_agent(
         # Execute any tool calls from the neutral response (live progress)
         _resp = neutral_response
         while _resp.tool_calls:
-            if progress_callback:
-                progress_callback()
             for tc in _resp.tool_calls:
                 func = tc.get("function", {})
                 name = func.get("name", "")
@@ -521,6 +536,8 @@ def run_agent(
                     args = json.loads(raw_args)
                 except json.JSONDecodeError:
                     args = {}
+                if progress_callback:
+                    progress_callback("tool", name, args)
                 print(f"\033[90m🔧 {name}", end="", flush=True)
                 perm_result = perm.check(name, args)
                 if perm_result["decision"] == "deny":
@@ -670,8 +687,9 @@ def run_agent(
     _delegation_failed = False
 
     for _step_idx, _step in enumerate(_execution_plan):
+        _step_goal = _step['desc']
         if progress_callback:
-            progress_callback()
+            progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal})
 
         _step_goal = _step['desc']
         _step_ctx = ""

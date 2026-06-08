@@ -337,3 +337,104 @@ class MemoryStore:
             t_content = next((m["content"][:50] for m in self._cache if m["id"] == e["target"]), e["target"])
             lines.append(f"  {e['weight']:.3f}  {s_content}… ↔ {t_content}…")
         return "\n".join(lines)
+
+    def compress_old(self, max_age_days: int = 30, min_score: float = 0.15) -> dict:
+        """Compress old low-score memories into summary entries.
+
+        Groups similar entries by keyword overlap, creates a compressed
+        summary per group, removes originals, rewrites JSONL + edges.
+        Returns stats dict.
+        """
+        import math
+        now = time.time()
+        cutoff = now - max_age_days * 86400
+
+        # Find candidates: low score + old
+        candidates = []
+        keep = []
+        for entry in self._cache:
+            try:
+                last_ts = datetime.fromisoformat(entry.get("last_accessed", entry["created"])).timestamp()
+            except (ValueError, TypeError):
+                last_ts = now
+            score = float(entry.get("score", 0))
+            if score < min_score and last_ts < cutoff:
+                candidates.append(entry)
+            else:
+                keep.append(entry)
+
+        if not candidates:
+            return {"compressed": 0, "groups": 0, "entries_removed": 0}
+
+        # Group by keyword similarity (Jaccard >= 0.3)
+        groups = []
+        used = set()
+        for i, c1 in enumerate(candidates):
+            if c1["id"] in used:
+                continue
+            group = [c1]
+            used.add(c1["id"])
+            k1 = self._keywords(c1.get("content", ""))
+            for j, c2 in enumerate(candidates):
+                if c2["id"] in used:
+                    continue
+                k2 = self._keywords(c2.get("content", ""))
+                if self._jaccard(k1, k2) >= 0.3:
+                    group.append(c2)
+                    used.add(c2["id"])
+            if len(group) >= 2:
+                groups.append(group)
+
+        if not groups:
+            return {"compressed": 0, "groups": 0, "entries_removed": 0}
+
+        # Create compressed entries
+        compressed_count = 0
+        removed_ids = set()
+        import random
+        for group in groups:
+            contents = [e.get("content", "")[:200] for e in group]
+            oldest = min(e["created"] for e in group)
+            newest = max(e["created"] for e in group)
+            summary = f"[Compressed] {len(group)} entries ({oldest[:10]} to {newest[:10]}): " + " | ".join(contents)
+            # Truncate to reasonable length
+            if len(summary) > 1000:
+                summary = summary[:997] + "..."
+
+            compact = {
+                "id": f"cmp_{int(time.time() * 1000)}_{random.randint(100,999)}",
+                "content": summary,
+                "type": "compressed",
+                "tags": ["compressed", "auto"],
+                "source": "compress",
+                "created": datetime.now(timezone.utc).isoformat(),
+                "last_accessed": datetime.now(timezone.utc).isoformat(),
+                "access_count": 1,
+                "score": round(min_score * 1.5, 3),  # Slightly above archive threshold
+            }
+            keep.append(compact)
+            removed_ids.update(e["id"] for e in group)
+            compressed_count += 1
+
+        # Rewrite JSONL
+        self._cache = keep
+        lines = [json.dumps(e, ensure_ascii=False) for e in keep]
+        self.store_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        # Clear and rebuild edges (skip removed ids)
+        edges_data = self._get_edges()
+        old_edges = edges_data.get("edges", [])
+        new_edges = [
+            e for e in old_edges
+            if e["source"] not in removed_ids and e["target"] not in removed_ids
+        ]
+        if len(new_edges) != len(old_edges):
+            edges_data["edges"] = new_edges
+            self._save_edges(edges_data)
+
+        return {
+            "compressed": compressed_count,
+            "groups": len(groups),
+            "entries_removed": len(removed_ids),
+            "remaining": len(keep),
+        }

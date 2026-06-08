@@ -173,12 +173,14 @@ class AdversarialCourt:
     """
 
     def __init__(
-        self, model: "ModelDef", system_prompt: str, config: Optional[dict] = None
+        self, model: "ModelDef", system_prompt: str, config: Optional[dict] = None,
+        angel_model: Optional["ModelDef"] = None,
+        devil_model: Optional["ModelDef"] = None,
     ):
         self.model = model
         self.config = config or {}
-        self.devil = DevilVoice(model, system_prompt, config)
-        self.angel = AngelVoice(model, system_prompt, config)
+        self.devil = DevilVoice(devil_model or model, system_prompt, config)
+        self.angel = AngelVoice(angel_model or model, system_prompt, config)
 
     def hold_court(
         self, user_input: str, memory_context: str = ""
