@@ -81,6 +81,9 @@ class BaseConnector(ABC):
         self._name = self.__class__.__name__
         self._cancel_event = threading.Event()
         self._busy = False
+        self._max_concurrency = self.config.get("max_concurrency", 3)
+        self._active_count = 0
+        self._active_lock = threading.Lock()
         self._restart_requested = False
         self._chat_config = {}  # per-chat overrides: {chat_id: {key: value}}
         self._restart_chat_id: str | None = None
@@ -94,6 +97,19 @@ class BaseConnector(ABC):
     def connect(self) -> bool:
         """Connect to the platform. Return True on success."""
         ...
+
+    def _acquire_slot(self) -> bool:
+        """Try to acquire a processing slot. Returns True if slot available."""
+        with self._active_lock:
+            if self._active_count < self._max_concurrency:
+                self._active_count += 1
+                return True
+            return False
+
+    def _release_slot(self):
+        """Release a processing slot."""
+        with self._active_lock:
+            self._active_count = max(0, self._active_count - 1)
 
     @abstractmethod
     def disconnect(self):
