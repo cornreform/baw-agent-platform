@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/radxa/.hermes/hermes-agent/venv/bin/python3
 """
 BAW Bot — Multi-Platform Messaging Daemon
 
@@ -103,9 +103,11 @@ Examples:
         logger.error("No config found. Run 'baw --setup' first, or specify --config")
         sys.exit(1)
 
-    # Override Telegram token from CLI arg
+    # Override Telegram token: CLI arg > env var > config
     if args.token:
         config.setdefault("telegram", {})["token"] = args.token
+    elif os.environ.get("BAW_TELEGRAM_TOKEN"):
+        config.setdefault("telegram", {})["token"] = os.environ["BAW_TELEGRAM_TOKEN"]
 
     # Determine which platforms to start
     platforms = args.platform or list(config.keys())
