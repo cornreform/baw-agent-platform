@@ -210,7 +210,7 @@ class BaseConnector(ABC):
         from pathlib import Path
 
         # Add BAW to sys.path (same as baw script does)
-        baw_root = Path(__file__).parent.parent.resolve()  # ~/baw/
+        baw_root = Path(__file__).resolve().parent.parent.parent  # ~/baw/ (3 levels: messaging → core → baw)
         sys.path.insert(0, str(baw_root))
         sys.path.insert(0, str(baw_root.parent))
 
