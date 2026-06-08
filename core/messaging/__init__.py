@@ -77,6 +77,8 @@ class BaseConnector(ABC):
         self._running = False
         self._thread: threading.Thread | None = None
         self._name = self.__class__.__name__
+        self._cancel_event = threading.Event()
+        self._busy = False
 
     @abstractmethod
     def connect(self) -> bool:
@@ -162,8 +164,13 @@ class BaseConnector(ABC):
             if cmd in ("version", "v"):
                 return self._run_baw("--version")
 
-            if cmd in ("exit", "quit", "stop"):
+            if cmd in ("exit", "quit"):
                 return "👋 Goodbye!"
+
+            if cmd in ("stop",):
+                self._cancel_event.set()
+                self._busy = False
+                return "⏹ Stopped."
 
             if cmd == "mode" and arg:
                 return self._baw_cfg_set("mode", arg)
@@ -278,6 +285,12 @@ class BaseConnector(ABC):
         import asyncio
         from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
+        # If cancel was requested, consume it and return immediately
+        if self._cancel_event.is_set():
+            self._cancel_event.clear()
+            self._busy = False
+            return "⏹ Previous request was cancelled."
+
         try:
             baw = self._baw_ensure()
             run_agent = baw["run_agent"]
@@ -297,9 +310,21 @@ class BaseConnector(ABC):
                     mode=mode,
                     verbose=False,
                 )
-                try:
-                    response, info = fut.result(timeout=60)
-                except TimeoutError:
+                # Poll for result with cancel checking every 1s
+                import time as _time
+                _elapsed = 0
+                _max_wait = 60
+                while _elapsed < _max_wait:
+                    try:
+                        response, info = fut.result(timeout=1)
+                        break
+                    except TimeoutError:
+                        _elapsed += 1
+                        if self._cancel_event.is_set():
+                            fut.cancel()
+                            return "⏹ Cancelled."
+                else:
+                    # Timeout after 60s without result
                     fut.cancel()
                     return "⏳ BAW took too long (>60s). Try a simpler request."
 
@@ -321,6 +346,7 @@ class BaseConnector(ABC):
             "🤖 **BAW Bot** — Multi-platform Agent Interface\n\n"
             "Simply type anything and BAW will process it.\n\n"
             "**Commands:**\n"
+            "/stop — Stop current processing and cancel\n"
             "/btw `<text>` — Quick answer (no court)\n"
             "/model `<name>` — Switch model (deepseek / kimi / minimax)\n"
             "/models — List available models\n"

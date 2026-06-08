@@ -78,7 +78,7 @@ class TelegramConnector(BaseConnector):
             {"command": "memory",  "description": "Save a memory entry"},
             {"command": "search",  "description": "Search stored memories"},
             {"command": "board",   "description": "Generate HTML dashboard"},
-            {"command": "version", "description": "Show BAW version"},
+            {"command": "stop",    "description": "Stop current processing and cancel"},
         ]
         try:
             self._client.post(
@@ -170,7 +170,7 @@ class TelegramConnector(BaseConnector):
                 time.sleep(POLL_RETRY_DELAY)
 
     def _handle_update(self, update: dict):
-        """Process a single Telegram update."""
+        """Process a single Telegram update (non-blocking)."""
         msg = update.get("message")
         if not msg:
             return
@@ -190,10 +190,35 @@ class TelegramConnector(BaseConnector):
 
         logger.info(f"[Telegram] <{user_name}> {text[:80]}")
 
-        # Send typing indicator with heartbeats
+        # /stop — cancel running BAW immediately
+        if text.strip().lower().startswith("/stop"):
+            self._cancel_event.set()
+            self._busy = False
+            self.send(chat_id, "⏹ Stopped.")
+            return
+
+        # If busy, reject and suggest /stop
+        if self._busy:
+            self.send(chat_id, "⏳ Still processing previous request. Use /stop to cancel.")
+            return
+
+        # Start async processing in background thread
+        self._busy = True
+        self._cancel_event.clear()
+        threading.Thread(
+            target=self._process_message,
+            args=(chat_id, user_id, user_name, text, msg),
+            daemon=True,
+        ).start()
+
+    def _process_message(self, chat_id, user_id, user_name, text, msg):
+        """Process a message in background thread (runs route() + send())."""
+        logger.info(f"[Telegram] Processing: {text[:60]}...")
+
+        # Typing indicator heartbeat (respects cancel event)
         _typing_stop = threading.Event()
         def _typing_heartbeat():
-            while not _typing_stop.is_set():
+            while not _typing_stop.is_set() and not self._cancel_event.is_set():
                 try:
                     self._client.post(
                         f"{self._api_base}/sendChatAction",
@@ -206,15 +231,32 @@ class TelegramConnector(BaseConnector):
         _hb = threading.Thread(target=_typing_heartbeat, daemon=True)
         _hb.start()
 
-        # Route through BAW
-        msg_obj = Message(
-            platform="telegram",
-            chat_id=chat_id,
-            user_id=user_id,
-            text=text,
-            raw=msg,
-        )
-        response = self.route(msg_obj)
-        _typing_stop.set()
-        if response:
-            self.send(chat_id, response)
+        try:
+            # Check cancelled before starting BAW
+            if self._cancel_event.is_set():
+                return
+
+            msg_obj = Message(
+                platform="telegram",
+                chat_id=chat_id,
+                user_id=user_id,
+                text=text,
+                raw=msg,
+            )
+            response = self.route(msg_obj)
+            _typing_stop.set()
+
+            # If cancelled during processing, discard result
+            if self._cancel_event.is_set():
+                return
+            if response:
+                self.send(chat_id, response)
+        except Exception as e:
+            logger.error(f"[Telegram] Process error: {e}")
+            if not self._cancel_event.is_set():
+                try:
+                    self.send(chat_id, f"❌ Error: {e}")
+                except Exception:
+                    pass
+        finally:
+            self._busy = False
