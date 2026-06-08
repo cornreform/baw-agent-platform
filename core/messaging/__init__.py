@@ -395,6 +395,32 @@ class BaseConnector(ABC):
                 except Exception as e:
                     return f"❌ Evolution stats error: {e}"
 
+            # ── Set config value (persist to config.yaml) ──
+            if cmd == "set" and arg:
+                parts = arg.strip().split(maxsplit=1)
+                if len(parts) < 2:
+                    return "Usage: /set <key> <value>\nExample: `/set model.default deepseek-v4-flash`"
+                key, value = parts
+                try:
+                    baw = self._baw_ensure()
+                    cfg = baw["config"]
+                    # Navigate dotted key (e.g. "model.default")
+                    keys = key.split(".")
+                    target = cfg
+                    for k in keys[:-1]:
+                        target = target.setdefault(k, {})
+                    target[keys[-1]] = value
+                    # Persist to yaml
+                    import yaml
+                    data_dir = baw["data_dir"]
+                    (data_dir / "config.yaml").write_text(
+                        yaml.dump(cfg, default_flow_style=False, allow_unicode=True),
+                        encoding="utf-8",
+                    )
+                    return f"✅ `{key}` set to `{value}` (saved to config.yaml)"
+                except Exception as e:
+                    return f"❌ Failed to set `{key}`: {e}"
+
             # ── Top-level session aliases ──
             if cmd == "new":
                 return self._handle_task_command(msg.chat_id, "new", arg)
@@ -435,11 +461,13 @@ class BaseConnector(ABC):
             if cmd in ("model", "m") and arg:
                 # Handle [modelname] syntax from inline keyboard callback
                 clean_arg = arg.strip("[]")
-                if clean_arg not in self._MODELS:
-                    return f"Model '{clean_arg}' not found. Available: {', '.join(self._MODELS)}"
                 cfg = self._chat_config.setdefault(msg.chat_id, {})
                 cfg["model"] = clean_arg
-                return f"✅ Chat model set to: {clean_arg}"
+                return (
+                    f"✅ Chat model set to: `{clean_arg}`\n\n"
+                    f"💡 To make it the permanent default:\n"
+                    f"`/set model.default {clean_arg}`"
+                )
 
             if cmd in ("model", "models"):
                 cc = self._chat_config.get(msg.chat_id, {})
@@ -583,7 +611,21 @@ class BaseConnector(ABC):
 
     # ── In-process BAW engine (lazy-loaded) ──
     _BAW = None  # {'run_agent': fn, 'config': dict, 'data_dir': Path}
-    _MODELS = ["deepseek-v4-flash", "kimi-k2.6", "MiniMax-M3"]
+
+    @property
+    def _MODELS(self) -> list:
+        """Derive model list from config, with fallback."""
+        try:
+            baw = self._baw_ensure()
+            config = baw["config"]
+            providers = config.get("providers", {})
+            models = []
+            for pcfg in providers.values():
+                for m in pcfg.get("models", []):
+                    models.append(m["id"])
+            return models or ["deepseek-v4-flash", "kimi-k2.6", "MiniMax-M2.5"]
+        except Exception:
+            return ["deepseek-v4-flash", "kimi-k2.6", "MiniMax-M2.5"]
 
     def _baw_ensure(self):
         """Lazy-import BAW modules in-process (no subprocess)."""
@@ -932,7 +974,7 @@ class BaseConnector(ABC):
             "/btw `<text>` — Quick answer (no court)\n"
             '/model `<name>` — Switch model (deepseek / kimi / minimax)\n'
             '/models — Select provider, then model (tap to browse)\n'
-            '  To set default: use /model, or edit ~/.baw/config.yaml → model.default\n'
+            '  To set default: /set model.default <name>\n'
             "/mode `quick|hybrid|tight` — Switch execution mode\n"
             "/tone `<profile>` — Switch tone\n"
             "/status — BAW system status\n"
@@ -946,6 +988,7 @@ class BaseConnector(ABC):
             "/resume <id> — Resume a saved session\n"
             "/summarize — Summarize current session to memory\n"
             "/task `<action>` — Task session manager\n"
+            "/set `<key>` `<value>` — Persist config value (e.g. `/set model.default deepseek-v4-flash`)\n"
             "/help — This message\n\n"
             "**Task commands:**\n"
             "  `/task list` — Show saved tasks\n"
