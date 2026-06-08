@@ -101,6 +101,8 @@ permissions:
     medium:
       - tool: "write_file"
       - tool: "bash"
+      - path: ".env"
+      - path: "config.yaml"
     low:
       - tool: "read_file"
       - tool: "web_search"
