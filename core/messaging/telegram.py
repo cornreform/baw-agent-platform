@@ -71,6 +71,7 @@ class TelegramConnector(BaseConnector):
             {"command": "help",    "description": "Show available commands"},
             {"command": "status",  "description": "BAW system status"},
             {"command": "btw",     "description": "Quick answer (no court)"},
+            {"command": "model",   "description": "Switch model: deepseek / kimi / minimax"},
             {"command": "mode",    "description": "Switch mode: quick / hybrid / tight"},
             {"command": "tone",    "description": "Switch tone: casual / business / teaching"},
             {"command": "court",   "description": "Show last Angel/Devil verdict"},
