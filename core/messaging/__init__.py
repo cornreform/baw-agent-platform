@@ -560,34 +560,48 @@ class BaseConnector(ABC):
             else:
                 conv_history = None
 
+            # ── Progress tracking (per-event timeout) ──
+            _last_progress = time.time()
+            _progress_lock = threading.Lock()
+
+            def _on_progress():
+                with _progress_lock:
+                    nonlocal _last_progress
+                    _last_progress = time.time()
+
             # Run BAW with a timeout via thread pool
             with ThreadPoolExecutor(1) as pool:
                 fut = pool.submit(
-                    run_agent,
-                    prompt=prompt,
-                    config=config,
-                    data_dir=data_dir,
-                    mode=mode,
-                    verbose=False,
-                    conversation_history=conv_history,
+                   run_agent,
+                   prompt=prompt,
+                   config=config,
+                   data_dir=data_dir,
+                   mode=mode,
+                   verbose=False,
+                   conversation_history=conv_history,
+                   progress_callback=_on_progress,
                 )
                 # Poll for result with cancel checking every 1s
                 import time as _time
                 _elapsed = 0
-                _max_wait = 60
+                _max_wait = 300
                 while _elapsed < _max_wait:
-                    try:
-                        response, info = fut.result(timeout=1)
-                        break
-                    except TimeoutError:
-                        _elapsed += 1
-                        if self._cancel_event.is_set():
-                            fut.cancel()
-                            return "⏹ Cancelled."
+                   try:
+                       response, info = fut.result(timeout=1)
+                       break
+                   except TimeoutError:
+                       _elapsed += 1
+                       # Reset timeout if progress was made recently
+                       with _progress_lock:
+                           if _last_progress > time.time() - 60:
+                               _elapsed = 0
+                       if self._cancel_event.is_set():
+                           fut.cancel()
+                           return "⏹ Cancelled."
                 else:
                     # Timeout after 120s without result
                     fut.cancel()
-                    return "⏳ BAW took too long (>60s). Try a simpler request."
+                    return "⏳ Task took too long (>5min). Try /stop to cancel, or split into smaller steps."
 
             output = response or ""
 
