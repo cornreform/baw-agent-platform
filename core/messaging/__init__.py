@@ -500,6 +500,36 @@ class BaseConnector(ABC):
 
         return f"✅ Config updated: {key} → {value}"
 
+    @staticmethod
+    def _format_tool_log(messages: list[dict]) -> str:
+        """Extract tool calls from new_session_messages into a compact log."""
+        if not messages:
+            return ""
+        lines = []
+        seen_tools = set()
+        for msg in messages:
+            role = msg.get("role", "")
+            if role == "assistant":
+                tool_calls = msg.get("tool_calls", [])
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    name = fn.get("name", "")
+                    raw_args = fn.get("arguments", "{}")
+                    # Show first 80 chars of args
+                    arg_str = str(raw_args)[:80]
+                    # Deduplicate consecutive identical tool calls
+                    key = f"{name}:{arg_str}"
+                    if key not in seen_tools:
+                        seen_tools.add(key)
+                        lines.append(f"  🔧 **{name}** `{arg_str}`")
+            elif role == "tool":
+                content = msg.get("content", "")[:100].replace("\n", " ")
+                if content:
+                    lines.append(f"     └─ {content}")
+        if not lines:
+            return ""
+        return "⚙️ **Steps**\n" + "\n".join(lines)
+
     def _run_baw(self, prompt: str, chat_id: str | None = None) -> str:
         """Run BAW in-process (no subprocess), with session history."""
         import re
@@ -560,6 +590,11 @@ class BaseConnector(ABC):
                     return "⏳ BAW took too long (>60s). Try a simpler request."
 
             output = response or ""
+
+            # ── Format tool call log from session messages ──
+            tool_log = self._format_tool_log(info.get("new_session_messages", []))
+            if tool_log:
+                output = tool_log + "\n\n" + output
 
             # ── Save session history ──
             if session and info:
