@@ -193,11 +193,15 @@ class BaseConnector(ABC):
                 return "❌ BAW CLI not found. Install with: cd ~/baw && ./install.sh"
 
             result = sp.run(
-                [baw_cmd, "--mode", self.config.get("mode", "tight"), prompt],
-                capture_output=True, text=True, timeout=120,
+                [baw_cmd, "--mode", self.config.get("mode", "quick"), prompt],
+                capture_output=True, text=True, timeout=60,
                 cwd=str(Path.home() / "baw"),
             )
-            output = result.stdout or result.stderr or ""
+            output = ""
+            if result.stdout:
+                output = result.stdout
+            elif result.stderr and result.returncode != 0:
+                output = f"❌ BAW error ({result.returncode}): {result.stderr[-300:]}"
             # Strip HTML tags for Telegram display
             import re
             output = re.sub(r'<[^>]+>', '', output)
