@@ -53,12 +53,40 @@ class TelegramConnector(BaseConnector):
                 if info.get("ok"):
                     bot_name = info["result"].get("first_name", "BAW Bot")
                     logger.info(f"[Telegram] Connected as @{info['result'].get('username', '?')}")
+
+                    # Register slash command menu
+                    self._register_commands()
+
                     return True
             logger.error(f"[Telegram] getMe failed: {r.status_code} {r.text[:200]}")
             return False
         except Exception as e:
             logger.error(f"[Telegram] Connection error: {e}")
             return False
+
+    def _register_commands(self):
+        """Register bot command menu via setMyCommands."""
+        commands = [
+            {"command": "start",   "description": "Welcome message"},
+            {"command": "help",    "description": "Show available commands"},
+            {"command": "status",  "description": "BAW system status"},
+            {"command": "btw",     "description": "Quick answer (no court)"},
+            {"command": "mode",    "description": "Switch mode: quick / hybrid / tight"},
+            {"command": "tone",    "description": "Switch tone: casual / business / teaching"},
+            {"command": "court",   "description": "Show last Angel/Devil verdict"},
+            {"command": "memory",  "description": "Save a memory entry"},
+            {"command": "search",  "description": "Search stored memories"},
+            {"command": "board",   "description": "Generate HTML dashboard"},
+            {"command": "version", "description": "Show BAW version"},
+        ]
+        try:
+            self._client.post(
+                f"{self._api_base}/setMyCommands",
+                json={"commands": commands},
+                timeout=10,
+            )
+        except Exception as e:
+            logger.warning(f"[Telegram] Failed to register commands: {e}")
 
     def disconnect(self):
         if self._client:
