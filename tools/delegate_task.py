@@ -44,15 +44,21 @@ def _import_baw():
     return True  # tools registered
 
 def _get_minimax_config() -> dict:
-    """Load config and force MiniMax as the model."""
+    """Load config and use the configured executor model (no hardcode)."""
     import yaml
     data_dir = Path.home() / ".baw"
     cfg = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
 
-    # Use MiniMax-M2.5 as executor (cheaper, 2M context, no vision needed)
+    # Use configured models rather than hardcoding MiniMax
+    model_cfg = cfg.get("model", {})
+    executor_model = (
+        cfg.get("executor", {}).get("model") or   # Explicit executor config
+        model_cfg.get("fallback") or               # Fallback model
+        model_cfg.get("default", "deepseek-v4-flash")  # Default model
+    )
     cfg["model"] = {
-        "default": "MiniMax-M2.5",
-        "fallback": "MiniMax-M3",
+        "default": executor_model,
+        "fallback": model_cfg.get("fallback", executor_model),
     }
 
     # Load env vars
