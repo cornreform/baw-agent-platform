@@ -214,10 +214,26 @@ class BaseConnector(ABC):
         sys.path.insert(0, str(baw_root))
         sys.path.insert(0, str(baw_root.parent))
 
-        # Import once
-        from baw.core.loop import run_agent
-        from baw.tools import register_all as reg_tools
-        reg_tools()
+        # Import once (project root is ~/baw/; core/ and tools/ are top-level packages)
+        from core.loop import run_agent
+
+        # Register tools directly, bypassing tools/__init__.py which uses
+        # relative imports that fail when imported as a top-level package
+        import importlib.util as _iu
+        def _ld(name):
+            p = os.path.join(baw_root, 'tools', f'{name}.py')
+            s = _iu.spec_from_file_location(f'_tk_{name}', p)
+            if s is None or s.loader is None:
+                raise ImportError(f"Cannot load tool '{name}' from {p}")
+            m = _iu.module_from_spec(s)
+            s.loader.exec_module(m)
+            return m.TOOL_DEF
+        from core.tools import register as _reg, clear as _clear
+        _clear()
+        _reg(**_ld('bash'))
+        _reg(**_ld('read_file'))
+        _reg(**_ld('write_file'))
+        _reg(**_ld('web_search'))
 
         # Load config
         data_dir = Path.home() / ".baw"
