@@ -83,6 +83,7 @@ adversarial:
 # telegram:
 #   token: "***"                    # Bot token from @BotFather
 #   allowed_users: []               # Optional: restrict to specific user IDs
+#   stt_model: "base"               # faster-whisper model: tiny/base/small/medium/large-v3
 
 # discord:
 #   token: "***"                    # Bot token from Discord Developer Portal

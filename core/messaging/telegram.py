@@ -458,6 +458,53 @@ class TelegramConnector(BaseConnector):
         finally:
             self._busy = False
 
+    def _process_voice_file(self, chat_id: str, voice_data: dict, msg: dict):
+        """Download audio/voice message, transcribe via faster-whisper, analyse with BAW."""
+        try:
+            file_id = voice_data["file_id"]
+            ext = ".ogg" if msg.get("voice") else ".mp3"
+            self.send(chat_id, "📥 下載語音...")
+
+            local_path = self._download_file(file_id, f"voice_{file_id[:8]}{ext}")
+            self.send(chat_id, "🎙️ 辨識語音內容...")
+
+            # Transcribe with faster-whisper
+            try:
+                from faster_whisper import WhisperModel
+
+                stt_model_name = self.config.get("stt_model", "base")
+                logger.info(f"[Telegram] STT with faster-whisper ({stt_model_name}): {local_path}")
+                model = WhisperModel(stt_model_name, device="cpu", compute_type="int8")
+                segments, info = model.transcribe(local_path, language=None, beam_size=3)
+                text = " ".join(seg.text.strip() for seg in segments)
+            except Exception as e:
+                logger.error(f"[Telegram] STT error: {e}")
+                self.send(chat_id, f"❌ 語音辨識失敗: {e}")
+                return
+
+            if not text.strip():
+                self.send(chat_id, "🔇 聽唔到任何語音內容。")
+                return
+
+            duration = info.duration if hasattr(info, 'duration') else '?'
+            self.send(chat_id, f"📝 辨識完成（{duration:.1f}s）：\n\n{text[:200]}{'…' if len(text)>200 else ''}")
+
+            # Feed to BAW
+            prompt = (
+                f"[語音輸入 — 用戶語音訊息，已自動轉文字]\n"
+                f"用戶說：{text}\n\n"
+                f"請用繁體中文回應，分析並回答對方提問。"
+            )
+            self.send(chat_id, "🤔 BAW 分析中...")
+            response = self._run_baw(prompt, chat_id=chat_id)
+            self.send(chat_id, response)
+
+        except Exception as e:
+            logger.error(f"[Telegram] Voice processing error: {e}")
+            self.send(chat_id, f"❌ 語音處理錯誤: {e}")
+        finally:
+            self._busy = False
+
     def _poll_loop(self):
         """Long-polling loop."""
         if not self._client:
@@ -541,7 +588,16 @@ class TelegramConnector(BaseConnector):
             elif video:
                 self.send(chat_id, "🎬 收到影片，但 BAW 暫時未支援影片處理。")
             elif audio or voice:
-                self.send(chat_id, "🎵 收到音訊，但 BAW 暫時未支援語音處理。")
+                if self._busy:
+                    self.send(chat_id, "⏳ Still processing. Try again later.")
+                    return
+                voice_data = audio or voice
+                self._busy = True
+                threading.Thread(
+                    target=self._process_voice_file,
+                    args=(chat_id, voice_data, msg),
+                    daemon=True,
+                ).start()
             # else: silent ignore for unknown types
             return
 
