@@ -194,7 +194,7 @@ class BaseConnector(ABC):
 
             result = sp.run(
                 [baw_cmd, "--mode", self.config.get("mode", "quick"), prompt],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True, text=True, timeout=120,
                 cwd=str(Path.home() / "baw"),
             )
             output = ""
@@ -210,7 +210,7 @@ class BaseConnector(ABC):
                 output = output[:3997] + "..."
             return output.strip()
         except sp.TimeoutExpired:
-            return "⏳ BAW task timed out (120s). Try a simpler request."
+            return "⏳ BAW took too long (>2min). Try a simpler request."
         except Exception as e:
             return f"❌ Error: {e}"
 
