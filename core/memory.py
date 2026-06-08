@@ -60,7 +60,7 @@ class MemoryStore:
 
     @staticmethod
     def _keywords(text: str) -> set[str]:
-        """Extract meaningful keywords from text.
+        r"""Extract meaningful keywords from text.
 
         For Latin text: \w+ tokens (filtered for stop words).
         For CJK text: 2-char bigrams (each consecutive pair of CJK chars).
