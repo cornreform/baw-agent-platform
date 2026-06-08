@@ -150,6 +150,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "\n\n## Quick mode\n"
                 "- Respond in Traditional Chinese (Cantonese)\n"
                 "- Lead with result, 1 paragraph max\n"
+                "- ALWAYS report what actually happened after tool execution\n"
                 "- CRITICAL: You MUST use tools (bash, read_file, etc.) when the user asks for data\n"
                 "  Do NOT fabricate system info — always call the relevant tool to get real data"
             )
