@@ -147,9 +147,10 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             system_prompt = "\n".join(trimmed)
             system_prompt += (
                 "\n\n## Quick mode\n"
-                "- Respond briefly in casual Traditional Chinese (Cantonese)\n"
-                "- Lead with result, 1-2 short paragraphs max\n"
-                "- No court, no tools, no plan — just direct response"
+                "- Respond in Traditional Chinese (Cantonese)\n"
+                "- Lead with result, 1 paragraph max\n"
+                "- CRITICAL: You MUST use tools (bash, read_file, etc.) when the user asks for data\n"
+                "  Do NOT fabricate system info — always call the relevant tool to get real data"
             )
         else:
             system_prompt = soul_text
