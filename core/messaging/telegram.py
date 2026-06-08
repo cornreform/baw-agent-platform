@@ -420,6 +420,7 @@ class TelegramConnector(BaseConnector):
             self.send(chat_id, f"🤔 Analyzing with BAW...")
             response = self._run_baw(prompt, chat_id=chat_id)
             self.send(chat_id, response)
+            self._record_batch_result(chat_id, response[:200], "document")
 
         except Exception as e:
             logger.error(f"[Telegram] Document processing error: {e}")
@@ -451,6 +452,7 @@ class TelegramConnector(BaseConnector):
             self.send(chat_id, f"🤔 Analyzing with BAW...")
             response = self._run_baw(prompt, chat_id=chat_id)
             self.send(chat_id, response)
+            self._record_batch_result(chat_id, response[:200], "image")
 
         except Exception as e:
             logger.error(f"[Telegram] Image processing error: {e}")
@@ -564,6 +566,7 @@ class TelegramConnector(BaseConnector):
                 self.send(chat_id, "🤔 BAW 分析中...")
                 response = self._run_baw(prompt, chat_id=chat_id)
                 self.send(chat_id, response)
+                self._record_batch_result(chat_id, response[:200], "voice")
             else:
                 # ── No STT method available — present diagnostics + options ──
                 msg_parts = ["🎵 收到語音訊息，但目前 BAW 未有語音處理能力。\n"]
@@ -804,6 +807,7 @@ class TelegramConnector(BaseConnector):
                 return
             if response:
                 self.send(chat_id, response)
+                self._record_batch_result(chat_id, response[:200], "text")
 
             # If restart was requested, exit cleanly so systemd restarts
             if self._restart_requested:
