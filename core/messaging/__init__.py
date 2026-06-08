@@ -1025,6 +1025,28 @@ class BaseConnector(ABC):
 
             output = response or ""
 
+            # ── Send court verdict as separate message (if available) ──
+            if info and info.get("adversarial_raw"):
+                cv = info["adversarial_raw"]
+                try:
+                    devil_content = (cv.get("devil", {}) or {}).get("content", "")[:300]
+                    angel_content = (cv.get("angel", {}) or {}).get("content", "")[:300]
+                    devil_score = cv.get("devil_score", 0)
+                    angel_score = cv.get("angel_score", 0)
+                    agreement = cv.get("agreement_level", "unknown")
+
+                    court_msg = (
+                        f"⚖️ **Black & White Court**\n"
+                        f"Agreement: {agreement} (gap: {cv.get('score_gap', 0)})\n\n"
+                        f"👿 **Devil** ({devil_score}/10)\n"
+                        f"{devil_content}\n\n"
+                        f"😇 **Angel** ({angel_score}/10)\n"
+                        f"{angel_content}"
+                    )
+                    self.send(chat_id, court_msg)
+                except Exception as _ce:
+                    logger.warning(f"[Court] Failed to render court verdict: {_ce}")
+
             # ── Save session history ──
             if session and info:
                 new_msgs = info.get("new_session_messages", [])
