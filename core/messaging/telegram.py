@@ -842,9 +842,53 @@ class TelegramConnector(BaseConnector):
             daemon=True,
         ).start()
 
+    def _set_reaction(self, chat_id: int, message_id: int, emoji: str) -> bool:
+        """Set a reaction emoji on a telegram message. Falls back to big emoji if unsupported."""
+        try:
+            resp = self._client.post(
+                f"{self._api_base}/setMessageReaction",
+                json={
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "reaction": [{"type": "emoji", "emoji": emoji}],
+                },
+                timeout=5,
+            )
+            data = resp.json()
+            if data.get("ok"):
+                return True
+            # Fallback: big reaction emoji
+            fallback = {"🔄": "⚡", "🧠": "🤔", "✅": "👍", "❌": "👎"}
+            fb = fallback.get(emoji)
+            if fb:
+                return self._set_reaction(chat_id, message_id, fb)
+            return False
+        except Exception:
+            return False
+
     def _process_message(self, chat_id, user_id, user_name, text, msg):
         """Process a message in background thread (runs route() + send())."""
         logger.info(f"[Telegram] Processing: {text[:60]}...")
+
+        # Get message_id for reactions
+        _msg_id = msg.get("message_id") if isinstance(msg, dict) else None
+
+        # Set initial reaction: 🔄 working/spinning
+        if _msg_id:
+            self._set_reaction(chat_id, _msg_id, "🔄")
+
+        # Reaction heartbeat: 🔄 (working) → 🧠 (thinking) after 2s
+        _reaction_stop = threading.Event()
+        def _reaction_heartbeat():
+            _reaction_stop.wait(2.0)
+            if not _reaction_stop.is_set() and _msg_id:
+                for emoji in ("🧠", "🔄", "🧠"):
+                    if _reaction_stop.is_set():
+                        break
+                    self._set_reaction(chat_id, _msg_id, emoji)
+                    _reaction_stop.wait(4.0)
+        _rh = threading.Thread(target=_reaction_heartbeat, daemon=True)
+        _rh.start()
 
         # Typing indicator heartbeat (respects cancel event)
         _typing_stop = threading.Event()
@@ -876,9 +920,15 @@ class TelegramConnector(BaseConnector):
             )
             response = self.route(msg_obj)
             _typing_stop.set()
+            _reaction_stop.set()
+
+            # Set reaction: ✅ success
+            if _msg_id:
+                self._set_reaction(chat_id, _msg_id, "✅")
 
             # If cancelled during processing, discard result
             if self._cancel_event.is_set():
+                _reaction_stop.set()
                 return
             if response:
                 self.send(chat_id, response)
@@ -894,6 +944,10 @@ class TelegramConnector(BaseConnector):
                 os._exit(0)
         except Exception as e:
             logger.error(f"[Telegram] Process error: {e}")
+            _reaction_stop.set()
+            # Set reaction: ❌ error
+            if _msg_id:
+                self._set_reaction(chat_id, _msg_id, "❌")
             if not self._cancel_event.is_set():
                 try:
                     self.send(chat_id, f"❌ Error: {e}")
