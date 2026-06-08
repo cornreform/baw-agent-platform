@@ -159,21 +159,48 @@ class BaseConnector(ABC):
                 p = sp.run(["baw", "--board"], capture_output=True, text=True, timeout=30)
                 return p.stdout or p.stderr or "Dashboard generated"
 
-            if cmd == "version":
+            if cmd in ("version", "v"):
                 return self._run_baw("--version")
-
-            if cmd == "mode":
-                modes = ["quick", "hybrid", "tight"]
-                return f"Current mode: {self.config.get('mode', 'tight')}\nAvailable: {', '.join(modes)}"
 
             if cmd in ("exit", "quit", "stop"):
                 return "👋 Goodbye!"
+
+            if cmd == "mode" and arg:
+                return self._baw_cfg_set("mode", arg)
+
+            if cmd == "mode":
+                return (
+                    f"Current mode: {self.config.get('mode', 'tight')}\n"
+                    f"Available: quick, hybrid, tight"
+                )
+
+            if cmd == "tone" and arg:
+                return self._baw_cfg_set("tone.default", arg)
+
+            if cmd == "tone":
+                tones = ["casual", "business", "teaching", "client-doc", "ot-rt", "stepwise"]
+                return f"Current tone: {self.config.get('tone', {}).get('default', 'casual')}\nAvailable: {', '.join(tones)}"
+
+            if cmd in ("model", "m") and arg:
+                if arg not in self._MODELS:
+                    return f"Model '{arg}' not found. Available: {', '.join(self._MODELS)}"
+                return self._baw_cfg_set("model.default", arg)
+
+            if cmd in ("model", "models"):
+                baw = self._baw_ensure()
+                current = baw["config"].get("model", {}).get("default", "deepseek-v4-flash")
+                return (
+                    f"Current model: {current}\n"
+                    f"Available:\n"
+                    + "\n".join(f"  /model {m}" for m in self._MODELS)
+                )
 
         # Default: pass to BAW
         return self._run_baw(text)
 
     # ── In-process BAW engine (lazy-loaded) ──
     _BAW = None  # {'run_agent': fn, 'config': dict, 'data_dir': Path}
+    _MODELS = ["deepseek-v4-flash", "kimi-k2.6", "MiniMax-M3"]
 
     def _baw_ensure(self):
         """Lazy-import BAW modules in-process (no subprocess)."""
@@ -208,6 +235,26 @@ class BaseConnector(ABC):
 
         self._BAW = {"run_agent": run_agent, "config": config, "data_dir": data_dir}
         return self._BAW
+
+    def _baw_cfg_set(self, key: str, value: str) -> str:
+        """Set a config value both in-file and in-memory cache."""
+        import yaml
+        baw = self._baw_ensure()
+        data_dir = baw["data_dir"]
+        config = baw["config"]
+        cfg_path = data_dir / "config.yaml"
+
+        # Navigate dotted key (e.g. "model.default")
+        keys = key.split(".")
+        target = config
+        for k in keys[:-1]:
+            target = target.setdefault(k, {})
+        target[keys[-1]] = value
+
+        # Write back
+        cfg_path.write_text(yaml.dump(config, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+
+        return f"✅ Config updated: {key} → {value}"
 
     def _run_baw(self, prompt: str) -> str:
         """Run BAW in-process (no subprocess)."""
@@ -258,13 +305,15 @@ class BaseConnector(ABC):
             "🤖 **BAW Bot** — Multi-platform Agent Interface\n\n"
             "Simply type anything and BAW will process it.\n\n"
             "**Commands:**\n"
-            "/btw <text> — Quick answer (no court)\n"
-            "/mode quick|hybrid|tight — Switch execution mode\n"
-            "/tone casual|business|teaching|... — Switch tone\n"
+            "/btw `<text>` — Quick answer (no court)\n"
+            "/model `<name>` — Switch model (deepseek / kimi / minimax)\n"
+            "/models — List available models\n"
+            "/mode `quick|hybrid|tight` — Switch execution mode\n"
+            "/tone `<profile>` — Switch tone\n"
             "/status — BAW system status\n"
             "/court — Show last Angel/Devil verdict\n"
-            "/memory <text> — Save a memory\n"
-            "/search <query> — Search memories\n"
+            "/memory `<text>` — Save a memory\n"
+            "/search `<query>` — Search memories\n"
             "/board — Generate HTML dashboard\n"
             "/version — BAW version\n"
             "/help — This message\n\n"
@@ -273,5 +322,5 @@ class BaseConnector(ABC):
             "• check disk space\n"
             "• /btw What time is it?\n"
             "• /tone teaching\n"
-            "• /mode quick"
+            "• /model kimi-k2.6"
         )
