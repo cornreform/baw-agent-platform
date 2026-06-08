@@ -84,6 +84,9 @@ class BaseConnector(ABC):
         self._max_concurrency = self.config.get("max_concurrency", 3)
         self._active_count = 0
         self._active_lock = threading.Lock()
+        self._batch_results: list[dict] = []
+        self._batch_lock = threading.Lock()
+        self._batch_chat_id: str | None = None
         self._restart_requested = False
         self._chat_config = {}  # per-chat overrides: {chat_id: {key: value}}
         self._restart_chat_id: str | None = None
@@ -107,9 +110,82 @@ class BaseConnector(ABC):
             return False
 
     def _release_slot(self):
-        """Release a processing slot."""
+        """Release a processing slot. Triggers batch synthesis when idle."""
         with self._active_lock:
             self._active_count = max(0, self._active_count - 1)
+            was_last = self._active_count == 0
+        if was_last:
+            self._synthesize_batch()
+
+    def _record_batch_result(self, chat_id: str, summary: str, msg_type: str = "text"):
+        """Record a concurrent task's result for batch synthesis."""
+        with self._batch_lock:
+            self._batch_results.append({
+                "chat_id": chat_id,
+                "type": msg_type,
+                "summary": summary[:500],
+                "ts": time.time(),
+            })
+            self._batch_chat_id = chat_id or self._batch_chat_id
+
+    def _synthesize_batch(self):
+        """Consolidate all batch results and write consolidated memory for evolution."""
+        with self._batch_lock:
+            results = list(self._batch_results)
+            self._batch_results.clear()
+            chat_id = self._batch_chat_id
+            self._batch_chat_id = None
+
+        if len(results) < 2:
+            return  # Single task — no synthesis needed
+
+        logger.info(f"[Synthesis] Consolidating {len(results)} concurrent results")
+        try:
+            baw = self._baw_ensure()
+            data_dir = baw["data_dir"]
+            from core.memory import Memory
+            mem = Memory(data_dir=data_dir)
+
+            # Build synthesis prompt
+            items = "\n\n".join(
+                f"[{r['type']}] {r['summary'][:300]}"
+                for r in results
+            )
+            synthesis_prompt = (
+                f"[Batch Synthesis — {len(results)} concurrent tasks completed]\n\n"
+                f"Tasks:\n{items}\n\n"
+                f"Write a concise consolidated summary of all the work done above. "
+                f"Focus on: what was accomplished, key decisions, and any patterns observed. "
+                f"Keep it brief (3-5 sentences)."
+            )
+
+            # Call BAW for synthesis (silent — no user-facing output)
+            config = baw["config"]
+            model_cfg = config.get("model", {})
+            default_model = model_cfg.get("default", "deepseek-v4-flash")
+            from core.llm import get_model, call_llm_with_fallback
+            model = get_model(config, default_model)
+            from core.context import Context
+
+            ctx = Context(
+                system_prompt="You are BAW's batch synthesis agent. Consolidate results concisely.",
+                temperature=model.temperature,
+            )
+            ctx.add_user(synthesis_prompt)
+            fb = call_llm_with_fallback(
+                config, ctx.to_openai_messages(),
+                temperature=model.temperature,
+            )
+            synthesis = fb.response.content or ""
+
+            # Write to memory for evolution
+            if synthesis.strip():
+                mem.remember(
+                    f"[Batch] Concurrent synthesis: {synthesis[:200]}"
+                )
+                logger.info(f"[Synthesis] Written to memory: {synthesis[:80]}...")
+        except Exception as e:
+            logger.warning(f"[Synthesis] Failed: {e}")
 
     @abstractmethod
     def disconnect(self):
