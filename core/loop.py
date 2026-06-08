@@ -673,6 +673,15 @@ def run_agent(
     # ── Phase 3b: Goal-pursuit loop ──
     # Each step: execute → if fail → think alternative → retry
     # Whole loop: after all steps → self-review → if goal not met → retry with new plan
+    import importlib.util as _dt_iu
+    _dt_spec = _dt_iu.spec_from_file_location(
+        "_tk_delegate",
+        str(Path(__file__).resolve().parent.parent / "tools" / "delegate_task.py"),
+    )
+    _dt_mod = _dt_iu.module_from_spec(_dt_spec)
+    _dt_spec.loader.exec_module(_dt_mod)
+    _delegate_fn = _dt_mod.delegate_task
+
     _GOAL_PURSUIT_MAX_ATTEMPTS = 5  # Max total goal-pursuit iterations
     _STEP_RETRIES = 3               # Max retries per step with alternative approaches
     _execution_progress: list[str] = []
