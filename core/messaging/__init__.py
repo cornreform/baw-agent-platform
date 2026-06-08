@@ -735,6 +735,38 @@ class BaseConnector(ABC):
             if chat_id:
                 session = self._get_or_create_session(chat_id)
                 conv_history = session["messages"][-self._MAX_SESSION_MSGS:] if session["messages"] else None
+
+                # ── Context Window Monitoring ──
+                # Estimate token usage from session messages
+                if conv_history and config:
+                    _msg_tokens = sum(
+                        len(m.get("content", "") or "") * 0.25
+                        for m in conv_history
+                    )
+                    _estimated_tokens = int(_msg_tokens)
+
+                    # Get default model's context window
+                    _cw = 65536  # safe default
+                    _model_id = config.get("model", {}).get("default", "deepseek-v4-flash")
+                    for _p in config.get("providers", {}).values():
+                        for _m in _p.get("models", []):
+                            if _m["id"] == _model_id:
+                                _cw = _m.get("context_window", 65536)
+                                break
+
+                    _usage_pct = (_estimated_tokens / _cw) * 100
+                    if _usage_pct > 70:
+                        _warn = (
+                            f"[System Note: Context ~{_usage_pct:.0f}% used "
+                            f"(~{_estimated_tokens:,}/{_cw:,} tokens). "
+                            f"Consider summarizing key points, saving to memory (/memory), "
+                            f"or starting a new session (/task new).]"
+                        )
+                        # Inject as user message (loop.py only handles user/assistant/tool roles)
+                        conv_history = conv_history + [{"role": "user", "content": _warn}]
+                        logger.info(f"[Context] {_usage_pct:.0f}% full — warning injected")
+                    elif _usage_pct > 50:
+                        logger.info(f"[Context] {_usage_pct:.0f}% full — monitoring")
             else:
                 conv_history = None
 
