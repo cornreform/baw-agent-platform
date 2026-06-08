@@ -975,6 +975,49 @@ baw/                        ← <span class="cmt">Code repo</span>
       </ul>
     </div>
 
+    <!-- ════════════════════ Messaging ════════════════════ -->
+    <div class="section" id="messaging">
+      <h2>
+        <span class="lang-zh">📡 多平台即時通訊</span>
+        <span class="lang-en">📡 Multi-Platform Messaging</span>
+      </h2>
+
+      <p>
+        <span class="lang-zh">BAW 可以透過 <code>baw-bot</code> daemon 連接各大主流通訊平台。你喺 Telegram/Discord/Matrix 打 message，BAW 會自動處理。</span>
+        <span class="lang-en">BAW connects to major messaging platforms via the <code>baw-bot</code> daemon. Send a message on Telegram/Discord/Matrix — BAW processes it automatically.</span>
+      </p>
+
+      <table>
+        <tr><th><span class="lang-zh">平台</span><span class="lang-en">Platform</span></th><th><span class="lang-zh">狀態</span><span class="lang-en">Status</span></th><th><span class="lang-zh">設定</span><span class="lang-en">Setup</span></th></tr>
+        <tr><td class="mono">📱 Telegram</td><td><span class="lang-zh">✅ 完整支援</span><span class="lang-en">✅ Full</span></td><td><span class="lang-zh">@BotFather 開 Bot → token</span><span class="lang-en">@BotFather → token</span></td></tr>
+        <tr><td class="mono">💬 Discord</td><td><span class="lang-zh">✅ 完整支援</span><span class="lang-en">✅ Full</span></td><td><span class="lang-zh">Discord Developer Portal → token</span><span class="lang-en">Dev Portal → Bot → token</span></td></tr>
+        <tr><td class="mono">🔊 Signal</td><td>⚙️</td><td><span class="lang-zh">需 signal-cli daemon</span><span class="lang-en">signal-cli required</span></td></tr>
+        <tr><td class="mono">💚 WhatsApp</td><td>⚙️</td><td><span class="lang-zh">Cloud API / Business API</span><span class="lang-en">Cloud or Business API</span></td></tr>
+        <tr><td class="mono">🧩 Matrix</td><td><span class="lang-zh">✅ 完整支援</span><span class="lang-en">✅ Full</span></td><td><span class="lang-zh">任何 Matrix homeserver</span><span class="lang-en">Any Matrix homeserver</span></td></tr>
+      </table>
+
+      <pre>
+<span class="cmt"># Start all configured connectors</span>
+baw-bot
+
+<span class="cmt"># Start specific platform only</span>
+baw-bot --platform telegram
+
+<span class="cmt"># List available connectors</span>
+baw-bot --list
+
+<span class="cmt"># Quick Telegram test</span>
+baw-bot --token "***"</pre>
+
+      <div class="callout">
+        <h4>💡 <span class="lang-zh">Slash Commands in Chat</span><span class="lang-en">Slash Commands in Chat</span></h4>
+        <p>
+          <span class="lang-zh">喺任何平台都可以用 slash commands：<code>/btw</code>、<code>/tone</code>、<code>/mode</code>、<code>/court</code>、<code>/memory</code>、<code>/search</code> 等等。冇 slash 嘅訊息會直接送俾 BAW 處理。</span>
+          <span class="lang-en">Use slash commands on any platform: <code>/btw</code>, <code>/tone</code>, <code>/mode</code>, <code>/court</code>, <code>/memory</code>, <code>/search</code>, etc. Messages without slashes are sent directly to BAW.</span>
+        </p>
+      </div>
+    </div>
+
   </div><!-- /content -->
 </div><!-- /container -->
 
