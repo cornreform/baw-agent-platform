@@ -618,9 +618,11 @@ baw --learn-url "https://example.com/backup-workflow.md"
 
 ## 12. Roadmap
 
-### 已實現 (v1.0.0 — 測試版)
+### 已實現 (v0.10 — 測試版)
 
-- [x] Angel/Devil 雙魂法庭
+- [x] Angel/Devil 雙魂法庭（v2 — 同步獨立分析）
+- [x] 五平台通訊框架（Telegram/Discord/Signal/WhatsApp/Matrix）
+- [x] baw-bot daemon（多平台訊息路由）
 - [x] 三種執行模式 (quick/hybrid/tight)
 - [x] 協議無關 LLM (3 protocols)
 - [x] 內置工具 (bash/read/write/web_search)

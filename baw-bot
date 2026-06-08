@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+BAW Bot — Multi-Platform Messaging Daemon
+
+Connects BAW to Telegram, Discord, Signal, WhatsApp, and/or Matrix.
+Runs as a persistent background process.
+
+Usage:
+  baw-bot                       # Start with default config
+  baw-bot --config ~/.baw/config.yaml
+  baw-bot --platform telegram   # Start only Telegram connector
+  baw-bot --list                 # List available connectors
+  baw-bot --help                 # This help
+"""
+from __future__ import annotations
+import argparse
+import logging
+import os
+import signal
+import sys
+import time
+from pathlib import Path
+from typing import Optional
+
+# Add BAW root to path
+BAW_ROOT = Path(__file__).parent.resolve()
+sys.path.insert(0, str(BAW_ROOT))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("baw-bot")
+
+
+def load_config(config_path: Optional[Path] = None) -> dict:
+    """Load BAW config.yaml."""
+    import yaml
+    paths = [
+        config_path,
+        BAW_ROOT / "config.yaml",
+        Path.home() / ".baw" / "config.yaml",
+    ]
+    for p in paths:
+        if p and p.exists():
+            return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    return {}
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="BAW Bot — Multi-Platform Messaging Daemon",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  baw-bot                         Start all configured connectors
+  baw-bot --platform telegram     Start only Telegram
+  baw-bot --platform discord      Start only Discord
+  baw-bot --list                  List available connectors
+  baw-bot --debug                 Verbose logging
+        """,
+    )
+    parser.add_argument("--config", help="Path to config.yaml")
+    parser.add_argument("--platform", "-p", action="append",
+                        help="Only start specific platform(s) (can repeat)")
+    parser.add_argument("--list", "-l", action="store_true",
+                        help="List available connectors and exit")
+    parser.add_argument("--debug", "-d", action="store_true",
+                        help="Debug logging")
+    parser.add_argument("--token", help="Override Telegram token (quick setup)")
+
+    args = parser.parse_args()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    # Load messaging connectors
+    from baw.core.messaging import list_connectors, get_connector
+    from baw.core.messaging.telegram import TelegramConnector
+    from baw.core.messaging.discord import DiscordConnector
+    from baw.core.messaging.signal import SignalConnector
+    from baw.core.messaging.whatsapp import WhatsAppConnector
+    from baw.core.messaging.matrix import MatrixConnector
+
+    # Force registration by importing all connector modules
+    # (The @register decorator auto-registers them)
+
+    available = list_connectors()
+
+    if args.list:
+        print("📡 BAW Bot — Available Connectors")
+        print()
+        for c in available:
+            print(f"  {c.name:12s}  {c.description}")
+        print()
+        print("Configure each platform in config.yaml under its name.")
+        return
+
+    # Load config
+    config = load_config(Path(args.config) if args.config else None)
+    if not config:
+        logger.error("No config found. Run 'baw --setup' first, or specify --config")
+        sys.exit(1)
+
+    # Override Telegram token from CLI arg
+    if args.token:
+        config.setdefault("telegram", {})["token"] = args.token
+
+    # Determine which platforms to start
+    platforms = args.platform or list(config.keys())
+    platform_set = set(p.lower() for p in platforms)
+
+    # Start connectors
+    connectors = []
+    for cd in available:
+        if cd.config_key not in platform_set:
+            continue
+        platform_cfg = config.get(cd.config_key, {})
+        if not platform_cfg:
+            logger.info(f"[{cd.name}] No config found — skipping")
+            continue
+
+        # Check for token/api key
+        if not platform_cfg.get("token") and not platform_cfg.get("phone"):
+            logger.info(f"[{cd.name}] No credentials configured — skipping")
+            continue
+
+        connector = cd.handler(config, lambda msg: None)  # Pass-through handler
+        connectors.append(connector)
+        logger.info(f"[{cd.name}] Starting...")
+
+    if not connectors:
+        logger.warning("No connectors started. Check your config.yaml")
+        logger.info("Available: " + ", ".join(c.name for c in available))
+        sys.exit(1)
+
+    # Start all connectors
+    for c in connectors:
+        c.start()
+
+    logger.info(f"🤖 BAW Bot running ({len(connectors)} connector(s))")
+
+    # Handle shutdown gracefully
+    def shutdown(signum, frame):
+        logger.info("Shutting down...")
+        for c in connectors:
+            c.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+
+    # Keep alive
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        shutdown(None, None)
+
+
+if __name__ == "__main__":
+    main()

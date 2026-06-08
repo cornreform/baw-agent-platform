@@ -76,3 +76,30 @@ adversarial:
   enabled: true
   flag_threshold: 0
   warn_threshold: 2
+
+# ── Messaging Platforms (for baw-bot) ─────────────────────────
+# Uncomment and configure the platforms you want BAW to connect to.
+
+# telegram:
+#   token: "***"                    # Bot token from @BotFather
+#   allowed_users: []               # Optional: restrict to specific user IDs
+
+# discord:
+#   token: "***"                    # Bot token from Discord Developer Portal
+#   allowed_channels: []            # Optional: restrict to specific channel IDs
+#   prefix: "baw "                  # Command prefix in Discord
+
+# signal:
+#   phone: "+155****4567"           # Signal phone number
+#   signal_cli_path: "signal-cli"   # Path to signal-cli binary
+
+# whatsapp:
+#   token: "***"                    # WhatsApp Cloud API token
+#   phone_number_id: "***"          # WhatsApp Business phone number ID
+
+# matrix:
+#   homeserver: "https://matrix.org"
+#   username: "@baw:matrix.org"
+#   password: "***"
+#   # Or use access_token instead of password:
+#   # access_token: "***"

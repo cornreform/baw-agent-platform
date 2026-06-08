@@ -194,6 +194,32 @@ baw --cfg set adversarial.enabled false  # Disable court
 vim ~/.baw/config.yaml
 </pre>
 
+<h3>📡 Multi-Platform Messaging</h3>
+
+<p>BAW can connect to multiple messaging platforms via the <code>baw-bot</code> daemon:</p>
+
+<table>
+  <tr><th>Platform</th><th>Status</th><th>Setup</th></tr>
+  <tr><td>📱 Telegram</td><td>✅ Full support</td><td><code>@BotFather</code> → token → <code>baw-bot</code></td></tr>
+  <tr><td>💬 Discord</td><td>✅ Full support</td><td>Discord Developer Portal → token → <code>baw-bot</code></td></tr>
+  <tr><td>🔊 Signal</td><td>⚙️ signal-cli required</td><td><code>signal-cli</code> daemon + config</td></tr>
+  <tr><td>💚 WhatsApp</td><td>⚙️ Cloud/Business API</td><td>Meta Developer account or self-hosted API</td></tr>
+  <tr><td>🧩 Matrix</td><td>✅ Full support</td><td>Any Matrix account + homeserver</td></tr>
+</table>
+
+<pre>
+# Start all configured connectors
+baw-bot
+
+# Start specific platform
+baw-bot --platform telegram
+
+# List available connectors
+baw-bot --list
+
+# Quick Telegram setup with CLI token
+baw-bot --token "***"</pre>
+
 <hr>
 
 <!-- ═══ 繁體中文 ═══ -->
@@ -366,6 +392,32 @@ baw --cfg set adversarial.enabled false  # 熄咗法庭
 # 直接編輯 YAML 都得
 vim ~/.baw/config.yaml
 </pre>
+
+<h3>📡 多平台即時通訊</h3>
+
+<p>BAW 透過 <code>baw-bot</code> daemon 連接各大通訊平台：</p>
+
+<table>
+  <tr><th>平台</th><th>狀態</th><th>設定方法</th></tr>
+  <tr><td>📱 Telegram</td><td>✅ 完整支援</td><td><code>@BotFather</code> 開 Bot → token → <code>baw-bot</code></td></tr>
+  <tr><td>💬 Discord</td><td>✅ 完整支援</td><td>Discord Developer Portal → token → <code>baw-bot</code></td></tr>
+  <tr><td>🔊 Signal</td><td>⚙️ 需 signal-cli</td><td>安裝 signal-cli daemon + 設定電話號碼</td></tr>
+  <tr><td>💚 WhatsApp</td><td>⚙️ Cloud/Business API</td><td>Meta 開發者帳號或 self-hosted API</td></tr>
+  <tr><td>🧩 Matrix</td><td>✅ 完整支援</td><td>任何 Matrix 帳號 + homeserver</td></tr>
+</table>
+
+<pre>
+# 啟動所有已設定嘅平台
+baw-bot
+
+# 只啟動 Telegram
+baw-bot --platform telegram
+
+# 列出可用平台
+baw-bot --list
+
+# 快速測試 Telegram
+baw-bot --token "***"</pre>
 
 <hr>
 
