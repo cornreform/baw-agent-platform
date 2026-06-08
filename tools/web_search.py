@@ -16,7 +16,7 @@ def web_search(query: str, limit: int = 5, provider: str | None = None) -> str:
     """
     try:
         # Import lazily to avoid import order issues
-        from baw.core.search import search as _baw_search
+        from core.search import search as _baw_search
         actual_provider = provider or "duckduckgo"
         results = _baw_search(query, provider=actual_provider, limit=limit)
         if not results:
