@@ -83,6 +83,7 @@ class BaseConnector(ABC):
         self._busy = False
         self._restart_requested = False
         self._chat_config = {}  # per-chat overrides: {chat_id: {key: value}}
+        self._restart_chat_id: str | None = None
         # ── Session management ──
         self._sessions: dict[str, dict] = {}  # {chat_id: session_dict}
         self._sessions_dir = Path.home() / ".baw" / "sessions"
@@ -226,6 +227,19 @@ class BaseConnector(ABC):
             return True
         return False
 
+    def _save_restart_chat_id(self, chat_id: str):
+        """Save chat_id to .restart_pending so the new process can notify."""
+        import json as _json
+        self._restart_chat_id = chat_id
+        pending_file = Path.home() / ".baw" / ".restart_pending"
+        try:
+            pending_file.write_text(
+                _json.dumps({"chat_id": chat_id, "ts": time.time()}),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save restart pending: {e}")
+
     def route(self, msg: Message) -> Optional[str]:
         """Route a message to BAW and return the response.
 
@@ -276,6 +290,7 @@ class BaseConnector(ABC):
 
             if cmd in ("restart",):
                 self._restart_requested = True
+                self._save_restart_chat_id(msg.chat_id)
                 return "🔄 Restarting BAW engine..."
 
             # ── Per-chat config commands ──

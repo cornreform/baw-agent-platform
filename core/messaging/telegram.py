@@ -40,6 +40,7 @@ class TelegramConnector(BaseConnector):
         self._client: httpx.Client | None = None
         self._api_base = API_BASE.format(token=self._token) if self._token else ""
         self._debounce_until = 0.0
+        self._restart_chat_id: str | None = None
 
     def connect(self) -> bool:
         """Test connection by fetching bot info."""
@@ -58,12 +59,36 @@ class TelegramConnector(BaseConnector):
                     # Register slash command menu
                     self._register_commands()
 
+                    # ── Back-online notification after restart ──
+                    self._notify_restart()
+
                     return True
             logger.error(f"[Telegram] getMe failed: {r.status_code} {r.text[:200]}")
             return False
         except Exception as e:
             logger.error(f"[Telegram] Connection error: {e}")
             return False
+
+    def _notify_restart(self):
+        """Send 'Back Online' notification if this was a restart."""
+        import json as _json
+        from pathlib import Path
+        pending_file = Path.home() / ".baw" / ".restart_pending"
+        if not pending_file.exists():
+            return
+        try:
+            data = _json.loads(pending_file.read_text())
+            chat_id = data.get("chat_id", "")
+            if chat_id:
+                self._client.post(
+                    f"{self._api_base}/sendMessage",
+                    json={"chat_id": chat_id, "text": "✅ **BAW Back Online**"},
+                    timeout=10,
+                )
+                logger.info(f"[Telegram] Restart notification sent to {chat_id}")
+            pending_file.unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"[Telegram] Restart notification failed: {e}")
 
     def _register_commands(self):
         """Register bot command menu via setMyCommands."""
