@@ -511,10 +511,25 @@ class TelegramConnector(BaseConnector):
                 # to configured STT methods or installed fallbacks below.
                 # Future: implement native audio API call per model here.
 
-            # Priority B: Config-defined STT method
+            # Priority B: Config-defined STT method or model
             if not used_method and stt_method:
-                status_lines.append(f"⚙️ STT 配置：**{stt_method}**")
-                if stt_method == "openai-whisper":
+                status_lines.append(f"⚙️ STT 配置 method：**{stt_method}**")
+                if stt_method == "faster-whisper" and fw_available:
+                    fw_model = stt_config.get("model", "base")
+                    status_lines.append(f"🎙️ 使用 faster-whisper（{fw_model}，本地免費）")
+                    self.send(chat_id, "🎙️ 本地語音辨識中...")
+                    try:
+                        from faster_whisper import WhisperModel
+                        logger.info(f"[Telegram] STT with faster-whisper ({fw_model}): {local_path}")
+                        model = WhisperModel(fw_model, device="cpu", compute_type="int8")
+                        segments, info = model.transcribe(local_path, language=None, beam_size=3)
+                        text = " ".join(seg.text.strip() for seg in segments)
+                        used_method = "faster-whisper"
+                    except Exception as e:
+                        logger.error(f"[Telegram] faster-whisper error: {e}")
+                        self.send(chat_id, f"❌ faster-whisper 辨識失敗: {e}")
+                        return
+                elif stt_method == "openai-whisper":
                     api_key_env = stt_config.get("api_key_env", "OPENAI_API_KEY")
                     api_key = os.environ.get(api_key_env, "")
                     if api_key:
@@ -538,8 +553,55 @@ class TelegramConnector(BaseConnector):
                 else:
                     status_lines.append(f"   ⚠️ 未知 STT method: {stt_method}")
 
-            # Priority C: faster-whisper local (free, no API key)
-            if not used_method and fw_available:
+            # Priority B2: Model-based STT (stt.model set but no stt.method)
+            if not used_method:
+                stt_model_id = stt_config.get("model", "").strip()
+                if stt_model_id:
+                    # Find the model in providers
+                    stt_model_obj = next((m for m in all_models if m["id"] == stt_model_id), None)
+                    if stt_model_obj and stt_model_obj.get("audio_input"):
+                        # Use model's native audio input API
+                        status_lines.append(f"🎙️ 使用模型原生音訊輸入：**{stt_model_id}**（audio_input=true）")
+                        self.send(chat_id, f"🎙️ {stt_model_id} 音訊辨識中...")
+                        try:
+                            import base64 as _b64
+                            provider = stt_model_obj["provider"]
+                            # Find provider config for API credentials
+                            pconf = config.get("providers", {}).get(provider, {})
+                            api_key = os.environ.get(pconf.get("api_key_env", ""), "")
+                            api_url = f"{pconf.get('base_url', '').rstrip('/')}/chat/completions"
+                            with open(local_path, "rb") as f:
+                                audio_b64 = _b64.b64encode(f.read()).decode()
+                            data_url = f"data:audio/ogg;base64,{audio_b64}"
+                            resp = httpx.post(
+                                api_url,
+                                json={
+                                    "model": stt_model_id,
+                                    "messages": [{
+                                        "role": "user",
+                                        "content": [
+                                            {"type": "text", "text": "Transcribe this audio to text in Traditional Chinese (Cantonese). Return ONLY the transcription, no extra text."},
+                                            {"type": "audio_url", "audio_url": {"url": data_url}},
+                                        ],
+                                    }],
+                                    "max_tokens": 1024,
+                                },
+                                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                                timeout=60,
+                            )
+                            data = resp.json()
+                            text = (data.get("choices", [{}])[0]
+                                    .get("message", {})
+                                    .get("content", ""))
+                            used_method = f"model-{stt_model_id}"
+                        except Exception as e:
+                            logger.error(f"[Telegram] Model STT error: {e}")
+                            self.send(chat_id, f"❌ {stt_model_id} 音訊辨識失敗: {e}")
+                    else:
+                        status_lines.append(f"   ⚠️ stt.model={stt_model_id} 無 audio_input 能力")
+
+            # Priority C: faster-whisper local fallback (only if no STT config at all)
+            if not used_method and fw_available and not stt_config.get("model", "").strip():
                 fw_model = stt_config.get("model", "base") if stt_method == "faster-whisper" else "base"
                 status_lines.append(f"🎙️ 使用 faster-whisper（{fw_model}，本地免費）")
                 self.send(chat_id, "🎙️ 本地語音辨識中...")
@@ -561,7 +623,9 @@ class TelegramConnector(BaseConnector):
                     self.send(chat_id, "🔇 聽唔到任何語音內容。")
                     return
 
-                dur_str = f"{info.duration:.1f}s" if info and hasattr(info, 'duration') and isinstance(info.duration, (int, float)) else "?"
+                dur_str = "?"
+                if used_method == "faster-whisper" and info and hasattr(info, 'duration') and isinstance(info.duration, (int, float)):
+                    dur_str = f"{info.duration:.1f}s"
                 self.send(chat_id, f"📝 辨識完成（{dur_str}）：\n\n{text[:200]}{'…' if len(text)>200 else ''}")
 
                 prompt = (
