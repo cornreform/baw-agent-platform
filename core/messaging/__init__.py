@@ -12,9 +12,11 @@ Connectors auto-register via the @connector decorator.
 """
 from __future__ import annotations
 import asyncio
+import json
 import logging
 import time
 import threading
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -81,6 +83,11 @@ class BaseConnector(ABC):
         self._busy = False
         self._restart_requested = False
         self._chat_config = {}  # per-chat overrides: {chat_id: {key: value}}
+        # ── Session management ──
+        self._sessions: dict[str, dict] = {}  # {chat_id: session_dict}
+        self._sessions_dir = Path.home() / ".baw" / "sessions"
+        self._sessions_dir.mkdir(parents=True, exist_ok=True)
+        self._load_session_index()
 
     @abstractmethod
     def connect(self) -> bool:
@@ -119,6 +126,105 @@ class BaseConnector(ABC):
     def _poll_loop(self):
         """Platform-specific polling loop."""
         ...
+
+    # ── Session management ──────────────────────────────────────
+    _MAX_SESSION_MSGS = 60  # ~30 user/assistant exchanges
+
+    def _load_session_index(self):
+        """Load all saved session file IDs into memory (not full history)."""
+        if not self._sessions_dir.exists():
+            return
+        sidx = {}
+        for f in sorted(self._sessions_dir.glob("*.json")):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                sidx[data["id"]] = {
+                    "id": data["id"],
+                    "name": data.get("name", "untitled"),
+                    "created": data.get("created", 0.0),
+                    "updated": data.get("updated", 0.0),
+                    "mode": data.get("mode", "quick"),
+                    "path": str(f),
+                }
+            except Exception:
+                continue
+        self._session_index = sidx
+
+    def _get_or_create_session(self, chat_id: str) -> dict:
+        """Get (or create) the active in-memory session for this chat."""
+        if chat_id not in self._sessions:
+            sid = f"ses-{uuid.uuid4().hex[:12]}"
+            self._sessions[chat_id] = {
+                "id": sid,
+                "name": "untitled",
+                "messages": [],
+                "created": time.time(),
+                "updated": time.time(),
+            }
+        return self._sessions[chat_id]
+
+    def _save_session_to_disk(self, session: dict):
+        """Write session to disk as JSON."""
+        spath = self._sessions_dir / f"{session['id']}.json"
+        try:
+            spath.write_text(json.dumps(session, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Session save failed [{session['id']}]: {e}")
+
+    def _list_saved_sessions(self) -> str:
+        """Return formatted list of all saved sessions."""
+        self._load_session_index()
+        if not self._session_index:
+            return "No saved tasks."
+        lines = ["📋 **Saved Tasks:**"]
+        for sid, s in sorted(self._session_index.items(),
+                             key=lambda x: x[1]["updated"], reverse=True):
+            import datetime
+            dt = datetime.datetime.fromtimestamp(s["updated"]).strftime("%m-%d %H:%M")
+            msg_count = "(active)" if sid in [ses["id"] for ses in self._sessions.values()] else ""
+            lines.append(
+                f"  `{sid[:12]}` — **{s['name']}** "
+                f"({dt}) {msg_count}"
+            )
+        return "\n".join(lines)
+
+    def _load_session_from_disk(self, session_id: str) -> Optional[dict]:
+        """Load a full session from disk. Returns None if not found."""
+        spath = self._sessions_dir / f"{session_id}.json"
+        if spath.exists():
+            try:
+                data = json.loads(spath.read_text(encoding="utf-8"))
+                return data
+            except Exception:
+                return None
+        # Try prefix match
+        for f in self._sessions_dir.glob(f"{session_id}*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                return data
+            except Exception:
+                continue
+        return None
+
+    def _delete_session(self, session_id: str) -> bool:
+        """Delete a saved session from disk. Returns True if deleted."""
+        spath = self._sessions_dir / f"{session_id}.json"
+        if spath.exists():
+            spath.unlink()
+            # Remove from in-memory active sessions too
+            for cid, ses in list(self._sessions.items()):
+                if ses["id"] == session_id:
+                    del self._sessions[cid]
+                    break
+            return True
+        for f in self._sessions_dir.glob(f"{session_id}*.json"):
+            f.unlink()
+            for cid, ses in list(self._sessions.items()):
+                if ses["id"] == session_id:
+                    del self._sessions[cid]
+                    break
+            return True
+        return False
 
     def route(self, msg: Message) -> Optional[str]:
         """Route a message to BAW and return the response.
@@ -213,8 +319,90 @@ class BaseConnector(ABC):
                     + "\n".join(f"  /model {m}" for m in self._MODELS)
                 )
 
-        # Default: pass to BAW (with chat_id for per-chat config)
+            # ── Session / Task commands ──
+            if cmd == "task" and arg:
+                sub_cmd = arg.strip().split(maxsplit=1)
+                task_action = sub_cmd[0].lower() if sub_cmd else ""
+                task_arg = sub_cmd[1] if len(sub_cmd) > 1 else ""
+                return self._handle_task_command(msg.chat_id, task_action, task_arg)
+
+        # Default: pass to BAW (with chat_id for per-chat config + session history)
         return self._run_baw(text, chat_id=msg.chat_id)
+
+    # ── Session / Task command handler ───────────────────────────
+    def _handle_task_command(self, chat_id: str, action: str, arg: str) -> str:
+        if action == "new":
+            # Save current session, start fresh
+            self._save_session_to_disk(self._get_or_create_session(chat_id))
+            new_sid = f"ses-{uuid.uuid4().hex[:12]}"
+            name = arg or "untitled"
+            self._sessions[chat_id] = {
+                "id": new_sid, "name": name,
+                "messages": [], "created": time.time(), "updated": time.time(),
+            }
+            self._save_session_to_disk(self._sessions[chat_id])
+            return f"✅ New task started: **{name}** (`{new_sid[:12]}`)"
+
+        elif action == "list" or action == "ls":
+            return self._list_saved_sessions()
+
+        elif action == "resume" or action == "load":
+            sid = arg or ""
+            if not sid:
+                return "Usage: /task resume <session_id>"
+            data = self._load_session_from_disk(sid)
+            if not data:
+                return f"Session `{sid}` not found. Use `/task list` to see saved tasks."
+            # Assign to this chat
+            self._sessions[chat_id] = {
+                "id": data["id"], "name": data.get("name", "untitled"),
+                "messages": data.get("messages", []),
+                "created": data.get("created", 0.0), "updated": time.time(),
+            }
+            msg_count = len(self._sessions[chat_id]["messages"])
+            return (
+                f"📂 Resumed task: **{data.get('name', 'untitled')}** "
+                f"(`{data['id'][:12]}`)\n"
+                f"Conversation has {msg_count} messages. "
+                f"Continue chatting to pick up where you left off."
+            )
+
+        elif action == "save" or action == "name":
+            ses = self._get_or_create_session(chat_id)
+            if arg:
+                ses["name"] = arg
+            ses["updated"] = time.time()
+            self._save_session_to_disk(ses)
+            return f"💾 Task saved: **{ses['name']}** (`{ses['id'][:12]}`)"
+
+        elif action in ("forget", "delete", "rm"):
+            sid = arg or ""
+            if not sid:
+                return "Usage: /task forget <session_id>"
+            if self._delete_session(sid):
+                return f"🗑️ Task `{sid[:12]}` deleted."
+            return f"Task `{sid[:12]}` not found."
+
+        elif action in ("info", "show"):
+            ses = self._get_or_create_session(chat_id)
+            return (
+                f"📌 **Current Task**\n"
+                f"  ID: `{ses['id'][:12]}`\n"
+                f"  Name: **{ses['name']}**\n"
+                f"  Messages: {len(ses['messages'])}\n"
+                f"  Created: {time.strftime('%m-%d %H:%M', time.localtime(ses['created']))}"
+            )
+
+        else:
+            return (
+                "**Task commands:**\n"
+                "  `/task list` — Show saved tasks\n"
+                "  `/task new [name]` — Save current & start fresh\n"
+                "  `/task resume <id>` — Resume a saved task\n"
+                "  `/task save [name]` — Save/name current task\n"
+                "  `/task forget <id>` — Delete a saved task\n"
+                "  `/task info` — Show current task details"
+            )
 
     # ── In-process BAW engine (lazy-loaded) ──
     _BAW = None  # {'run_agent': fn, 'config': dict, 'data_dir': Path}
@@ -298,7 +486,7 @@ class BaseConnector(ABC):
         return f"✅ Config updated: {key} → {value}"
 
     def _run_baw(self, prompt: str, chat_id: str | None = None) -> str:
-        """Run BAW in-process (no subprocess)."""
+        """Run BAW in-process (no subprocess), with session history."""
         import re
         import asyncio
         from concurrent.futures import ThreadPoolExecutor, TimeoutError
@@ -319,6 +507,14 @@ class BaseConnector(ABC):
             cc = self._chat_config.get(chat_id, {}) if chat_id else {}
             mode = cc.get("mode") or config.get("mode", "quick")
 
+            # ── Session management ──
+            session = None
+            if chat_id:
+                session = self._get_or_create_session(chat_id)
+                conv_history = session["messages"][-self._MAX_SESSION_MSGS:] if session["messages"] else None
+            else:
+                conv_history = None
+
             # Run BAW with a timeout via thread pool
             with ThreadPoolExecutor(1) as pool:
                 fut = pool.submit(
@@ -328,11 +524,12 @@ class BaseConnector(ABC):
                     data_dir=data_dir,
                     mode=mode,
                     verbose=False,
+                    conversation_history=conv_history,
                 )
                 # Poll for result with cancel checking every 1s
                 import time as _time
                 _elapsed = 0
-                _max_wait = 60
+                _max_wait = 120  # increased from 60s for complex tasks
                 while _elapsed < _max_wait:
                     try:
                         response, info = fut.result(timeout=1)
@@ -343,11 +540,22 @@ class BaseConnector(ABC):
                             fut.cancel()
                             return "⏹ Cancelled."
                 else:
-                    # Timeout after 60s without result
+                    # Timeout after 120s without result
                     fut.cancel()
-                    return "⏳ BAW took too long (>60s). Try a simpler request."
+                    return "⏳ BAW took too long (>120s). Try a simpler request."
 
             output = response or ""
+
+            # ── Save session history ──
+            if session and info:
+                new_msgs = info.get("new_session_messages", [])
+                if new_msgs:
+                    session["messages"].extend(new_msgs)
+                    # Trim to max message count (keep latest)
+                    if len(session["messages"]) > self._MAX_SESSION_MSGS:
+                        session["messages"] = session["messages"][-self._MAX_SESSION_MSGS:]
+                session["updated"] = time.time()
+                self._save_session_to_disk(session)
 
             # Strip HTML tags for Telegram display
             output = re.sub(r'<[^>]+>', '', output)
@@ -378,7 +586,15 @@ class BaseConnector(ABC):
             "/search `<query>` — Search memories\n"
             "/board — Generate HTML dashboard\n"
             "/version — BAW version\n"
+            "/task `<action>` — Task session manager\n"
             "/help — This message\n\n"
+            "**Task commands:**\n"
+            "  `/task list` — Show saved tasks\n"
+            "  `/task new [name]` — Save current & start fresh\n"
+            "  `/task resume <id>` — Resume a saved task\n"
+            "  `/task save [name]` — Save/name current task\n"
+            "  `/task forget <id>` — Delete a saved task\n"
+            "  `/task info` — Show current task details\n\n"
             "**Examples:**\n"
             "• list files in current directory\n"
             "• check disk space\n"

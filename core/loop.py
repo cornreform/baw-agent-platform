@@ -195,6 +195,7 @@ def run_agent(
     interactive: bool = False,
     fresh_start: bool = False,
     mode: Optional[str] = None,
+    conversation_history: Optional[list[dict]] = None,
 ) -> tuple[str, dict]:
     """Run BAW agent with debate-first, execute-second flow.
 
@@ -203,6 +204,7 @@ def run_agent(
     Phase 3 — Execute: plan → execute → verify → report.
 
     If fresh_start=True, SOUL.md and memories are bypassed entirely.
+    conversation_history: list of {role, content, ...} dicts from previous turns.
     Returns: (response_text, info_dict)
     """
     # ── Initialise ──
@@ -254,7 +256,49 @@ def run_agent(
 
     # ── Phase 1: Build context ──
     ctx = Context(system_prompt=system_prompt, temperature=0.7)
+
+    # Inject conversation history (between system prompt and current prompt)
+    _history_msg_count = 1  # system message at index 0
+    if conversation_history:
+        for _hmsg in conversation_history:
+            _role = _hmsg.get("role", "")
+            _content = _hmsg.get("content", "")
+            if _role == "user":
+                ctx.add_user(_content)
+                _history_msg_count += 1
+            elif _role == "assistant":
+                ctx.add_assistant(_content, _hmsg.get("tool_calls"))
+                _history_msg_count += 1
+            elif _role == "tool":
+                ctx.add_tool_result(
+                    _hmsg.get("tool_call_id", "call_xxx"),
+                    _hmsg.get("name", ""),
+                    _content or "",
+                )
+                _history_msg_count += 1
+
+    # ── Quick Mode marker for new-message extraction ──
+    _pre_prompt_count = _history_msg_count
     ctx.add_user(prompt)
+
+    # ── Helper: extract new messages from this turn ──
+    def _extract_new_msgs(_ctx, _since_idx):
+        _out = []
+        for _m in _ctx.messages[_since_idx:]:
+            if hasattr(_m, 'role'):
+                _d = {"role": _m.role, "content": _m.content or ""}
+                if hasattr(_m, 'tool_calls') and _m.tool_calls:
+                    _d["tool_calls"] = _m.tool_calls
+                if hasattr(_m, 'tool_call_id') and getattr(_m, 'tool_call_id', None):
+                    _d["tool_call_id"] = _m.tool_call_id
+                if hasattr(_m, 'name') and getattr(_m, 'name', None):
+                    _d["name"] = _m.name
+                if _m.role != "system":
+                    _out.append(_d)
+            elif isinstance(_m, dict):
+                if _m.get("role") != "system":
+                    _out.append(dict(_m))
+        return _out
     if mem_text:
         ctx.add_user(f"Relevant memories:\n{mem_text}")
 
@@ -334,6 +378,7 @@ def run_agent(
             "iterations": 0,
             "steps": 0,
             "mode": "quick",
+            "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
         }
 
     # ═══════════════════════════════════════════════════════════════
@@ -453,6 +498,7 @@ def run_agent(
             "steps": 0,
             "adversarial": "debate",
             "adversarial_raw": court_result,
+            "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
         }
 
     # ═══════════════════════════════════════════════════════════════
@@ -480,6 +526,7 @@ def run_agent(
             "steps": 0,
             "adversarial": court_result["agreement_level"] if court_result else None,
             "adversarial_raw": court_result,
+            "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
         }
 
     # ── Build output ──
@@ -849,5 +896,6 @@ def run_agent(
         "steps": steps_completed,
         "adversarial": court_result["agreement_level"] if court_result else None,
         "adversarial_raw": court_result,
+        "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
     }
     return output, info
