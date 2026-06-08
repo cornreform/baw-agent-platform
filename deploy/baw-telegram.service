@@ -11,7 +11,7 @@ WorkingDirectory=/home/user/baw
 EnvironmentFile=/home/user/.baw/telegram.env
 Environment=PATH=/home/user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/home/user/.hermes/hermes-agent/venv/bin/python3 -u /home/user/baw/baw-bot --platform telegram --debug
-Restart=on-failure
+Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal

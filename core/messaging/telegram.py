@@ -79,6 +79,7 @@ class TelegramConnector(BaseConnector):
             {"command": "search",  "description": "Search stored memories"},
             {"command": "board",   "description": "Generate HTML dashboard"},
             {"command": "stop",    "description": "Stop current processing and cancel"},
+            {"command": "restart", "description": "Restart BAW engine"},
         ]
         try:
             self._client.post(
@@ -251,6 +252,12 @@ class TelegramConnector(BaseConnector):
                 return
             if response:
                 self.send(chat_id, response)
+
+            # If restart was requested, exit cleanly so systemd restarts
+            if self._restart_requested:
+                import os
+                logger.info("[Telegram] Restart requested — exiting")
+                os._exit(0)
         except Exception as e:
             logger.error(f"[Telegram] Process error: {e}")
             if not self._cancel_event.is_set():

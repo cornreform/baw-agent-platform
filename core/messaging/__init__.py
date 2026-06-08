@@ -79,6 +79,7 @@ class BaseConnector(ABC):
         self._name = self.__class__.__name__
         self._cancel_event = threading.Event()
         self._busy = False
+        self._restart_requested = False
 
     @abstractmethod
     def connect(self) -> bool:
@@ -171,6 +172,10 @@ class BaseConnector(ABC):
                 self._cancel_event.set()
                 self._busy = False
                 return "⏹ Stopped."
+
+            if cmd in ("restart",):
+                self._restart_requested = True
+                return "🔄 Restarting BAW engine..."
 
             if cmd == "mode" and arg:
                 return self._baw_cfg_set("mode", arg)
@@ -347,6 +352,7 @@ class BaseConnector(ABC):
             "Simply type anything and BAW will process it.\n\n"
             "**Commands:**\n"
             "/stop — Stop current processing and cancel\n"
+            "/restart — Restart BAW engine\n"
             "/btw `<text>` — Quick answer (no court)\n"
             "/model `<name>` — Switch model (deepseek / kimi / minimax)\n"
             "/models — List available models\n"
