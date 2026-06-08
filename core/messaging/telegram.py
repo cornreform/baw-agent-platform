@@ -283,6 +283,34 @@ class TelegramConnector(BaseConnector):
         text = msg.get("text", "").strip()
 
         if not text:
+            # ── Non-text message (file, photo, video, etc.) ──
+            doc = msg.get("document")
+            photo = msg.get("photo")
+            video = msg.get("video")
+            audio = msg.get("audio")
+            voice = msg.get("voice")
+
+            if doc:
+                fname = doc.get("file_name", "file")
+                mime = doc.get("mime_type", "")
+                fsize = doc.get("file_size", 0)
+                size_str = f"{fsize / 1024:.0f}KB" if fsize < 1e6 else f"{fsize / 1e6:.1f}MB"
+                reply = (
+                    f"📄 **收到檔案：{fname}**\n"
+                    f"類型：{mime or 'unknown'}\n"
+                    f"大小：{size_str}\n\n"
+                    f"⚠️ BAW 暫時未支援檔案處理。"
+                )
+                self.send(chat_id, reply)
+            elif photo:
+                self.send(chat_id, "🖼️ 收到圖片，但 BAW 暫時未支援圖片分析。")
+            elif video:
+                self.send(chat_id, "🎬 收到影片，但 BAW 暫時未支援影片處理。")
+            elif audio or voice:
+                self.send(chat_id, "🎵 收到音訊，但 BAW 暫時未支援語音處理。")
+            else:
+                # Other message types — silent ignore
+                pass
             return
 
         # Access control
