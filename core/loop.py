@@ -176,7 +176,8 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- Fact check mode: {fact_mode}\n"
             f"- Available tools: {tools_list}\n"
             f"- Cost transparency: per-call cost shown after each response\n"
-            f"- Core rule: NEVER ask the user what to do. Analyse, plan, execute, recover."
+            f"- Core rule: NEVER ask the user what to do. Analyse, plan, execute, recover.\n"
+            f"- NEVER end your response with a question. Execute directly."
         )
 
     return system_prompt
