@@ -1026,27 +1026,47 @@ class TelegramConnector(BaseConnector):
         finally:
             self._release_slot()
 
-    # ── Inline keyboard for model selection ──
+    # ── Inline keyboard for model selection (hierarchical: provider → model) ──
+
+    def _get_providers_config(self) -> dict:
+        """Get provider → models mapping from config."""
+        try:
+            baw = self._baw_ensure()
+            config = baw["config"]
+            providers = config.get("providers", {})
+            result = {}
+            for pname, pcfg in providers.items():
+                models = [m["id"] for m in pcfg.get("models", [])]
+                if models:
+                    result[pname] = models
+            return result
+        except Exception:
+            # Fallback hardcoded
+            return {
+                "deepseek": ["deepseek-v4-flash"],
+                "kimi": ["kimi-k2.6"],
+                "minimax": ["MiniMax-M2.5"],
+            }
 
     def _send_model_selector_text(self, chat_id: str, text: str) -> bool:
-        """Parse [MODEL_SELECT] formatted text and send as inline keyboard."""
+        """Parse [MODEL_SELECT] formatted text and send provider-level keyboard."""
         lines = text.strip().split("\n")
-        title = lines[1] if len(lines) > 1 else "Select model"
-        current = lines[2] if len(lines) > 2 else ""
-        models_str = lines[3] if len(lines) > 3 else ""
-        models = [m.strip() for m in models_str.split(",") if m.strip()]
-        if not models:
-            return self._send_text(chat_id, title)
+        title = lines[1] if len(lines) > 1 else "**Select Provider**"
+        current_model = lines[2] if len(lines) > 2 else ""
+        # Build provider keyboard
+        providers = self._get_providers_config()
         rows = []
-        for m in models:
-            label = f"\u25cf {m}" if m == current else f"  {m}"
-            rows.append([{"text": label, "callback_data": f"model_select:{m}"}])
+        for pname in providers:
+            mark = "●" if any(current_model == m for m in providers[pname]) else " "
+            rows.append([{"text": f"{mark} {pname}", "callback_data": f"provider_select:{pname}"}])
+        if not rows:
+            return self._send_text(chat_id, title)
         try:
             resp = self._client.post(
                 f"{self._api_base}/sendMessage",
                 json={
                     "chat_id": chat_id,
-                    "text": title,
+                    "text": f"{title}\nCurrent: `{current_model}`",
                     "reply_markup": __import__("json").dumps({"inline_keyboard": rows}),
                     "parse_mode": "Markdown",
                 },
@@ -1054,19 +1074,85 @@ class TelegramConnector(BaseConnector):
             )
             data = resp.json()
             if data.get("ok"):
+                self._selector_chat = chat_id
                 self._selector_msg_id = data["result"]["message_id"]
             return data.get("ok", False)
         except Exception as e:
-            logger.warning(f"[Telegram] Model selector send error: {e}")
+            logger.warning(f"[Telegram] Provider selector send error: {e}")
             return False
 
+    def _send_model_buttons(self, chat_id: str, msg_id: int, provider: str, current_model: str):
+        """Edit message to show models for a specific provider."""
+        providers = self._get_providers_config()
+        models = providers.get(provider, [])
+        if not models:
+            return
+        rows = []
+        for m in models:
+            label = f"\u25cf {m}" if m == current_model else f"  {m}"
+            rows.append([{"text": label, "callback_data": f"model_select:{m}"}])
+        # Back button
+        rows.append([{"text": "\u2190 Back", "callback_data": "provider_select:__back__"}])
+        try:
+            self._client.post(
+                f"{self._api_base}/editMessageText",
+                json={
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "text": f"**{provider}** models:\nCurrent: `{current_model}`",
+                    "reply_markup": __import__("json").dumps({"inline_keyboard": rows}),
+                    "parse_mode": "Markdown",
+                },
+                timeout=5,
+            )
+        except Exception as e:
+            logger.warning(f"[Telegram] Model buttons error: {e}")
+
     def _handle_callback(self, cb: dict):
-        """Handle inline keyboard callback (model selection)."""
+        """Handle inline keyboard callback (provider or model selection)."""
         data = cb.get("data", "")
         msg = cb.get("message", {})
         chat_id = str(msg["chat"]["id"])
         cb_id = cb["id"]
-        if data.startswith("model_select:"):
+        msg_id = msg.get("message_id")
+
+        if data.startswith("provider_select:"):
+            pname = data.split(":", 1)[1]
+            if pname == "__back__":
+                # Go back to provider list
+                providers = self._get_providers_config()
+                title = "**Select Provider**"
+                # Get current model from session
+                cc = getattr(self, '_chat_config', {}).get(chat_id, {})
+                current = cc.get("model", "deepseek-v4-flash")
+                rows = []
+                for pn in providers:
+                    rows.append([{"text": f"  {pn}", "callback_data": f"provider_select:{pn}"}])
+                self._client.post(
+                    f"{self._api_base}/editMessageText",
+                    json={
+                        "chat_id": chat_id,
+                        "message_id": msg_id,
+                        "text": f"{title}\nCurrent: `{current}`",
+                        "reply_markup": __import__("json").dumps({"inline_keyboard": rows}),
+                        "parse_mode": "Markdown",
+                    },
+                    timeout=5,
+                )
+            else:
+                # Show models for this provider
+                providers = self._get_providers_config()
+                cc = getattr(self, '_chat_config', {}).get(chat_id, {})
+                current = cc.get("model", "deepseek-v4-flash")
+                self._send_model_buttons(chat_id, msg_id, pname, current)
+            # Acknowledge
+            self._client.post(
+                f"{self._api_base}/answerCallbackQuery",
+                json={"callback_query_id": cb_id},
+                timeout=5,
+            )
+
+        elif data.startswith("model_select:"):
             model_name = data.split(":", 1)[1]
             route_msg = Message(
                 platform="telegram",
@@ -1080,27 +1166,20 @@ class TelegramConnector(BaseConnector):
                 json={"callback_query_id": cb_id, "text": f"Switched to {model_name}"},
                 timeout=5,
             )
-            if hasattr(self, "_selector_msg_id") and self._selector_msg_id:
-                models = self._MODELS
-                rows = []
-                for m in models:
-                    label = f"\u25cf {m}" if m == model_name else f"  {m}"
-                    rows.append([{"text": label, "callback_data": f"model_select:{m}"}])
-                try:
-                    self._client.post(
-                        f"{self._api_base}/editMessageText",
-                        json={
-                            "chat_id": chat_id,
-                            "message_id": self._selector_msg_id,
-                            "text": f"\u2705 Current: {model_name}",
-                            "reply_markup": __import__("json").dumps({"inline_keyboard": rows}),
-                        },
-                        timeout=5,
-                    )
-                except Exception:
-                    pass
+            # Update button to show selection
+            if msg_id:
+                providers = self._get_providers_config()
+                # Find which provider this model belongs to
+                sel_provider = None
+                for pn, mods in providers.items():
+                    if model_name in mods:
+                        sel_provider = pn
+                        break
+                if sel_provider:
+                    self._send_model_buttons(chat_id, msg_id, sel_provider, model_name)
             if result:
                 self.send(chat_id, result)
+
         else:
             self._client.post(
                 f"{self._api_base}/answerCallbackQuery",
