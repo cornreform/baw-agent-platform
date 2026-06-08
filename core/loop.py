@@ -599,236 +599,92 @@ def run_agent(
     if _execution_plan:
         _display_log.append(dsp.phase_plan(_execution_plan))
 
-    # ── Phase 3b: Execute plan step by step ──
-    # Note: After the debate phase, execution is purely operational.
-    # No re-litigation — the "what" is decided, now execute the "how".
-    max_iterations = 40
-    response = neutral_response
-    consecutive_failures = 0
-    _current_strategies: list[str] = []
+    # ── Phase 3b: Delegate each plan step to MiniMax executor ──
+    # Main brain (DeepSeek) decomposes tasks → MiniMax sub-agents execute each step
+    # Sub-agents return results → DeepSeek synthesises final answer
+    import importlib.util as _dt_iu
+    _dt_spec = _dt_iu.spec_from_file_location(
+        "_tk_delegate",
+        str(Path(__file__).resolve().parent.parent / "tools" / "delegate_task.py"),
+    )
+    _dt_mod = _dt_iu.module_from_spec(_dt_spec)
+    _dt_spec.loader.exec_module(_dt_mod)
+    _delegate_fn = _dt_mod.delegate_task
+
+    _execution_progress: list[str] = []
     steps_completed = 0
-    current_plan_step = 0
+    _delegation_results: list[str] = []
+    _delegation_failed = False
 
-    for iteration in range(max_iterations):
-        if not response.tool_calls:
-            break
+    for _step_idx, _step in enumerate(_execution_plan):
+        if progress_callback:
+            progress_callback()
 
-        for tc in response.tool_calls:
-            if progress_callback:
-                progress_callback()
-            func = tc.get("function", {})
-            name = func.get("name", "")
-            raw_args = func.get("arguments", "{}")
-
-            try:
-                args = json.loads(raw_args)
-            except json.JSONDecodeError:
-                args = {}
-
-            # ── Permission check ──
-            perm_result = perm.check(name, args)
-            if perm_result["decision"] == "deny":
-                result = f"[BLOCKED] {perm_result['reason']}"
-                ctx.add_tool_result(tc.get("id", ""), name, result)
-                consecutive_failures += 1
-                if verbose:
-                    print(f"  ⛔ {name} → BLOCKED: {perm_result['reason']}")
-                continue
-
-            # ── Save checkpoint before state-changing ops ──
-            checkpointer.save(
-                ctx.messages, tool_name=name, tool_args=args,
+        _step_goal = _step['desc']
+        _step_ctx = ""
+        if _delegation_results:
+            _step_ctx = "Previous steps completed:\n" + "\n---\n".join(
+                f"Step {i+1}:\n{r[:800]}" for i, r in enumerate(_delegation_results)
             )
 
-            # ── Record file history for write operations ──
-            _file_history = FileHistory(data_dir)
-            if name == "write_file" and "path" in args and "content" in args:
-                _file_history.record_write(args["path"], args["content"],
-                    action="create" if not Path(args["path"]).expanduser().exists() else "update",
-                    metadata={"source": "agent_tool", "step": checkpointer._step_count})
+        _step_desc_short = _step['desc'][:80]
+        if verbose:
+            print(f"  🤖 Delegating step {_step_idx + 1}/{len(_execution_plan)}: {_step_desc_short}")
 
-            # ── Execute tool ──
-            exe_result = execute_tool(name, args)
-            step_success = not exe_result.startswith("[Error") and not exe_result.startswith("[BLOCKED")
+        try:
+            _result = _delegate_fn(
+                goal=_step_goal,
+                context=_step_ctx,
+            )
+            _delegation_results.append(_result)
+            steps_completed += 1
 
+            # Display progress
+            _execution_progress.append(f"Step {_step_idx + 1}: ✅ {_step_desc_short}")
+            _dsp = dsp.phase_step_done(_step_idx + 1, len(_execution_plan), _step_desc_short)
+            _display_log.append(_dsp)
             if verbose:
-                short = exe_result[:200].replace("\n", " ")
-                print(f"  🛠️  {name}(...) → {'✅' if step_success else '❌'} {short}...")
+                print(_dsp)
+        except Exception as _e:
+            _delegation_results.append(f"[FAILED] {_e}")
+            _delegation_failed = True
+            _dsp = dsp.phase_step_error(_step_idx + 1, len(_execution_plan), _step_desc_short, str(_e)[:80])
+            _display_log.append(_dsp)
+            if verbose:
+                print(f"  ❌ Step {_step_idx + 1} failed: {_e}")
+            break
 
-            # ── Handle step result ──
-            if step_success:
-                # ── Verify step result ──
-                verifier_enabled = config.get("verify", {}).get("enabled", False) and _mode == "tight"
-                if verifier_enabled:
-                    from .verifier import verify_step
-                    v_result = verify_step(
-                        goal=prompt,
-                        tool_name=name,
-                        tool_args=args,
-                        tool_result=exe_result,
-                        config=config,
-                        model_id=model_id,
-                    )
-                    if verbose:
-                        print(f"  🔍 Verify [{name}]: {v_result['score']}/10 {'✅' if v_result['passed'] else '❌'} {v_result['reason'][:80]}")
-
-                    if not v_result["passed"]:
-                        consecutive_failures += 1
-                        checkpointer.record_attempt()
-                        strategy_desc = f"verify({name}): {v_result['reason'][:60]}"
-                        _current_strategies.append(strategy_desc)
-                        checkpointer.record_strategy(strategy_desc)
-                        ctx.add_tool_result(tc.get("id", ""), name,
-                            f"[VERIFY_FAIL] {v_result['reason']}\nActionable: {v_result['actionable']}\n---\n{exe_result}")
-                        if verbose:
-                            print(f"  ⛔ Verify failed: {v_result['reason'][:80]}")
-                        continue
-
-                # Commit checkpoint, record success
-                checkpointer.commit()
-                consecutive_failures = 0
-                steps_completed += 1
-                _current_strategies.clear()
-                if current_plan_step < len(_execution_plan):
-                    _step_desc = _execution_plan[current_plan_step]['desc'][:80]
-                    _execution_progress.append(f"Step {current_plan_step + 1}: ✅ {_step_desc}")
-                    _dsp = dsp.phase_step_done(current_plan_step + 1, len(_execution_plan), _step_desc)
-                    _display_log.append(_dsp)
-                    if verbose:
-                        print(_dsp)
-                    current_plan_step += 1
-
-                ctx.add_tool_result(tc.get("id", ""), name, exe_result)
-
-                # Auto-commit after successful write operation
-                if name == "write_file":
-                    try:
-                        auto_commit(
-                            data_dir or Path.home() / ".baw",
-                            f"write: {args.get('path', '?')}"
-                        )
-                    except Exception:
-                        pass
-                elif name == "bash" and "git commit" in args.get("command", ""):
-                    try:
-                        auto_commit(data_dir or Path.home() / ".baw", "git operation")
-                    except Exception:
-                        pass
-            else:
-                # Step failed — strategy-based recovery
-                consecutive_failures += 1
-                checkpointer.record_attempt()
-
-                strategy_desc = f"{name}({args.get('path', args.get('command', '?'))})"
-                _current_strategies.append(strategy_desc)
-                checkpointer.record_strategy(strategy_desc)
-
-                ctx.add_tool_result(tc.get("id", ""), name, exe_result)
-
-                # ── Try degradation chain ──
-                from .degradation import next_strategy as next_degradation
-                degraded = next_degradation(name, _current_strategies, args, exe_result)
-                if degraded:
-                    strategy_name = degraded["name"]
-                    new_args = degraded["new_args"]
-                    if verbose:
-                        print(f"  🔄 Degradation [{name}]: → {strategy_name} ({degraded['description']})")
-
-                    degraded_result = execute_tool(name, new_args)
-                    degraded_success = not degraded_result.startswith("[Error") and not degraded_result.startswith("[BLOCKED")
-                    _current_strategies.append(f"degrade:{strategy_name}")
-                    checkpointer.record_strategy(f"degrade:{strategy_name}")
-
-                    if degraded_success:
-                        if verbose:
-                            print(f"  ✅ Degradation succeeded: {strategy_name}")
-                        consecutive_failures = 0
-                        steps_completed += 1
-                        if current_plan_step < len(_execution_plan):
-                            _step_desc = _execution_plan[current_plan_step]['desc'][:80]
-                            _execution_progress.append(f"Step {current_plan_step + 1}: ✅ {_step_desc} (degraded)")
-                            _dsp = dsp.phase_step_done(current_plan_step + 1, len(_execution_plan), _step_desc, f"via {strategy_name}")
-                            _display_log.append(_dsp)
-                            if verbose:
-                                print(_dsp)
-                            current_plan_step += 1
-                        checkpointer.commit()
-                        ctx.add_tool_result(tc.get("id", ""), name, degraded_result)
-                        continue
-                    else:
-                        consecutive_failures += 1
-                        checkpointer.record_attempt()
-                        ctx.add_tool_result(tc.get("id", ""), name, degraded_result + f"\n[Degrade {strategy_name} also failed]")
-                        if verbose:
-                            print(f"  ❌ Degradation also failed: {strategy_name}")
-
-                if consecutive_failures >= (1 if _mode == "hybrid" else MAX_CONSECUTIVE_FAILURES):
-                    error_summary = (
-                        f"<b>🔄 BAW Strategy Recovery</b>\n\n"
-                        f"After {len(_current_strategies)} strategy attempts, "
-                        f"this approach is not working:\n"
-                        f"{'<br>'.join(f'❌ {s}' for s in _current_strategies)}\n\n"
-                    )
-                    _max_fails = 1 if _mode == "hybrid" else MAX_CONSECUTIVE_FAILURES
-                    if consecutive_failures < _max_fails * 2:
-                        error_summary += (
-                            f"<b>Changing strategy to a different approach...</b>\n"
-                            f"Previous approaches blocked/already tried."
-                        )
-                        _current_strategies.clear()
-                    else:
-                        error_summary += (
-                            f"<b>⛔ All approaches exhausted.</b>\n"
-                            f"Analysis required for next steps."
-                        )
-
-                    if not output.endswith("\n"):
-                        output += "\n"
-                    output += error_summary + "\n"
-                    consecutive_failures = 0
-                    break
-
-        # ── Next LLM call ──
-        if consecutive_failures >= (1 if _mode == "hybrid" else MAX_CONSECUTIVE_FAILURES):
-            consecutive_failures = 0
-
-        if _execution_progress:
-            _progress_text = "\n[Progress so far]\n" + "\n".join(_execution_progress)
-            if len(_execution_progress) >= len(_execution_plan):
-                _progress_text += "\n[All plan steps complete]"
-            else:
-                _next_idx = min(current_plan_step, len(_execution_plan) - 1)
-                _remaining = len(_execution_plan) - current_plan_step
-                _progress_text += f"\n[Next: Step {current_plan_step + 1}: {_execution_plan[_next_idx]['desc'][:80]}]"
-                _progress_text += f"\n[{_remaining} steps remaining]"
-            if "[Progress" in ctx.system_prompt:
-                ctx.system_prompt = ctx.system_prompt.rsplit("\n[Progress", 1)[0] + _progress_text
-            else:
-                ctx.system_prompt += _progress_text
-
-        fb_result = call_llm_with_fallback(
-            config, ctx.to_openai_messages(),
-            tools=get_openai_tools(), temperature=0.7,
+    # ── Phase 3c: DeepSeek synthesises final response from delegation results ──
+    if _delegation_results:
+        _synthesis_prompt = (
+            f"[ORCHESTRATOR] Completed {len(_execution_plan)} delegated steps for: {prompt[:200]}\n\n"
+            f"Results from each step:\n"
+            + "\n".join(f"Step {i+1}:\n{r}" for i, r in enumerate(_delegation_results))
+            + "\n\n---\nSynthesise a final comprehensive response for the user. "
+            "Present the key findings clearly. Do NOT describe the delegation or sub-agent process. "
+            "Just give the answer as if you did it yourself."
         )
-        response = fb_result.response
+        ctx.add_user(_synthesis_prompt)
+
+        fb = call_llm_with_fallback(
+            config, ctx.to_openai_messages(),
+            temperature=0.7,
+        )
+        response = fb.response
         total_llm_calls += 1
         cost = calculate_cost(model, response.input_tokens, response.output_tokens)
         session_cost += cost
-        record_cost(
-            f"{model.provider}/{model.id}",
-            response.input_tokens, response.output_tokens, cost,
-        )
-        if verbose:
-            print(f"\n[LLM #{total_llm_calls}] {fb_result.model_used} | tokens: {response.input_tokens}↑ {response.output_tokens}↓ ${cost:.4f}")
+        record_cost(f"{model.provider}/{model.id}", response.input_tokens, response.output_tokens, cost)
         ctx.add_assistant(response.content, response.tool_calls)
 
-        # Compact context if needed
-        if ctx.count_tokens_approx() > model.context_window * 0.7:
-            ctx.messages = ctx.messages[:1] + ctx.messages[-10:]
-            if verbose:
-                print("  [Context compacted]")
+        if verbose:
+            print(f"\n[LLM #{total_llm_calls}] {fb.model_used} | Synthesis complete")
+    else:
+        # No delegation results — fall back to neutral response
+        response = neutral_response
+        _delegation_failed = True
 
-    # ── Collect output ──
+    # ── Collect final output ──
     assistant_responses = []
     for msg in ctx.messages:
         if hasattr(msg, 'role'):

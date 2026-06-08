@@ -106,6 +106,8 @@ class TelegramConnector(BaseConnector):
             {"command": "board",   "description": "Generate HTML dashboard"},
             {"command": "stop",    "description": "Stop current processing and cancel"},
             {"command": "restart", "description": "Restart BAW engine"},
+            {"command": "reload",  "description": "Hot-reload tools & config (no restart)"},
+            {"command": "evolve",  "description": "Self-evolution stats & patterns"},
         ]
         try:
             self._client.post(

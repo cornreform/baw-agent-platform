@@ -69,10 +69,26 @@ def execute_tool(name: str, arguments: dict) -> str:
     tool = get_tool(name)
     if not tool:
         return f"Error: unknown tool '{name}'"
+    import time as _t
+    _start = _t.time()
     try:
         result = tool.handler(**arguments)
+        _dur = _t.time() - _start
+        # Layer 1: Track successful tool call
+        try:
+            from .evolve import track_tool_call
+            track_tool_call(name, arguments, success=True, duration=_dur)
+        except Exception:
+            pass
         return str(result)
     except Exception as e:
+        _dur = _t.time() - _start
+        # Layer 1: Track failed tool call
+        try:
+            from .evolve import track_tool_call
+            track_tool_call(name, arguments, success=False, duration=_dur, error=str(e))
+        except Exception:
+            pass
         return f"Error executing {name}: {e}"
 
 
