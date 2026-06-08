@@ -7,6 +7,7 @@ Fully featured: commands, replies, error handling, reconnection.
 from __future__ import annotations
 import json
 import logging
+import threading
 import time
 import httpx
 from typing import Optional
@@ -160,15 +161,21 @@ class TelegramConnector(BaseConnector):
 
         logger.info(f"[Telegram] <{user_name}> {text[:80]}")
 
-        # Send typing indicator
-        try:
-            self._client.post(
-                f"{self._api_base}/sendChatAction",
-                json={"chat_id": chat_id, "action": "typing"},
-                timeout=5,
-            )
-        except Exception:
-            pass
+        # Send typing indicator with heartbeats
+        _typing_stop = threading.Event()
+        def _typing_heartbeat():
+            while not _typing_stop.is_set():
+                try:
+                    self._client.post(
+                        f"{self._api_base}/sendChatAction",
+                        json={"chat_id": chat_id, "action": "typing"},
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
+                _typing_stop.wait(3.0)
+        _hb = threading.Thread(target=_typing_heartbeat, daemon=True)
+        _hb.start()
 
         # Route through BAW
         msg_obj = Message(
@@ -179,5 +186,6 @@ class TelegramConnector(BaseConnector):
             raw=msg,
         )
         response = self.route(msg_obj)
+        _typing_stop.set()
         if response:
             self.send(chat_id, response)
