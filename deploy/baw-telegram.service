@@ -9,6 +9,7 @@ User=radxa
 Group=radxa
 WorkingDirectory=/home/radxa/baw
 EnvironmentFile=/home/radxa/.baw/telegram.env
+Environment=PATH=/home/radxa/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/home/radxa/.hermes/hermes-agent/venv/bin/python3 -u /home/radxa/baw/baw-bot --platform telegram --debug
 Restart=on-failure
 RestartSec=10
