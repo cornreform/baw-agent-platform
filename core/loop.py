@@ -458,7 +458,8 @@ def run_agent(
     if court_enabled:
         if verbose:
             print("\n  ⚖️ Court: Devil + Angel analyzing independently...")
-
+        if progress_callback:
+            progress_callback("court", "", {})
         verdict = court.hold_court(prompt, mem_text)
         court_result = verdict
 

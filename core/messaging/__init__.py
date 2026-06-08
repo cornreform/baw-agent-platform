@@ -930,18 +930,26 @@ class BaseConnector(ABC):
                 )
                 # Poll for result with cancel checking every 1s
                 import time as _time
-                _elapsed = 0
-                _max_wait = 300
-                while _elapsed < _max_wait:
+                _idle_seconds = 0
+                _max_idle = 180          # 3 min idle before considering stuck
+                _max_total = 1800         # 30 min absolute max
+                _total_elapsed = 0
+                while _total_elapsed < _max_total:
                    try:
                        response, info = fut.result(timeout=1)
                        break
                    except TimeoutError:
-                       _elapsed += 1
-                       # Reset timeout if progress was made recently
+                       _total_elapsed += 1
+                       # Extend if thread is alive and making progress
                        with _progress_lock:
-                           if _last_progress > time.time() - 60:
-                               _elapsed = 0
+                           idle = time.time() - _last_progress
+                       if idle > _max_idle:
+                           _idle_seconds += 1
+                           if _idle_seconds > 30:  # idle > 180+30 = 210s total
+                               fut.cancel()
+                               return "⏳ Task stuck (no progress for >3min). Try /stop to cancel, or split into smaller steps."
+                       else:
+                           _idle_seconds = 0
                        if self._cancel_event.is_set():
                            fut.cancel()
                            return "⏹ Cancelled."
