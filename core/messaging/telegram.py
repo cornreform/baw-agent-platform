@@ -97,40 +97,115 @@ class TelegramConnector(BaseConnector):
             self._client = None
 
     def send(self, chat_id: str, text: str) -> bool:
-        """Send a message to a Telegram chat."""
+        """Send a message to a Telegram chat. Supports MEDIA: tags."""
         if not self._client or not self._token:
             return False
         try:
-            # Split long messages
-            if len(text) > MAX_MESSAGE_LENGTH:
-                parts = []
-                while text:
-                    parts.append(text[:MAX_MESSAGE_LENGTH])
-                    text = text[MAX_MESSAGE_LENGTH:]
-                for part in parts:
-                    self._client.post(
-                        f"{self._api_base}/sendMessage",
-                        json={"chat_id": chat_id, "text": part, "parse_mode": "Markdown"},
-                        timeout=10,
-                    )
-                return True
-            r = self._client.post(
-                f"{self._api_base}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
-                timeout=10,
-            )
-            if r.status_code != 200:
-                # Retry without Markdown if parse failed
-                if "can't parse entities" in r.text:
-                    r = self._client.post(
-                        f"{self._api_base}/sendMessage",
-                        json={"chat_id": chat_id, "text": text},
-                        timeout=10,
-                    )
-            return r.status_code == 200
+            # ── Extract MEDIA: tags ──
+            import re as _re
+            media_files = _re.findall(r'^MEDIA:(.+)$', text, _re.MULTILINE)
+            if media_files:
+                text = _re.sub(r'^MEDIA:.+$\n?', '', text, flags=_re.MULTILINE).strip()
+
+            # ── Send text (if any remains) ──
+            text_ok = True
+            if text:
+                if len(text) > MAX_MESSAGE_LENGTH:
+                    parts = []
+                    remaining = text
+                    while remaining:
+                        parts.append(remaining[:MAX_MESSAGE_LENGTH])
+                        remaining = remaining[MAX_MESSAGE_LENGTH:]
+                    for part in parts:
+                        text_ok &= self._send_text(chat_id, part)
+                else:
+                    text_ok = self._send_text(chat_id, text)
+
+            # ── Send media files ──
+            for fpath in media_files:
+                fpath = fpath.strip()
+                self._send_media(chat_id, fpath)
+
+            return text_ok
         except Exception as e:
             logger.error(f"[Telegram] send error: {e}")
             return False
+
+    def _send_text(self, chat_id: str, text: str) -> bool:
+        """Send a plain text message with Markdown support."""
+        r = self._client.post(
+            f"{self._api_base}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            if "can't parse entities" in r.text:
+                r = self._client.post(
+                    f"{self._api_base}/sendMessage",
+                    json={"chat_id": chat_id, "text": text},
+                    timeout=10,
+                )
+        return r.status_code == 200
+
+    _MEDIA_EXT_MAP = {
+        ".png": "sendPhoto", ".jpg": "sendPhoto", ".jpeg": "sendPhoto",
+        ".webp": "sendPhoto", ".gif": "sendPhoto",
+        ".mp4": "sendVideo", ".mov": "sendVideo",
+        ".mp3": "sendAudio", ".wav": "sendAudio",
+        ".ogg": "sendVoice",
+    }
+
+    def _send_media(self, chat_id: str, file_path: str):
+        """Send a media file using the appropriate Telegram API endpoint."""
+        from pathlib import Path
+
+        fpath = Path(file_path).expanduser()
+        if not fpath.exists():
+            logger.warning(f"[Telegram] MEDIA file not found: {fpath}")
+            self._send_text(chat_id, f"File not found: {fpath}")
+            return
+
+        ext = fpath.suffix.lower()
+        endpoint = self._MEDIA_EXT_MAP.get(ext, "sendDocument")
+
+        field_map = {
+            "sendPhoto": "photo", "sendDocument": "document",
+            "sendVideo": "video", "sendAudio": "audio", "sendVoice": "voice",
+        }
+        field = field_map.get(endpoint, "document")
+
+        try:
+            with open(fpath, "rb") as f:
+                files = {field: (fpath.name, f)}
+                r = self._client.post(
+                    f"{self._api_base}/{endpoint}",
+                    data={"chat_id": chat_id},
+                    files=files,
+                    timeout=60,
+                )
+            if r.status_code != 200:
+                logger.warning(f"[Telegram] Media send failed ({endpoint}): {r.text[:200]}")
+                if endpoint != "sendDocument":
+                    self._send_media_as_document(chat_id, fpath)
+        except Exception as e:
+            logger.error(f"[Telegram] Media send error ({fpath}): {e}")
+
+    def _send_media_as_document(self, chat_id: str, fpath):
+        """Fallback: send any file as a document."""
+        from pathlib import Path
+        fpath = Path(fpath)
+        if not fpath.exists():
+            return
+        try:
+            with open(fpath, "rb") as f:
+                self._client.post(
+                    f"{self._api_base}/sendDocument",
+                    data={"chat_id": chat_id},
+                    files={"document": (fpath.name, f)},
+                    timeout=60,
+                )
+        except Exception as e:
+            logger.error(f"[Telegram] Document fallback error ({fpath}): {e}")
 
     def _poll_loop(self):
         """Long-polling loop."""
