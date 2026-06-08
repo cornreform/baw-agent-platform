@@ -359,7 +359,7 @@ def call_llm_with_fallback(
     # Try primary
     try:
         model = get_model(config, primary_id)
-        fb_temp = temperature if temperature is not None else model.temperature
+        fb_temp = model.temperature  # Always use model's own temp
         fb_kwargs = model.model_kwargs
         resp = _call_with_timeout(model, messages, tools, fb_temp, max_tokens)
         return FallbackResult(
@@ -376,7 +376,7 @@ def call_llm_with_fallback(
     # Fallback
     try:
         model = get_model(config, fallback_id)
-        fb_temp = temperature if temperature is not None else model.temperature
+        fb_temp = model.temperature  # Always use model's own temp
         resp = _call_with_timeout(model, messages, tools, fb_temp, max_tokens)
         return FallbackResult(
             response=resp,
