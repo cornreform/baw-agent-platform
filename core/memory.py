@@ -8,12 +8,15 @@ Internal: graph-based 2-hop scoring (BAW-PLAN v1)
 import json
 import time
 import re
+import random
 from pathlib import Path
 from typing import Optional
 from datetime import datetime, timezone
 
 
 class MemoryStore:
+    _id_counter: int = 0
+
     def __init__(self, data_dir: Path):
         self.store_path = data_dir / "memory" / "store.jsonl"
         self.edges_path = data_dir / "memory" / "edges.json"
@@ -140,7 +143,7 @@ class MemoryStore:
                 continue
             existing_words = self._keywords(existing.get("content", ""))
             overlap = words & existing_words
-            if len(overlap) < 2:
+            if len(overlap) < 1:
                 continue
 
             weight = round(self._jaccard(words, existing_words), 4)
@@ -227,8 +230,9 @@ class MemoryStore:
         Auto-creates edges to related memories (keyword-based Jaccard).
         Runs associative spread to boost neighbours via the edges graph.
         """
+        MemoryStore._id_counter = (MemoryStore._id_counter + 1) % 10000
         entry = {
-            "id": f"mem_{int(time.time() * 1000)}",
+            "id": f"mem_{int(time.time() * 1000000)}_{MemoryStore._id_counter:04d}",
             "content": content,
             "type": "note",
             "tags": tags or [],
