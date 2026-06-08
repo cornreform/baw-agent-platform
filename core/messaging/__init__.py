@@ -176,10 +176,24 @@ class BaseConnector(ABC):
         """Run a BAW command and return the output."""
         import subprocess as sp
         import shlex
+        import shutil
         try:
-            # Use the bash wrapper for reliability
+            # Resolve `baw` CLI — not always in PATH from systemd
+            baw_cmd = shutil.which("baw")
+            if not baw_cmd:
+                # Fallback to known locations
+                for p in [
+                    Path.home() / ".local" / "bin" / "baw",
+                    Path(__file__).parent.parent / "baw",
+                ]:
+                    if p.exists():
+                        baw_cmd = str(p)
+                        break
+            if not baw_cmd:
+                return "❌ BAW CLI not found. Install with: cd ~/baw && ./install.sh"
+
             result = sp.run(
-                ["baw", "--mode", self.config.get("mode", "tight"), prompt],
+                [baw_cmd, "--mode", self.config.get("mode", "tight"), prompt],
                 capture_output=True, text=True, timeout=120,
                 cwd=str(Path.home() / "baw"),
             )
