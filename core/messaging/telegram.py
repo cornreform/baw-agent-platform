@@ -232,6 +232,230 @@ class TelegramConnector(BaseConnector):
         except Exception as e:
             logger.error(f"[Telegram] Document fallback error ({fpath}): {e}")
 
+    # ── File processing ─────────────────────────────────────────
+
+    def _download_file(self, file_id: str, file_name: str = "file") -> str:
+        """Download a file from Telegram Bot API. Returns local path."""
+        import os
+        from pathlib import Path
+
+        # Get file path from Telegram
+        r = self._client.post(
+            f"{self._api_base}/getFile",
+            json={"file_id": file_id},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            raise RuntimeError(f"getFile failed: {r.text[:200]}")
+        data = r.json()
+        if not data.get("ok"):
+            raise RuntimeError(f"getFile returned error: {data}")
+        tg_path = data["result"]["file_path"]
+
+        # Download file
+        dl_url = f"https://api.telegram.org/file/bot{self._token}/{tg_path}"
+        dl_r = self._client.get(dl_url, timeout=120)
+        if dl_r.status_code != 200:
+            raise RuntimeError(f"File download failed: {dl_r.status_code}")
+
+        # Save to temp
+        tmp_dir = Path.home() / ".baw" / "downloads"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        local_path = tmp_dir / file_name
+        # Avoid collisions
+        if local_path.exists():
+            base = local_path.stem
+            ext = local_path.suffix
+            i = 1
+            while local_path.exists():
+                local_path = tmp_dir / f"{base}_{i}{ext}"
+                i += 1
+        local_path.write_bytes(dl_r.content)
+        logger.info(f"[Telegram] Downloaded: {tg_path} → {local_path} ({len(dl_r.content)} bytes)")
+        return str(local_path)
+
+    def _extract_file_content(self, file_path: str) -> str:
+        """Extract text content from a file based on extension. Returns str."""
+        from pathlib import Path
+
+        fp = Path(file_path)
+        ext = fp.suffix.lower()
+        name = fp.name
+
+        # ── Plain text ──
+        if ext in (".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".yml",
+                    ".log", ".ini", ".cfg", ".conf", ".toml", ".py",
+                    ".js", ".ts", ".html", ".css", ".sh", ".bash"):
+            try:
+                return fp.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                return fp.read_text(encoding="latin-1")
+
+        # ── PowerPoint ──
+        elif ext in (".pptx", ".pptm"):
+            try:
+                from pptx import Presentation
+                prs = Presentation(fp)
+                parts = []
+                for i, slide in enumerate(prs.slides, 1):
+                    texts = []
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text") and shape.text.strip():
+                            texts.append(shape.text.strip())
+                    if texts:
+                        parts.append(f"--- Slide {i} ---\n" + "\n".join(texts))
+                return "\n\n".join(parts) if parts else "[No text found in slides]"
+            except Exception as e:
+                return f"[Error extracting PowerPoint: {e}]"
+
+        # ── Word ──
+        elif ext in (".docx", ".docm"):
+            try:
+                from docx import Document
+                doc = Document(fp)
+                paras = [p.text for p in doc.paragraphs if p.text.strip()]
+                return "\n\n".join(paras) if paras else "[No text found in document]"
+            except Exception as e:
+                return f"[Error extracting Word: {e}]"
+
+        # ── PDF ──
+        elif ext == ".pdf":
+            try:
+                # Try PyMuPDF first (fastest)
+                import fitz
+                doc = fitz.open(fp)
+                pages = []
+                for i, page in enumerate(doc, 1):
+                    text = page.get_text().strip()
+                    if text:
+                        pages.append(f"--- Page {i} ---\n{text}")
+                doc.close()
+                result = "\n\n".join(pages)
+                if result.strip():
+                    return result
+                # Fallback: pdftotext if installed
+                import subprocess as sp
+                txt_path = fp.with_suffix(".txt")
+                sp.run(["pdftotext", str(fp), str(txt_path)], capture_output=True, timeout=30)
+                if txt_path.exists():
+                    return txt_path.read_text(encoding="utf-8")
+                return "[No text extracted from PDF]"
+            except Exception as e:
+                return f"[Error extracting PDF: {e}]"
+
+        # ── Excel ──
+        elif ext in (".xlsx", ".xlsm"):
+            try:
+                import openpyxl
+                wb = openpyxl.load_workbook(fp, read_only=True, data_only=True)
+                parts = []
+                for sheet_name in wb.sheetnames:
+                    ws = wb[sheet_name]
+                    rows = []
+                    for row in ws.iter_rows(values_only=True):
+                        vals = [str(v) if v is not None else "" for v in row]
+                        line = " | ".join(vals)
+                        if line.strip():
+                            rows.append(line)
+                    if rows:
+                        parts.append(f"--- Sheet: {sheet_name} ---\n" + "\n".join(rows))
+                wb.close()
+                return "\n\n".join(parts) if parts else "[No data found in spreadsheet]"
+            except Exception as e:
+                return f"[Error extracting Excel: {e}]"
+
+        # ── CSV (fallback for .csv not caught above) ──
+        elif ext == ".csv":
+            import csv, io
+            try:
+                text = fp.read_text(encoding="utf-8")
+                reader = csv.reader(io.StringIO(text))
+                lines = [" | ".join(row) for row in reader]
+                return "\n".join(lines)
+            except Exception as e:
+                return f"[Error reading CSV: {e}]"
+
+        # ── Images ──
+        elif ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"):
+            try:
+                import pytesseract
+                from PIL import Image
+                img = Image.open(fp)
+                text = pytesseract.image_to_string(img, lang="chi_sim+eng")
+                if text.strip():
+                    return f"[OCR extracted text from {name}]\n\n{text}"
+                return f"[Image {name}: no text detected via OCR]"
+            except Exception as e:
+                return f"[Error processing image {name}: {e}]"
+
+        # ── Unknown ──
+        else:
+            return f"[Unsupported file type: {ext}. Cannot extract content.]"
+
+    def _process_document_file(self, chat_id: str, doc: dict, msg: dict):
+        """Download, extract, and analyze a document via BAW."""
+        try:
+            file_id = doc["file_id"]
+            file_name = doc.get("file_name", "document")
+            self.send(chat_id, f"📥 Downloading **{file_name}**...")
+
+            local_path = self._download_file(file_id, file_name)
+            self.send(chat_id, f"🔍 Extracting content...")
+
+            content = self._extract_file_content(local_path)
+
+            # Build analysis prompt
+            prompt = (
+                f"[File: {file_name}]\n"
+                f"[Type: {doc.get('mime_type', 'unknown')}]\n\n"
+                f"{content}\n\n"
+                f"---\n"
+                f"Analyze this file. "
+                f"Summarize its key content in Traditional Chinese. "
+                f"If it's a technical document, identify the main topics."
+            )
+
+            self.send(chat_id, f"🤔 Analyzing with BAW...")
+            response = self._run_baw(prompt, chat_id=chat_id)
+            self.send(chat_id, response)
+
+        except Exception as e:
+            logger.error(f"[Telegram] Document processing error: {e}")
+            self.send(chat_id, f"❌ Error processing document: {e}")
+        finally:
+            self._busy = False
+
+    def _process_image_file(self, chat_id: str, photo_data: dict, msg: dict):
+        """Download an image and run OCR + BAW analysis."""
+        try:
+            file_id = photo_data["file_id"]
+            file_name = f"photo_{file_id[:8]}.jpg"
+            self.send(chat_id, f"📥 Downloading image...")
+
+            local_path = self._download_file(file_id, file_name)
+            self.send(chat_id, f"🔍 Running OCR...")
+
+            content = self._extract_file_content(local_path)
+
+            prompt = (
+                f"[File: {file_name}]\n"
+                f"[Type: image]\n\n"
+                f"OCR extracted text:\n{content}\n\n"
+                f"---\n"
+                f"Analyze this image content. "
+                f"Summarize what you see in Traditional Chinese."
+            )
+
+            self.send(chat_id, f"🤔 Analyzing with BAW...")
+            response = self._run_baw(prompt, chat_id=chat_id)
+            self.send(chat_id, response)
+
+        except Exception as e:
+            logger.error(f"[Telegram] Image processing error: {e}")
+            self.send(chat_id, f"❌ Error processing image: {e}")
+        finally:
+            self._busy = False
+
     def _poll_loop(self):
         """Long-polling loop."""
         if not self._client:
@@ -283,7 +507,7 @@ class TelegramConnector(BaseConnector):
         text = msg.get("text", "").strip()
 
         if not text:
-            # ── Non-text message (file, photo, video, etc.) ──
+            # ── Non-text message — process file through BAW ──
             doc = msg.get("document")
             photo = msg.get("photo")
             video = msg.get("video")
@@ -291,26 +515,32 @@ class TelegramConnector(BaseConnector):
             voice = msg.get("voice")
 
             if doc:
-                fname = doc.get("file_name", "file")
-                mime = doc.get("mime_type", "")
-                fsize = doc.get("file_size", 0)
-                size_str = f"{fsize / 1024:.0f}KB" if fsize < 1e6 else f"{fsize / 1e6:.1f}MB"
-                reply = (
-                    f"📄 **收到檔案：{fname}**\n"
-                    f"類型：{mime or 'unknown'}\n"
-                    f"大小：{size_str}\n\n"
-                    f"⚠️ BAW 暫時未支援檔案處理。"
-                )
-                self.send(chat_id, reply)
+                if self._busy:
+                    self.send(chat_id, "⏳ Still processing. Try again later.")
+                    return
+                self._busy = True
+                threading.Thread(
+                    target=self._process_document_file,
+                    args=(chat_id, doc, msg),
+                    daemon=True,
+                ).start()
             elif photo:
-                self.send(chat_id, "🖼️ 收到圖片，但 BAW 暫時未支援圖片分析。")
+                if self._busy:
+                    self.send(chat_id, "⏳ Still processing. Try again later.")
+                    return
+                # Get the largest photo size
+                photo_data = max(photo, key=lambda p: p.get("file_size", 0))
+                self._busy = True
+                threading.Thread(
+                    target=self._process_image_file,
+                    args=(chat_id, photo_data, msg),
+                    daemon=True,
+                ).start()
             elif video:
                 self.send(chat_id, "🎬 收到影片，但 BAW 暫時未支援影片處理。")
             elif audio or voice:
                 self.send(chat_id, "🎵 收到音訊，但 BAW 暫時未支援語音處理。")
-            else:
-                # Other message types — silent ignore
-                pass
+            # else: silent ignore for unknown types
             return
 
         # Access control
