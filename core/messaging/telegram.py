@@ -260,11 +260,12 @@ class TelegramConnector(BaseConnector):
             if response:
                 self.send(chat_id, response)
 
-            # If restart was requested, exit cleanly so systemd restarts
+            # If restart was requested, re-init BAW engine in-process
             if self._restart_requested:
-                import os
-                logger.info("[Telegram] Restart requested — exiting")
-                os._exit(0)
+                self._restart_requested = False
+                self._BAW = None
+                self._baw_ensure()
+                logger.info("[Telegram] BAW engine restarted (in-process)")
         except Exception as e:
             logger.error(f"[Telegram] Process error: {e}")
             if not self._cancel_event.is_set():
