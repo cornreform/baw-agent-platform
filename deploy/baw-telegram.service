@@ -1,0 +1,19 @@
+[Unit]
+Description=BAW Bot — Telegram Messenger Connector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=radxa
+Group=radxa
+WorkingDirectory=/home/user/baw
+EnvironmentFile=/home/user/.baw/.env
+ExecStart=/home/user/.hermes/hermes-agent/venv/bin/python3 -u /home/user/baw/baw-bot --platform telegram --debug
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
