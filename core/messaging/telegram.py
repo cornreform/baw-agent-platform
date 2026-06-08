@@ -941,18 +941,15 @@ class TelegramConnector(BaseConnector):
         if _msg_id:
             self._set_reaction(chat_id, _msg_id, "🔄")
 
-        # Reaction heartbeat: 🔄 (working) → 🧠 (thinking) after 2s
+        # Reaction update: after 2s switch to thinking
         _reaction_stop = threading.Event()
-        def _reaction_heartbeat():
-            _reaction_stop.wait(2.0)
-            if not _reaction_stop.is_set() and _msg_id:
-                for emoji in ("🧠", "🔄", "🧠"):
-                    if _reaction_stop.is_set():
-                        break
-                    self._set_reaction(chat_id, _msg_id, emoji)
-                    _reaction_stop.wait(4.0)
-        _rh = threading.Thread(target=_reaction_heartbeat, daemon=True)
-        _rh.start()
+        if _msg_id:
+            def _reaction_delayed():
+                _reaction_stop.wait(2.0)
+                if not _reaction_stop.is_set():
+                    self._set_reaction(chat_id, _msg_id, "🧠")
+            _rh = threading.Thread(target=_reaction_delayed, daemon=True)
+            _rh.start()
 
         # Typing indicator heartbeat (respects cancel event)
         _typing_stop = threading.Event()
