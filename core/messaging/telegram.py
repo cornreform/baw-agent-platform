@@ -113,6 +113,7 @@ class TelegramConnector(BaseConnector):
             {"command": "list",    "description": "List saved sessions"},
             {"command": "resume",  "description": "Resume a saved session"},
             {"command": "summarize", "description": "Summarize current session"},
+            {"command": "pickup", "description": "Resume the last interrupted session"},
             {"command": "reload",  "description": "Hot-reload tools & config (no restart)"},
             {"command": "evolve",  "description": "Self-evolution stats & patterns"},
             {"command": "tts",     "description": "Toggle TTS: on / off / status"},

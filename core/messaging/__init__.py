@@ -432,6 +432,8 @@ class BaseConnector(ABC):
                 return "Usage: /resume <session_id>\nUse /list to see available sessions."
             if cmd == "summarize":
                 return self._summarize_session(msg.chat_id)
+            if cmd == "pickup":
+                return self._pickup_last_session(msg.chat_id)
 
             # ── Per-chat config commands ──
             if cmd == "mode" and arg:
@@ -609,6 +611,69 @@ class BaseConnector(ABC):
             return f"📋 **Session Summary** (`{ses['id'][:12]}`)\n\n{response}"
         except Exception as e:
             return f"❌ Summarization failed: {e}"
+
+    def _pickup_last_session(self, chat_id: str) -> str:
+        """Find the most recent interrupted session and resume it."""
+        self._load_session_index()
+        if not self._session_index:
+            return "📭 No saved sessions found."
+
+        # Get current session id to exclude it
+        current_sid = self._sessions.get(chat_id, {}).get("id", "")
+
+        # Sort by updated time descending, pick first that isn't current
+        candidates = sorted(
+            self._session_index.values(),
+            key=lambda s: s["updated"],
+            reverse=True,
+        )
+        target = None
+        for s in candidates:
+            if s["id"] != current_sid:
+                target = s
+                break
+
+        if not target:
+            return "📭 No other sessions to pick up from."
+
+        # Load full session
+        data = self._load_session_from_disk(target["id"])
+        if not data:
+            return f"❌ Failed to load session `{target['id'][:12]}`."
+
+        # Load messages into current chat session
+        self._sessions[chat_id] = {
+            "id": data["id"],
+            "name": data.get("name", "untitled"),
+            "messages": data.get("messages", []),
+            "created": data.get("created", 0.0),
+            "updated": time.time(),
+        }
+
+        # Build context summary from last few messages
+        msgs = data.get("messages", [])
+        last_msgs = msgs[-4:] if len(msgs) >= 4 else msgs
+
+        context_lines = []
+        for m in last_msgs:
+            role = "👤" if m["role"] == "user" else "🤖"
+            content = m.get("content", "")
+            # Trim long content
+            if len(content) > 200:
+                content = content[:200] + "..."
+            context_lines.append(f"{role} {content}")
+
+        context = "\n".join(context_lines)
+
+        import datetime as _dt
+        updated_dt = _dt.datetime.fromtimestamp(target["updated"]).strftime("%m-%d %H:%M")
+
+        return (
+            f"📂 **Picked Up:** `{data['id'][:12]}` — {data.get('name', 'untitled')}\n"
+            f"   ({len(msgs)} msgs, last activity: {updated_dt})\n\n"
+            f"**Last context:**\n{context}\n\n"
+            f"Continue chatting to pick up where you left off. 🚀"
+        )
 
     # ── In-process BAW engine (lazy-loaded) ──
     _BAW = None  # {'run_agent': fn, 'config': dict, 'data_dir': Path}
@@ -1005,7 +1070,8 @@ class BaseConnector(ABC):
             "/list — List saved sessions (alias for /task list)\n"
             "/resume <id> — Resume a saved session\n"
             "/summarize — Summarize current session to memory\n"
-            "/task `<action>` — Task session manager\n"
+            "/pickup — Resume the last interrupted session\n"
+            "/task <action> — Task session manager\n"
             "/set `<key>` `<value>` — Persist config value (e.g. `/set model.default deepseek-v4-flash`)\n"
             "/help — This message\n\n"
             "**Task commands:**\n"
