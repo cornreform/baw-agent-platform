@@ -4,7 +4,7 @@ FREE — no API key required, works out of the box.
 Rate limit: ~1-2 requests/second (unofficial).
 """
 
-from baw.core.search import SearchResult
+from core.search import SearchResult
 
 NAME = "duckduckgo"
 DESCRIPTION = "DuckDuckGo search — free, no API key required, works immediately"

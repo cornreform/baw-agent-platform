@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-logger = logging.getLogger("baw.messaging")
+logger = logging.getLogger("baw.messaging")  # v2-builtin-cmds
 
 
 @dataclass
@@ -80,6 +80,7 @@ class BaseConnector(ABC):
         self._cancel_event = threading.Event()
         self._busy = False
         self._restart_requested = False
+        self._chat_config = {}  # per-chat overrides: {chat_id: {key: value}}
 
     @abstractmethod
     def connect(self) -> bool:
@@ -141,12 +142,6 @@ class BaseConnector(ABC):
             if cmd == "btw" and arg:
                 return self._run_baw(f'--btw "{arg}"')
 
-            if cmd == "mode" and arg:
-                return self._run_baw(f'--cfg set mode {arg}')
-
-            if cmd == "tone" and arg:
-                return self._run_baw(f'--cfg set tone.default {arg}')
-
             if cmd in ("court", "ct"):
                 from ..commands import _cmd_court
                 return _cmd_court()
@@ -177,38 +172,49 @@ class BaseConnector(ABC):
                 self._restart_requested = True
                 return "🔄 Restarting BAW engine..."
 
+            # ── Per-chat config commands ──
             if cmd == "mode" and arg:
-                return self._baw_cfg_set("mode", arg)
+                cfg = self._chat_config.setdefault(msg.chat_id, {})
+                cfg["mode"] = arg
+                return f"✅ Chat mode set to: {arg}"
 
             if cmd == "mode":
+                cc = self._chat_config.get(msg.chat_id, {})
+                current = cc.get("mode", self.config.get("mode", "tight"))
                 return (
-                    f"Current mode: {self.config.get('mode', 'tight')}\n"
+                    f"Current mode: {current}\n"
                     f"Available: quick, hybrid, tight"
                 )
 
             if cmd == "tone" and arg:
-                return self._baw_cfg_set("tone.default", arg)
+                cfg = self._chat_config.setdefault(msg.chat_id, {})
+                cfg["tone"] = arg
+                return f"✅ Chat tone set to: {arg}"
 
             if cmd == "tone":
+                cc = self._chat_config.get(msg.chat_id, {})
                 tones = ["casual", "business", "teaching", "client-doc", "ot-rt", "stepwise"]
-                return f"Current tone: {self.config.get('tone', {}).get('default', 'casual')}\nAvailable: {', '.join(tones)}"
+                current = cc.get("tone", self.config.get("tone", {}).get("default", "casual"))
+                return f"Current tone: {current}\nAvailable: {', '.join(tones)}"
 
             if cmd in ("model", "m") and arg:
                 if arg not in self._MODELS:
                     return f"Model '{arg}' not found. Available: {', '.join(self._MODELS)}"
-                return self._baw_cfg_set("model.default", arg)
+                cfg = self._chat_config.setdefault(msg.chat_id, {})
+                cfg["model"] = arg
+                return f"✅ Chat model set to: {arg}"
 
             if cmd in ("model", "models"):
-                baw = self._baw_ensure()
-                current = baw["config"].get("model", {}).get("default", "deepseek-v4-flash")
+                cc = self._chat_config.get(msg.chat_id, {})
+                current = cc.get("model") or "deepseek-v4-flash"
                 return (
                     f"Current model: {current}\n"
                     f"Available:\n"
                     + "\n".join(f"  /model {m}" for m in self._MODELS)
                 )
 
-        # Default: pass to BAW
-        return self._run_baw(text)
+        # Default: pass to BAW (with chat_id for per-chat config)
+        return self._run_baw(text, chat_id=msg.chat_id)
 
     # ── In-process BAW engine (lazy-loaded) ──
     _BAW = None  # {'run_agent': fn, 'config': dict, 'data_dir': Path}
@@ -279,12 +285,19 @@ class BaseConnector(ABC):
             target = target.setdefault(k, {})
         target[keys[-1]] = value
 
-        # Write back
+        # Write back to file
         cfg_path.write_text(yaml.dump(config, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+
+        # Sync to self.config (Telegram connector's in-memory config)
+        # so _run_baw() reads the updated value immediately
+        sync = self.config
+        for k in keys[:-1]:
+            sync = sync.setdefault(k, {})
+        sync[keys[-1]] = value
 
         return f"✅ Config updated: {key} → {value}"
 
-    def _run_baw(self, prompt: str) -> str:
+    def _run_baw(self, prompt: str, chat_id: str | None = None) -> str:
         """Run BAW in-process (no subprocess)."""
         import re
         import asyncio
@@ -302,8 +315,9 @@ class BaseConnector(ABC):
             config = baw["config"]
             data_dir = baw["data_dir"]
 
-            # mode from telegram config or default to quick
-            mode = self.config.get("mode", "quick")
+            # mode from per-chat config > global config > default
+            cc = self._chat_config.get(chat_id, {}) if chat_id else {}
+            mode = cc.get("mode") or config.get("mode", "quick")
 
             # Run BAW with a timeout via thread pool
             with ThreadPoolExecutor(1) as pool:
@@ -351,8 +365,8 @@ class BaseConnector(ABC):
             "🤖 **BAW Bot** — Multi-platform Agent Interface\n\n"
             "Simply type anything and BAW will process it.\n\n"
             "**Commands:**\n"
-            "/stop — Stop current processing and cancel\n"
-            "/restart — Restart BAW engine\n"
+            "/stop — Stop current processing and cancel (per-chat)\n"
+            "/restart — Restart BAW engine (per-chat)\n"
             "/btw `<text>` — Quick answer (no court)\n"
             "/model `<name>` — Switch model (deepseek / kimi / minimax)\n"
             "/models — List available models\n"

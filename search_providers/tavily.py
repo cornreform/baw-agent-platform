@@ -5,7 +5,7 @@ Demonstrates how to add a paid provider with API key.
 """
 
 import os
-from baw.core.search import SearchResult
+from core.search import SearchResult
 
 NAME = "tavily"
 DESCRIPTION = (
