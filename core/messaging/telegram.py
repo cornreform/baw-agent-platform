@@ -39,6 +39,7 @@ class TelegramConnector(BaseConnector):
         self._offset = 0
         self._client: httpx.Client | None = None
         self._api_base = API_BASE.format(token=self._token) if self._token else ""
+        self._debounce_until = 0.0
 
     def connect(self) -> bool:
         """Test connection by fetching bot info."""
@@ -191,11 +192,17 @@ class TelegramConnector(BaseConnector):
 
         logger.info(f"[Telegram] <{user_name}> {text[:80]}")
 
-        # /stop — cancel running BAW immediately
+        # /stop — cancel running BAW immediately + enforce debounce window
         if text.strip().lower().startswith("/stop"):
             self._cancel_event.set()
             self._busy = False
+            self._debounce_until = time.time() + 1.0
             self.send(chat_id, "⏹ Stopped.")
+            return
+
+        # Debounce window: suppress new threads right after /stop
+        if self._debounce_until and time.time() < self._debounce_until:
+            self.send(chat_id, "⏳ Please wait a moment before sending a new request.")
             return
 
         # If busy, reject and suggest /stop
