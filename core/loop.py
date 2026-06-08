@@ -284,11 +284,21 @@ def run_agent(
                     args = json.loads(raw_args)
                 except json.JSONDecodeError:
                     args = {}
+                _show_progress = verbose or interactive
+                if _show_progress:
+                    print(f"\033[90m🔧 {name}", end="", flush=True)
                 perm_result = perm.check(name, args)
                 if perm_result["decision"] == "deny":
+                    if _show_progress:
+                        print(f" ⛔ BLOCKED: {perm_result['reason']}\033[0m")
                     ctx.add_tool_result(tc.get("id", ""), name, f"[BLOCKED] {perm_result['reason']}")
                     continue
+                if _show_progress:
+                    _arg_str = str(args)[:80]
+                    print(f" {_arg_str}", end="", flush=True)
                 exe_result = execute_tool(name, args)
+                if _show_progress:
+                    print(f" \033[32m✅\033[0m", flush=True)
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
 
             # Next LLM call
