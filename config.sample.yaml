@@ -14,6 +14,7 @@ providers:
       - id: "kimi-k2.6"
         context_window: 262144
         vision: true
+        audio_input: false
         cost_per_1m_input: 0.95
         cost_per_1m_output: 4.00
 
@@ -25,6 +26,7 @@ providers:
       - id: "deepseek-v4-flash"
         context_window: 65536
         vision: false
+        audio_input: false
         cost_per_1m_input: 0.30
         cost_per_1m_output: 1.20
 
@@ -35,8 +37,35 @@ providers:
       - id: "MiniMax-M3"
         context_window: 1048576
         vision: true
+        audio_input: false
         cost_per_1m_input: 2.00
         cost_per_1m_output: 8.00
+
+# ── Speech-to-Text ─────────────────────────────────────────────
+# STT method: models with `audio_input: true` use their native audio API.
+# If no model supports audio input, configure one of these methods:
+#
+# Option A: faster-whisper (local, free, no API key)
+#   pip install faster-whisper
+#   stt:
+#     method: "faster-whisper"
+#     model: "base"       # tiny / base / small / medium / large-v3
+#
+# Option B: OpenAI Whisper API (paid, requires API key)
+#   stt:
+#     method: "openai-whisper"
+#     api_key_env: "OPENAI_API_KEY"
+#     model: "whisper-1"
+#
+# Option C: Google Cloud Speech-to-Text
+#   stt:
+#     method: "google-speech"
+#     credentials_path: "/path/to/service-account.json"
+#     language: "yue-Hant-HK"  # Cantonese
+#
+# If no STT is configured and no model has audio_input, BAW will
+# tell you what's missing and suggest installation steps.
+# stt:
 
 permissions:
   risk_levels:
@@ -83,7 +112,6 @@ adversarial:
 # telegram:
 #   token: "***"                    # Bot token from @BotFather
 #   allowed_users: []               # Optional: restrict to specific user IDs
-#   stt_model: "base"               # faster-whisper model: tiny/base/small/medium/large-v3
 
 # discord:
 #   token: "***"                    # Bot token from Discord Developer Portal

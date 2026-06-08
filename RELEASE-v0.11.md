@@ -78,20 +78,28 @@
 
 ## 🎙️ 語音辨識 — Voice STT（全新）
 
-**Telegram 語音訊息即時轉文字** — 用戶 send voice note 或 audio file，BAW 自動下載、transcribe、餵入 prompt loop：
+**智能 STT 路由** — 唔再 hardcode 某個模型，改為動態檢測系統能力：
 
-- 使用 **faster-whisper** 本地 STT，無需 API key 或網絡
-- 支援 Telegram voice note（.ogg）同 audio file（.mp3）
-- configurable model：`tiny / base / small / medium / large-v3`
-- 預設 `base` 模型，速度同準確度平衡
-- 自動辨識語言（language=None → faster-whisper auto-detect）
+**檢查鏈（Priority）：**
+1. **模型 audio_input 能力** — 檢查當前主模型 config 有冇 `audio_input: true`
+2. **掃描所有模型** — 如果有其他模型支援音訊，提示用戶 `/model` 切換
+3. **STT 配置** — 讀取 `stt.method` 設定（openai-whisper / faster-whisper / google-speech）
+4. **faster-whisper 本地 fallback** — 如果已安裝，自動使用（無需 config）
+5. **以上全無** — 輸出完整診斷報告 + 安裝選項
+
+**支援嘅 STT 方案：**
+- **faster-whisper**（本地免費，`pip install faster-whisper`）
+- **OpenAI Whisper API**（需 `OPENAI_API_KEY`）
+- **Google Cloud Speech-to-Text**（需服務帳號）
+- 未來可加：模型原生 audio 支援（當模型有 `audio_input: true` 時）
 
 **設定**（`~/.baw/config.yaml`）：
 ```yaml
-telegram:
-  token: "***"
-  stt_model: "base"  # 可選：tiny / base / small / medium / large-v3
-```
+stt:
+  method: "faster-whisper"     # 或 "openai-whisper" / "google-speech"
+  model: "base"                # faster-whisper model size
+  # api_key_env: "OPENAI_API_KEY"  # 僅 openai-whisper 需要
+
 
 ---
 

@@ -459,51 +459,189 @@ class TelegramConnector(BaseConnector):
             self._busy = False
 
     def _process_voice_file(self, chat_id: str, voice_data: dict, msg: dict):
-        """Download audio/voice message, transcribe via faster-whisper, analyse with BAW."""
+        """Download audio, check STT capability, then transcribe or present options."""
+        import os
+        text = ""
+        info = None
         try:
             file_id = voice_data["file_id"]
             ext = ".ogg" if msg.get("voice") else ".mp3"
             self.send(chat_id, "📥 下載語音...")
 
             local_path = self._download_file(file_id, f"voice_{file_id[:8]}{ext}")
-            self.send(chat_id, "🎙️ 辨識語音內容...")
 
-            # Transcribe with faster-whisper
+            # ── Step 1: Load BAW config and check STT capability ──
+            baw = self._baw_ensure()
+            config = baw["config"]
+            default_model_id = config.get("model", {}).get("default", "")
+            all_models = self._scan_all_models(config)
+
+            # Current model capability
+            current_model = next((m for m in all_models if m["id"] == default_model_id), None)
+            audio_models = [m for m in all_models if m.get("audio_input")]
+
+            # ── Step 2: Check STT method from config ──
+            stt_config = config.get("stt", {})
+            stt_method = stt_config.get("method", "").strip()
+
+            # ── Step 3: Check if faster-whisper is installed ──
+            fw_available = False
             try:
-                from faster_whisper import WhisperModel
+                import faster_whisper as _fw
+                fw_available = True
+            except ImportError:
+                pass
 
-                stt_model_name = self.config.get("stt_model", "base")
-                logger.info(f"[Telegram] STT with faster-whisper ({stt_model_name}): {local_path}")
-                model = WhisperModel(stt_model_name, device="cpu", compute_type="int8")
-                segments, info = model.transcribe(local_path, language=None, beam_size=3)
-                text = " ".join(seg.text.strip() for seg in segments)
-            except Exception as e:
-                logger.error(f"[Telegram] STT error: {e}")
-                self.send(chat_id, f"❌ 語音辨識失敗: {e}")
-                return
+            # ── Capability message parts ──
+            status_lines = []
+            used_method = None
 
-            if not text.strip():
-                self.send(chat_id, "🔇 聽唔到任何語音內容。")
-                return
+            # Priority A: Model native audio_input
+            if current_model and current_model.get("audio_input"):
+                status_lines.append(f"✅ 主模型 **{default_model_id}** 支援音訊輸入（audio_input=true）")
+                # For now, no model has native audio support, so this is future-proofing
+                self.send(chat_id, f"🧠 使用 {default_model_id} 原生音訊處理...")
+                # TODO: implement native audio API call per model
+                self.send(chat_id, "⚠️ 原生音訊處理尚未實作。嘗試其他 STT 方法...")
+                used_method = "native"
 
-            duration = info.duration if hasattr(info, 'duration') else '?'
-            self.send(chat_id, f"📝 辨識完成（{duration:.1f}s）：\n\n{text[:200]}{'…' if len(text)>200 else ''}")
+            # Priority B: Config-defined STT method
+            if not used_method and stt_method:
+                status_lines.append(f"⚙️ STT 配置：**{stt_method}**")
+                if stt_method == "openai-whisper":
+                    api_key_env = stt_config.get("api_key_env", "OPENAI_API_KEY")
+                    api_key = os.environ.get(api_key_env, "")
+                    if api_key:
+                        openai_model = stt_config.get("model", "whisper-1")
+                        self.send(chat_id, "🎙️ OpenAI Whisper API 辨識中...")
+                        try:
+                            from openai import OpenAI
+                            client = OpenAI(api_key=api_key)
+                            with open(local_path, "rb") as f:
+                                transcript = client.audio.transcriptions.create(
+                                    model=openai_model, file=f
+                                )
+                            text = transcript.text or ""
+                            used_method = "openai-whisper"
+                        except Exception as e:
+                            self.send(chat_id, f"❌ OpenAI Whisper API 失敗: {e}。嘗試其他方法...")
+                    else:
+                        status_lines.append(f"   ⚠️ {api_key_env} 未設定")
+                elif stt_method == "google-speech":
+                    status_lines.append("   ⚠️ Google Speech-to-Text 尚未實作")
+                else:
+                    status_lines.append(f"   ⚠️ 未知 STT method: {stt_method}")
 
-            # Feed to BAW
-            prompt = (
-                f"[語音輸入 — 用戶語音訊息，已自動轉文字]\n"
-                f"用戶說：{text}\n\n"
-                f"請用繁體中文回應，分析並回答對方提問。"
-            )
-            self.send(chat_id, "🤔 BAW 分析中...")
-            response = self._run_baw(prompt, chat_id=chat_id)
-            self.send(chat_id, response)
+            # Priority C: faster-whisper local (free, no API key)
+            if not used_method and fw_available:
+                fw_model = stt_config.get("model", "base") if stt_method == "faster-whisper" else "base"
+                status_lines.append(f"🎙️ 使用 faster-whisper（{fw_model}，本地免費）")
+                self.send(chat_id, "🎙️ 本地語音辨識中...")
+                try:
+                    from faster_whisper import WhisperModel
+                    logger.info(f"[Telegram] STT with faster-whisper ({fw_model}): {local_path}")
+                    model = WhisperModel(fw_model, device="cpu", compute_type="int8")
+                    segments, info = model.transcribe(local_path, language=None, beam_size=3)
+                    text = " ".join(seg.text.strip() for seg in segments)
+                    used_method = "faster-whisper"
+                except Exception as e:
+                    logger.error(f"[Telegram] faster-whisper error: {e}")
+                    self.send(chat_id, f"❌ faster-whisper 辨識失敗: {e}")
+                    return
+
+            # ── Result: transcribe success or present options ──
+            if used_method:
+                if not text.strip():
+                    self.send(chat_id, "🔇 聽唔到任何語音內容。")
+                    return
+
+                dur_str = f"{info.duration:.1f}s" if info and hasattr(info, 'duration') and isinstance(info.duration, (int, float)) else "?"
+                self.send(chat_id, f"📝 辨識完成（{dur_str}）：\n\n{text[:200]}{'…' if len(text)>200 else ''}")
+
+                prompt = (
+                    f"[語音輸入 — 用戶語音訊息，已自動轉文字]\n"
+                    f"用戶說：{text}\n\n"
+                    f"請用繁體中文回應，分析並回答對方提問。"
+                )
+                self.send(chat_id, "🤔 BAW 分析中...")
+                response = self._run_baw(prompt, chat_id=chat_id)
+                self.send(chat_id, response)
+            else:
+                # ── No STT method available — present diagnostics + options ──
+                msg_parts = ["🎵 收到語音訊息，但目前 BAW 未有語音處理能力。\n"]
+
+                # List all models with audio_input status
+                msg_parts.append("**🔍 模型語音能力：**")
+                for m in all_models:
+                    ai = "✅" if m.get("audio_input") else "❌"
+                    cur = " ← 當前主模型" if m["id"] == default_model_id else ""
+                    msg_parts.append(f"  {ai} `{m['id']}`{cur}")
+                if audio_models:
+                    names = ", ".join(m["id"] for m in audio_models)
+                    msg_parts.append(f"\n💡 有模型支援音訊輸入：`{names}`。用 `/model <name>` 切換。")
+                msg_parts.append("")
+
+                # Available STT options
+                msg_parts.append("**⚙️ 可選 STT 方案：**")
+                msg_parts.append(
+                    "  1️⃣ **faster-whisper**（推薦，本地免費）\n"
+                    "     ```\n"
+                    "     pip install faster-whisper\n"
+                    "     ```\n"
+                    "     然後 ~/.baw/config.yaml 加入：\n"
+                    "     ```yaml\n"
+                    "     stt:\n"
+                    "       method: \"faster-whisper\"\n"
+                    "       model: \"base\"\n"
+                    "     ```"
+                )
+                msg_parts.append(
+                    "  2️⃣ **OpenAI Whisper API**（需 API key）\n"
+                    "     在 ~/.baw/.env 加入：\n"
+                    "     ```\n"
+                    "     OPENAI_API_KEY=sk-...\n"
+                    "     ```\n"
+                    "     然後 ~/.baw/config.yaml 加入：\n"
+                    "     ```yaml\n"
+                    "     stt:\n"
+                    "       method: \"openai-whisper\"\n"
+                    "       api_key_env: \"OPENAI_API_KEY\"\n"
+                    "       model: \"whisper-1\"\n"
+                    "     ```"
+                )
+                msg_parts.append(
+                    "  3️⃣ **Google Cloud Speech-to-Text**\n"
+                    "     設定 Google Cloud 服務帳號 + config.yaml"
+                )
+
+                # If fw_available but not used (e.g. config issue), note it
+                if fw_available and not used_method:
+                    msg_parts.append(
+                        "\n⚠️ faster-whisper 已安裝，但 stt.method 未設為 \"faster-whisper\"。"
+                    )
+
+                self.send(chat_id, "\n".join(msg_parts))
 
         except Exception as e:
             logger.error(f"[Telegram] Voice processing error: {e}")
             self.send(chat_id, f"❌ 語音處理錯誤: {e}")
         finally:
             self._busy = False
+
+    @staticmethod
+    def _scan_all_models(config: dict) -> list[dict]:
+        """Scan all providers/models from config and return flat list with capability info."""
+        models = []
+        providers = config.get("providers", {})
+        for pname, pconf in providers.items():
+            for m in pconf.get("models", []):
+                models.append({
+                    "id": m.get("id", ""),
+                    "provider": pname,
+                    "vision": m.get("vision", False),
+                    "audio_input": m.get("audio_input", False),
+                })
+        return models
 
     def _poll_loop(self):
         """Long-polling loop."""
