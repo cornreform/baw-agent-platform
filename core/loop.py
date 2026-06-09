@@ -218,7 +218,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
 MAX_STEP_RETRIES = 3
 MAX_CONSECUTIVE_FAILURES = 3
-MAX_STEP_SECONDS = 120  # individual step timeout — prevent silent hangs
+MAX_STEP_SECONDS = 60  # individual step timeout — prevent silent hangs
 
 
 def run_agent(
@@ -718,7 +718,7 @@ def run_agent(
     # Route recalculation: wrong turn → silently recalculates new route from current position
     # No retries, no skipping — just instant re-route from where you are.
     _GOAL_PURSUIT_MAX_ATTEMPTS = 3  # Max full from-scratch re-plans
-    _MAX_RECALCULATES = 5           # Max micro re-routes per pursuit (generous: 5 chances)
+    _MAX_RECALCULATES = 3           # Max micro re-routes per pursuit (was 5 — stop wasting time)
     steps_completed = 0
     _delegation_results: list[str] = []
     _synthesis_results: list[str] = []  # Successful step results for final synthesis
@@ -767,9 +767,11 @@ def run_agent(
 
         # ── Execute steps - route navigation ──
         # Each step tried ONCE. If fail → recalculate remaining route from here.
+        # If same step fails twice → skip it, move to next step.
         _pursuit_failed = False
         _recalc_count = 0
         _step_idx = 0
+        _same_step_fails = {}  # {step_desc: count} — skip after 2 fails
 
         while _step_idx < len(_execution_plan) and not _pursuit_failed:
             _step = _execution_plan[_step_idx]
@@ -828,11 +830,25 @@ def run_agent(
                     print(_dsp)
                 _step_idx += 1  # Move to next step
                 _recalc_count = 0  # Reset — step succeeded, fresh count for next position
+                _same_step_fails.clear()  # Reset same-step skip counter
 
             except Exception as _e:
                 while len(_delegation_results) <= _step_idx:
                     _delegation_results.append("")
                 _delegation_results[_step_idx] = f"[FAILED] {_step_desc_short}: {_e}"
+
+                # ── Same-step skip: don't retry the exact same thing forever ──
+                _same_key = _step_desc_short[:60]  # use first 60 chars as key
+                _same_step_fails[_same_key] = _same_step_fails.get(_same_key, 0) + 1
+                if _same_step_fails[_same_key] >= 2:
+                    if verbose:
+                        print(f"  ⏭️ Skipping stuck step: {_step_desc_short} ({_same_step_fails[_same_key]} failures)")
+                    _synthesis_results.append(f"[SKIPPED] {_step_desc_short}")
+                    _dsp = f"  ⏭️ Skipped Step {_step_idx+1}: {_step_desc_short}"
+                    _display_log.append(_dsp)
+                    _step_idx += 1  # move on
+                    _recalc_count = 0
+                    continue  # next step
 
                 if verbose:
                     print(f"  🚫 Step {_step_idx + 1} failed: {str(_e)[:100]}")
