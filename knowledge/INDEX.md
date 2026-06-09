@@ -298,6 +298,15 @@ User prompt
 - **Decision**: 60s TTL cache for static commands (/status, /help, /version, /tools)
 - **Invalidation**: /model and /tone changes invalidate /status cache
 
+### D-016: Docs Chain Pattern (2026-06-09)
+
+- **Date**: 2026-06-09
+- **Decision**: Implement Agent Zero / Space Agent's `agents.md` docs-chain pattern — before any file edit, agent reads root→directory→file-level documentation
+- **Reason**: LLMs fail on large codebases not due to intelligence but context awareness. Throwing more tokens isn't the solution — giving exactly the right context is
+- **Implementation**: `core/docs_chain.py` with `find_docs_chain()`, `read_docs_chain()`, `inject_docs_context()`. `/docs` slash command for manual chain inspection
+- **Structure**: `docs/README.md` (root) → `docs/<dir>/README.md` (per-directory) → sibling `.md` per file
+- **Inspiration**: https://www.youtube.com/watch?v=NVkRkioBXQc — "One markdown file just fixed AI coding forever" by Yan (Agent Zero)
+
 ---
 
 ## 5. Config Reference
