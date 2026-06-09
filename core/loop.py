@@ -898,10 +898,11 @@ def run_agent(
             + "\n".join(f"Step {i+1}:\n{r}" for i, r in enumerate(_delegation_results))
             + "\n\n---\n"
             "Verify if the user's goal was FULLY achieved:\n"
-            "- If YES: report the final outcome (what was done, what changed, what the user can do next). Be brief.\n"
-            "- If NO / partially done: state what's still missing and the next action needed. Be specific.\n"
-            "- Do NOT ask 'should I continue?' — just state facts.\n"
-            "- NEVER end with a question. NEVER ask for permission."
+            "- If YES: report the final outcome. Be brief.\n"
+            "- If NO: say exactly 'NOT DONE: <what's missing>' and STOP.\n"
+            "  Do NOT say 'let me go do X' or 'I will now Y' — these are empty promises.\n"
+            "  If you can't finish, be honest: state the blocker.\n"
+            "- NEVER end with a question. NEVER ask for permission. NEVER promise future action."
         )
         ctx.add_user(_synthesis_prompt)
 
