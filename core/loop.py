@@ -775,6 +775,7 @@ def run_agent(
                 if verbose:
                     print(_dsp)
                 _step_idx += 1  # Move to next step
+                _recalc_count = 0  # Reset — step succeeded, fresh count for next position
 
             except Exception as _e:
                 while len(_delegation_results) <= _step_idx:
@@ -827,7 +828,7 @@ def run_agent(
                 if _new_steps:
                     # Replace remaining plan with new route (keep completed steps)
                     _execution_plan = _execution_plan[:_step_idx] + _new_steps
-                    _recalc_count = 0  # Reset — next attempt shows normal step number
+                    # NOTE: _recalc_count keeps accumulating — only resets on step success
                     if verbose:
                         print(f"     ✅ New route: {len(_new_steps)} remaining steps")
                     # Don't increment _step_idx — retry this position with new first step
