@@ -1133,6 +1133,32 @@ class TelegramConnector(BaseConnector):
             logger.warning(f"[Telegram] Role selector error: {e}")
             return False
 
+    def _send_role_buttons(self, chat_id: str, msg_id: int):
+        """Edit existing message to show role selection buttons."""
+        roles = [
+            ("Default Model", "default"),
+            ("Angel Model", "angel"),
+            ("Devil Model", "devil"),
+            ("Executor Model", "executor"),
+        ]
+        rows = []
+        for label, role in roles:
+            rows.append([{"text": label, "callback_data": f"role_select:{role}"}])
+        try:
+            self._client.post(
+                f"{self._api_base}/editMessageText",
+                json={
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "text": "**Select Model Role**\nChoose which role's model to change:",
+                    "reply_markup": {"inline_keyboard": rows},
+                    "parse_mode": "Markdown",
+                },
+                timeout=5,
+            )
+        except Exception as e:
+            logger.warning(f"[Telegram] Role buttons edit error: {e}")
+
     def _send_model_selector_text(self, chat_id: str, text: str) -> bool:
         """Parse [MODEL_SELECT] formatted text and send provider-level keyboard."""
         lines = text.strip().split("\n")
@@ -1211,6 +1237,10 @@ class TelegramConnector(BaseConnector):
 
         if data.startswith("role_select:"):
             role = data.split(":", 1)[1]
+            if role == "__back__":
+                # Go back to role selector (called from provider screen)
+                self._send_role_buttons(chat_id, msg_id)
+                return
             self._selector_role[chat_id] = role
             role_names = {"default": "Default", "angel": "Angel", "devil": "Devil", "executor": "Executor"}
             role_name = role_names.get(role, role)
@@ -1240,28 +1270,32 @@ class TelegramConnector(BaseConnector):
         elif data.startswith("provider_select:"):
             pname = data.split(":", 1)[1]
             if pname == "__back__":
-                # Go back to provider list
-                try:
-                    providers = self._get_providers_config()
-                    title = "**Select Provider**"
-                    cc = getattr(self, '_chat_config', {}).get(chat_id, {})
-                    current = cc.get("model", "deepseek-v4-flash")
-                    rows = []
-                    for pn in providers:
-                        rows.append([{"text": f"  {pn}", "callback_data": f"provider_select:{pn}"}])
-                    self._client.post(
-                        f"{self._api_base}/editMessageText",
-                        json={
-                            "chat_id": chat_id,
-                            "message_id": msg_id,
-                            "text": f"{title}\nCurrent: `{current}`",
-                            "reply_markup": {"inline_keyboard": rows},
-                            "parse_mode": "Markdown",
-                        },
-                        timeout=5,
-                    )
-                except Exception as e:
-                    logger.warning(f"[Telegram] Back button error: {e}")
+                # If we came from a role selector, go back there; else go to provider list
+                role = self._selector_role.get(chat_id, "")
+                if role and msg_id:
+                    self._send_role_buttons(chat_id, msg_id)
+                else:
+                    try:
+                        providers = self._get_providers_config()
+                        title = "**Select Provider**"
+                        cc = getattr(self, '_chat_config', {}).get(chat_id, {})
+                        current = cc.get("model", "deepseek-v4-flash")
+                        rows = []
+                        for pn in providers:
+                            rows.append([{"text": f"  {pn}", "callback_data": f"provider_select:{pn}"}])
+                        self._client.post(
+                            f"{self._api_base}/editMessageText",
+                            json={
+                                "chat_id": chat_id,
+                                "message_id": msg_id,
+                                "text": f"{title}\nCurrent: `{current}`",
+                                "reply_markup": {"inline_keyboard": rows},
+                                "parse_mode": "Markdown",
+                            },
+                            timeout=5,
+                        )
+                    except Exception as e:
+                        logger.warning(f"[Telegram] Back button error: {e}")
             else:
                 # Show models for this provider
                 providers = self._get_providers_config()
