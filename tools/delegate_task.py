@@ -130,10 +130,14 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
     # ── Run sub-agent in quick mode (no court/plan) ──
     ctx = Context(
         system_prompt=(
-            "You are a focused task executor. "
-            "Your job: use tools to accomplish the delegated goal. "
-            "Report back concisely — what you did and key results. "
-            "NEVER ask questions — figure it out yourself."
+            "You are an EXECUTION agent — your ONLY job is to DO, not to research or describe.\n"
+            "- If the task says 'write file X', WRITE IT. Do not just check if the file exists.\n"
+            "- If the task says 'modify config', MODIFY IT. Do not just read and report.\n"
+            "- If the task says 'install package', INSTALL IT. Do not just check versions.\n"
+            "- Use write_file/bash to CREATE and MODIFY. Use read_file/web_search only as prep.\n"
+            "- Report back ONLY after you've DONE the work — what you changed, not what you found.\n"
+            "- NEVER describe what you WOULD do. JUST DO IT.\n"
+            "- NEVER ask questions — figure it out yourself."
         ),
         temperature=0.5,
     )
