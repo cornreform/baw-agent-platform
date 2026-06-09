@@ -6,8 +6,32 @@ Interactive mode commands for quick operations.
 from __future__ import annotations
 import sys
 import subprocess
+import time as _time
 from pathlib import Path
 from typing import Optional
+
+# ── Command result cache (60s TTL for static responses) ──────
+
+_cache: dict[str, tuple[float, str]] = {}
+_CACHE_TTL = 60  # seconds
+
+def _cached(key: str, fn) -> str:
+    """Return cached result if fresh, else compute + cache."""
+    now = _time.time()
+    if key in _cache:
+        ts, result = _cache[key]
+        if now - ts < _CACHE_TTL:
+            return result
+    result = fn()
+    _cache[key] = (now, result)
+    return result
+
+def _cache_invalidate(key: str | None = None):
+    """Invalidate cache. key=None clears all."""
+    if key is None:
+        _cache.clear()
+    elif key in _cache:
+        del _cache[key]
 
 # ── Session state (set by CLI after each run_agent call) ──────
 
@@ -34,13 +58,13 @@ def handle_slash(command: str, args: list[str],
     cmd = command.lower()
 
     if cmd in ("h", "help", "?"):
-        return _cmd_help()
+        return _cached("help", _cmd_help)
 
     if cmd in ("v", "version"):
-        return _cmd_version(data_dir)
+        return _cached("version", lambda: _cmd_version(data_dir))
 
     if cmd in ("s", "status"):
-        return _cmd_status(config, data_dir)
+        return _cached("status", lambda: _cmd_status(config, data_dir))
 
     if cmd in ("r", "remember"):
         text = " ".join(args)
@@ -77,7 +101,7 @@ def handle_slash(command: str, args: list[str],
         return _cmd_search_provider(args, data_dir)
 
     if cmd == "tools":
-        return _cmd_tools()
+        return _cached("tools", _cmd_tools)
 
     # ── New P1 commands ──
     if cmd in ("rethink", "rt"):
@@ -198,6 +222,7 @@ def _cmd_search(query: str, data_dir: Path) -> str:
 
 def _cmd_model(model_id: str, config: dict) -> str:
     config.setdefault("model", {})["default"] = model_id
+    _cache_invalidate("status")  # /status shows model info
     return f"Model set to: {model_id}"
 
 
@@ -206,6 +231,7 @@ def _cmd_tone(tone: str, config: dict) -> str:
     if tone not in valid:
         return f"Invalid tone: {tone}. Valid: {', '.join(valid)}"
     config.setdefault("tone", {})["default"] = tone
+    _cache_invalidate("status")  # /status shows tone info
     return f"Tone set to: {tone}"
 
 
