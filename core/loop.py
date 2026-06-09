@@ -940,15 +940,18 @@ def run_agent(
     else:
         final_reply = ""
 
-    if final_reply:
-        if _display_log:
-            output += "\n".join(_display_log) + "\n"
-        if steps_completed > 0:
-            output += dsp.done(steps_completed, len(_execution_plan), 0, 0) + "\n"
-        if final_reply not in output:
-            output += f"\n{final_reply}"
+    # ── Build plan recap (route plan + step progress) → Message 1 ──
+    plan_recap = ""
+    if _display_log:
+        plan_recap += "\n".join(_display_log) + "\n"
+    if steps_completed > 0:
+        plan_recap += dsp.done(steps_completed, len(_execution_plan), 0, 0) + "\n"
 
-        # ── Fact check final output ──
+    # ── Build findings (actual results + options) → Message 2 ──
+    findings = final_reply or ""
+
+    # ── Fact check findings ──
+    if findings:
         try:
             from .fact_checker import FactChecker
             fc = FactChecker(config)
@@ -961,23 +964,23 @@ def run_agent(
                     last_text = last_msg.get("content", "") or ""
             action, fc_result = fc.check(last_text or "", prompt)
             if action == "block":
-                output += f"\n\n{fc_result['message']}"
+                findings += f"\n\n{fc_result['message']}"
             elif action == "flag":
-                output += f"\n\n<i>⚠️ {len(fc_result['claims'])} unverified claims flagged</i>"
+                findings += f"\n\n<i>⚠️ {len(fc_result['claims'])} unverified claims flagged</i>"
                 try:
                     search_action, search_result = fc.verify_with_search(last_text or "", prompt)
                     if search_action == "block":
                         msg = search_result.get("message", "blocked by web search")
-                        output += f"\n\n{html.italic('Web search: ' + msg)}"
+                        findings += f"\n\n{html.italic('Web search: ' + msg)}"
                     elif search_action == "flag" and search_result.get("flagged"):
                         n_flagged = len(search_result["flagged"])
-                        output += f"\n\n{html.italic(f'Web search: {n_flagged} claims unverifiable')}"
+                        findings += f"\n\n{html.italic(f'Web search: {n_flagged} claims unverifiable')}"
                 except Exception:
                     pass
         except Exception:
             pass
 
-        output += f"\n\n{html_cost_summary()}"
+        findings += f"\n\n{html_cost_summary()}"
 
     # Auto-save
     last_commit = None
@@ -990,7 +993,7 @@ def run_agent(
         pass
 
     if last_commit:
-        output += f"\n💾 <i>Auto-saved: {last_commit}</i>"
+        findings += f"\n💾 <i>Auto-saved: {last_commit}</i>"
 
     try:
         mem.remember(f"User: {prompt[:150]} → BAW: {(final_reply or '')[:150]}")
@@ -1005,5 +1008,6 @@ def run_agent(
         "adversarial": court_result["agreement_level"] if court_result else None,
         "adversarial_raw": court_result,
         "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
+        "plan_recap": plan_recap.strip(),
     }
-    return output, info
+    return findings, info
