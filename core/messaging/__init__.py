@@ -1195,35 +1195,52 @@ class BaseConnector(ABC):
             else:
                 conv_history = None
 
-            # ── Progress tracking + real-time Telegram updates ──
+            # ── Progress tracking + real-time Telegram updates (inline edit) ──
             _last_progress = time.time()
             _progress_lock = threading.Lock()
-            _progress_msg_id = None  # for possible editMessageText later
+            _progress_msg_id = ""  # current message being edited
+            _progress_lines: list[str] = []  # accumulated lines for current batch
 
             def _on_progress(step_type: str = "", name: str = "", args: dict = None):
+                nonlocal _progress_msg_id, _progress_lines
                 with _progress_lock:
                     nonlocal _last_progress
                     _last_progress = time.time()
-                # Send real-time update to Telegram
-                if chat_id and step_type:
-                    try:
-                        if step_type == "tool" and name:
-                            self.send(chat_id, f"🔧 `{name}`")
-                        elif step_type == "plan":
-                            meta = args or {}
-                            total = meta.get("steps", "?")
-                            self.send(chat_id, f"🗺️ Route plan: {total} steps")
-                        elif step_type == "recalc":
-                            meta = args or {}
-                            self.send(chat_id, f"↻ Recalculating route... (step {meta.get('step','?')}/#{meta.get('count','?')})")
-                        elif step_type == "delegate":
-                            meta = args or {}
-                            s = meta.get("step", "")
-                            t = meta.get("total", "")
-                            g = meta.get("goal", "")[:80]
-                            self.send(chat_id, f"🗺️ Step {s}/{t}: {g}")
-                    except Exception:
-                        pass
+                if not chat_id or not step_type:
+                    return
+                try:
+                    if step_type == "plan":
+                        # New batch → send fresh message
+                        meta = args or {}
+                        total = meta.get("steps", "?")
+                        _progress_lines = [f"🗺️ Route plan: {total} steps"]
+                        _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines))
+                    elif step_type == "tool" and name:
+                        _progress_lines.append(f"🔧 `{name}`")
+                        if _progress_msg_id:
+                            self.send(chat_id, "\n".join(_progress_lines[-8:]),
+                                       edit_msg_id=_progress_msg_id)
+                        else:
+                            _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines[-8:]))
+                    elif step_type == "delegate":
+                        meta = args or {}
+                        s = meta.get("step", "")
+                        t = meta.get("total", "")
+                        g = meta.get("goal", "")[:80]
+                        _progress_lines.append(f"  ✅ Step {s}/{t}: {g}")
+                        if _progress_msg_id:
+                            self.send(chat_id, "\n".join(_progress_lines[-10:]),
+                                       edit_msg_id=_progress_msg_id)
+                        else:
+                            _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines[-10:]))
+                    elif step_type == "recalc":
+                        meta = args or {}
+                        _progress_lines.append(f"↻ Recalculating... (step {meta.get('step','?')})")
+                        if _progress_msg_id:
+                            self.send(chat_id, "\n".join(_progress_lines[-8:]),
+                                       edit_msg_id=_progress_msg_id)
+                except Exception:
+                    pass
 
             # Run BAW with a timeout via thread pool — multi-round loop
             # If goal not achieved, auto-feed output back as next prompt (max 3 rounds)

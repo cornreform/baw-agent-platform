@@ -133,24 +133,35 @@ class TelegramConnector(BaseConnector):
             self._client.close()
             self._client = None
 
-    def send(self, chat_id: str, text: str) -> bool:
-        """Send a message to a Telegram chat. Supports MEDIA: tags and inline keyboards."""
+    def send(self, chat_id: str, text: str, edit_msg_id: str = "") -> str:
+        """Send or edit a message. Returns message_id if successful, empty string if failed.
+        If edit_msg_id is provided, edits that message instead of sending new one."""
         if not self._client or not self._token:
-            return False
+            return ""
         # ── Intercept model selector ——
         if text.startswith("[MODEL_ROLE_SELECT]\n"):
-            return self._send_role_selector(chat_id, text)
+            self._send_role_selector(chat_id, text)
+            return ""
         if text.startswith("[MODEL_SELECT]\n"):
-            return self._send_model_selector_text(chat_id, text)
+            self._send_model_selector_text(chat_id, text)
+            return ""
         try:
             # ── Extract MEDIA: tags ──
             import re as _re
             media_files = _re.findall(r'^MEDIA:(.+)$', text, _re.MULTILINE)
             if media_files:
                 text = _re.sub(r'^MEDIA:.+$\n?', '', text, flags=_re.MULTILINE).strip()
+                # Can't edit media — send new message
+                edit_msg_id = ""
 
-            # ── Send text (if any remains) ──
-            text_ok = True
+            # ── Edit existing message ──
+            if edit_msg_id:
+                if text:
+                    return self._edit_text(chat_id, edit_msg_id, text)
+                return edit_msg_id
+
+            # ── Send new text ──
+            msg_id = ""
             if text:
                 if len(text) > MAX_MESSAGE_LENGTH:
                     parts = []
@@ -159,22 +170,22 @@ class TelegramConnector(BaseConnector):
                         parts.append(remaining[:MAX_MESSAGE_LENGTH])
                         remaining = remaining[MAX_MESSAGE_LENGTH:]
                     for part in parts:
-                        text_ok &= self._send_text(chat_id, part)
+                        msg_id = self._send_text(chat_id, part)
                 else:
-                    text_ok = self._send_text(chat_id, text)
+                    msg_id = self._send_text(chat_id, text)
 
             # ── Send media files ──
             for fpath in media_files:
                 fpath = fpath.strip()
                 self._send_media(chat_id, fpath)
 
-            return text_ok
+            return msg_id or ""
         except Exception as e:
             logger.error(f"[Telegram] send error: {e}")
-            return False
+            return ""
 
-    def _send_text(self, chat_id: str, text: str) -> bool:
-        """Send a plain text message with Markdown support."""
+    def _send_text(self, chat_id: str, text: str) -> str:
+        """Send a plain text message. Returns message_id string or empty on failure."""
         r = self._client.post(
             f"{self._api_base}/sendMessage",
             json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
@@ -187,7 +198,29 @@ class TelegramConnector(BaseConnector):
                     json={"chat_id": chat_id, "text": text},
                     timeout=10,
                 )
-        return r.status_code == 200
+        if r.status_code == 200:
+            data = r.json()
+            if data.get("ok"):
+                return str(data["result"]["message_id"])
+        return ""
+
+    def _edit_text(self, chat_id: str, message_id: str, text: str) -> str:
+        """Edit an existing message. Returns message_id on success, empty on failure."""
+        r = self._client.post(
+            f"{self._api_base}/editMessageText",
+            json={"chat_id": chat_id, "message_id": int(message_id), "text": text, "parse_mode": "Markdown"},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            if "can't parse entities" in r.text:
+                r = self._client.post(
+                    f"{self._api_base}/editMessageText",
+                    json={"chat_id": chat_id, "message_id": int(message_id), "text": text},
+                    timeout=10,
+                )
+        if r.status_code == 200:
+            return message_id
+        return ""
 
     _MEDIA_EXT_MAP = {
         ".png": "sendPhoto", ".jpg": "sendPhoto", ".jpeg": "sendPhoto",
