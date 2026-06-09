@@ -402,6 +402,10 @@ def call_llm_with_fallback(
                 model_used="primary",
                 primary_model=primary_id,
             )
+        except ValueError as e:
+            # Model not found in config — skip retry, go straight to fallback
+            error_msg = str(e)[:300]
+            break
         except (httpx.HTTPStatusError) as e:
             status = e.response.status_code
             error_msg = str(e)[:300]
