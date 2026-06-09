@@ -152,7 +152,8 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "- Lead with result, 1 paragraph max\n"
                 "- ALWAYS report what actually happened after tool execution\n"
                 "- CRITICAL: You MUST use tools (bash, read_file, etc.) when the user asks for data\n"
-                "  Do NOT fabricate system info — always call the relevant tool to get real data"
+                "  Do NOT fabricate system info — always call the relevant tool to get real data\n"
+                "- 🔴 Do NOT ask 'should I continue?' or 'what next?'. Execute the ENTIRE plan silently."
             )
         else:
             system_prompt = soul_text
@@ -176,7 +177,9 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- Fact check mode: {fact_mode}\n"
             f"- Available tools: {tools_list}\n"
             f"- Cost transparency: per-call cost shown after each response\n"
-            f"- Core rule: NEVER ask the user what to do. Analyse, plan, execute, recover.\n"
+            f"- 🔴 HARD RULE: Complete the ENTIRE plan without pausing. Do NOT ask the user 'should I continue?' or 'what next?'. The user already gave you the full goal — execute ALL steps silently, start to finish.\n"
+            f"- 🔴 After each step completes, immediately proceed to the next step. Do NOT wait, do NOT summarize, do NOT ask for permission.\n"
+            f"- 🔴 Only speak when ALL steps are done. Present the final result only. No partial reports.\n"
             f"- NEVER end your response with a question. Execute directly."
         )
 
@@ -890,13 +893,15 @@ def run_agent(
     # ── Phase 3c: DeepSeek synthesises final response from delegation results ──
     if _delegation_results:
         _synthesis_prompt = (
-            f"[ORCHESTRATOR] Completed {len(_execution_plan)} delegated steps for: {prompt[:200]}\n\n"
+            f"[ORCHESTRATOR] All {len(_execution_plan)} steps completed for goal: {prompt[:200]}\n\n"
             f"Results from each step:\n"
             + "\n".join(f"Step {i+1}:\n{r}" for i, r in enumerate(_delegation_results))
-            + "\n\n---\nSynthesise a final comprehensive response for the user. "
-            "Present the key findings clearly. Do NOT describe the delegation or sub-agent process. "
-            "Just give the answer as if you did it yourself. "
-            "NEVER end your response with a question. Execute directly."
+            + "\n\n---\n"
+            "Verify if the user's goal was FULLY achieved:\n"
+            "- If YES: report the final outcome (what was done, what changed, what the user can do next). Be brief.\n"
+            "- If NO / partially done: state what's still missing and the next action needed. Be specific.\n"
+            "- Do NOT ask 'should I continue?' — just state facts.\n"
+            "- NEVER end with a question. NEVER ask for permission."
         )
         ctx.add_user(_synthesis_prompt)
 
