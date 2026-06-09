@@ -1119,6 +1119,18 @@ class BaseConnector(ABC):
             config = baw["config"]
             data_dir = baw["data_dir"]
 
+            # ── In-task model override: [model: X] [stt: X] [tts: X] [img: X] ──
+            from ..capabilities import parse_model_overrides, apply_overrides_to_config
+            model_overrides: dict[str, str] = {}
+            if prompt:
+                prompt, model_overrides = parse_model_overrides(prompt)
+                if model_overrides:
+                    config = apply_overrides_to_config(config, model_overrides)
+                    logger.info(
+                        f"[Override] Per-task model overrides applied: "
+                        + ", ".join(f"{k}→{v}" for k, v in model_overrides.items())
+                    )
+
             # mode from per-chat config > global config > default
             cc = self._chat_config.get(chat_id, {}) if chat_id else {}
             mode = cc.get("mode") or config.get("mode", "quick")
