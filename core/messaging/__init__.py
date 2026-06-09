@@ -764,6 +764,16 @@ class BaseConnector(ABC):
             return m.TOOL_DEF
         from core.tools import register as _reg, clear as _clear
         _clear()
+
+        # Load config FIRST — so we can check tool enablement
+        data_dir = Path.home() / ".baw"
+        config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
+
+        # Check which stub tools are enabled
+        tools_cfg = config.get("tools", {})
+        _stub_enabled = lambda name: tools_cfg.get(name, {}).get("enabled", False)
+
+        # ── Core tools (always registered) ──
         _reg(**_ld('bash'))
         _reg(**_ld('read_file'))
         _reg(**_ld('write_file'))
@@ -775,14 +785,16 @@ class BaseConnector(ABC):
         _reg(**_ld('todo'))
         _reg(**_ld('delegate_task'))
         _reg(**_ld('vision'))
-        _reg(**_ld('browser'))
-        _reg(**_ld('image_generate'))
-        _reg(**_ld('tts'))
-        _reg(**_ld('execute_code'))
 
-        # Load config
-        data_dir = Path.home() / ".baw"
-        config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
+        # ── Stub tools (only if enabled in config) ──
+        _stub_tools = ['browser', 'image_generate', 'tts', 'execute_code']
+        _registered_stubs = []
+        for _tn in _stub_tools:
+            if _stub_enabled(_tn):
+                _reg(**_ld(_tn))
+                _registered_stubs.append(_tn)
+        if _registered_stubs:
+            logger.info(f"[Tools] Stub tools enabled: {', '.join(_registered_stubs)}")
 
         # Load env vars (API keys)
         env_file = data_dir / ".env"
@@ -810,11 +822,25 @@ class BaseConnector(ABC):
         from core.tools import register as _reg, clear as _clear
         _clear()
 
-        tool_names = ["bash", "read_file", "write_file", "web_search", "web_extract",
-                      "search_files", "patch", "memory", "todo", "delegate_task",
-                      "vision", "browser", "image_generate", "tts", "execute_code"]
+        # Read config first to check tool enablement
+        data_dir = Path.home() / ".baw"
+        try:
+            config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
+        except Exception as e:
+            return f"❌ Reload failed: config error: {e}"
+
+        tools_cfg = config.get("tools", {})
+        _stub_enabled = lambda name: tools_cfg.get(name, {}).get("enabled", False)
+
+        # Core tools (always registered)
+        core_tool_names = ["bash", "read_file", "write_file", "web_search", "web_extract",
+                           "search_files", "patch", "memory", "todo", "delegate_task", "vision"]
+        # Stub tools (only if enabled)
+        stub_tool_names = ["browser", "image_generate", "tts", "execute_code"]
+        all_tool_names = core_tool_names + [t for t in stub_tool_names if _stub_enabled(t)]
+
         errors = []
-        for name in tool_names:
+        for name in all_tool_names:
             try:
                 p = os.path.join(baw_root, 'tools', f'{name}.py')
                 s = _iu.spec_from_file_location(f'_tk_{name}_r', p)
@@ -854,7 +880,7 @@ class BaseConnector(ABC):
             return f"❌ Reload failed: loop reload error: {e}"
 
         self._BAW = {"run_agent": run_agent, "config": config, "data_dir": data_dir}
-        status = f"✅ Reloaded {len(tool_names) - len(errors)}/{len(tool_names)} tools"
+        status = f"✅ Reloaded {len(all_tool_names) - len(errors)}/{len(all_tool_names)} tools"
         if errors:
             status += f" | ⚠️ {len(errors)} errors: {'; '.join(errors[:3])}"
         return status
