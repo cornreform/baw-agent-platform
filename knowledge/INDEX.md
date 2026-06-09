@@ -1,130 +1,135 @@
 # BAW Knowledge Base — 開發記憶庫
 
-> **系統名稱**: BAW (Black And White)
-> **狀態**: v0.12 — 最新版本
-> **版本管理**: Snapshot-based — 見 [VERSION-WORKFLOW.md](VERSION-WORKFLOW.md)
-> **開始日期**: 2026-06-07
-> **開發者**: the user + Sticky (Hermes Agent)
+> **System**: BAW (Black And White)
+> **Version**: v0.12 — latest
+> **Versioning**: Snapshot-based — see [VERSION-WORKFLOW.md](VERSION-WORKFLOW.md)
+> **Start Date**: 2026-06-07
+> **Developers**: the user + Sticky (Hermes Agent)
 > **Repo**: https://github.com/cornreform/baw-agent-platform
-> **文檔站**: https://cornreform.github.io/baw-agent-platform/
+> **Docs Site**: https://cornreform.github.io/baw-agent-platform/
 
 ---
 
-## 目錄
+## Table of Contents / 目錄
 
-1. [設計哲學](#1-設計哲學)
-2. [架構地圖](#2-架構地圖)
-3. [開發歷程](#3-開發歷程)
-4. [設計決策記錄](#4-設計決策記錄)
-5. [Config 參照](#5-config-參照)
-6. [LLM Provider 設定](#6-llm-provider-設定)
-7. [Search Provider 系統](#7-search-provider-系統)
-8. [天使/魔鬼法庭細則](#8-天使魔鬼法庭細則)
-9. [Tool Degradation 機制](#9-tool-degradation-機制)
-10. [已知問題 & 修正記錄](#10-已知問題--修正記錄)
-11. [如何擴展](#11-如何擴展)
-12. [Roadmap](#12-roadmap)
+1. [Design Philosophy / 設計哲學](#1-design-philosophy)
+2. [Architecture Map / 架構地圖](#2-architecture-map)
+3. [Development Timeline / 開發歷程](#3-development-timeline)
+4. [Design Decision Records / 設計決策記錄](#4-design-decision-records)
+5. [Config Reference / Config 參照](#5-config-reference)
+6. [LLM Provider Setup / LLM Provider 設定](#6-llm-provider-setup)
+7. [Search Provider System / Search Provider 系統](#7-search-provider-system)
+8. [Angel/Devil Court Specs / 天使/魔鬼法庭細則](#8-angeldevil-court-specs)
+9. [Tool Degradation / Tool Degradation 機制](#9-tool-degradation)
+10. [Known Issues & Fixes / 已知問題 & 修正記錄](#10-known-issues--fixes)
+11. [How to Extend / 如何擴展](#11-how-to-extend)
+12. [Roadmap / Roadmap](#12-roadmap)
 
 ---
 
-## 1. 設計哲學
+## 1. Design Philosophy
 
-### 1.1 永不問用戶 (Never Ask the User)
+### 1.1 Never Ask the User / 永不問用戶
 
-BAW 嘅黃金法則：**遇到問題自己解決，唔好拋返俾用戶。**
+BAW's golden rule: **solve problems yourself — never throw them back at the user.**
 
-- 失敗 → retry → replan → rollback → 換策略 → 全部用盡先上報
-- Tool timeout → 加倍 timeout → parent directory fallback → /tmp/ fallback → replan
-- 追蹤 `strategies_tried` list，連續 3 次同一策略失敗換下個
-- 6 次總失敗先上報天使/魔鬼法庭
+> BAW 嘅黃金法則：**遇到問題自己解決，唔好拋返俾用戶。**
 
-### 1.2 永不放棄 (Never Surrender)
+- Fail → retry → replan → rollback → switch strategies → only report after exhausting all
+- Tool timeout → double timeout → parent directory fallback → /tmp/ fallback → replan
+- Track `strategies_tried` list, switch after 3 consecutive same-strategy failures
+- Only escalate to Angel/Devil court after 6 total failures
 
-BAW 唔會直接放棄一個子目標。嘗試不同方法係 mandatory：
+### 1.2 Never Surrender / 永不放棄
+
+BAW never gives up on a sub-goal. Trying different approaches is mandatory:
+
+> BAW 唔會直接放棄一個子目標。嘗試不同方法係 mandatory：
+
 - Checkpoint save before each step
-- 如果 verify FAIL → 自動 recover
-- Recover 順序：retry → replan → rollback
-- 只有所有 recover 策略失敗先上報
+- If verify FAIL → auto-recover
+- Recovery order: retry → replan → rollback
+- Only report when all recovery strategies fail
 
-### 1.3 Angel/Devil 法庭
+### 1.3 Angel/Devil Court / Angel/Devil 法庭
 
-- Devil = 反對派，**零工具權限**，永遠先發言
-- Angel = 執行者，有齊工具，聽完 Devil 先決定
-- Devil 分數 > Angel 分數 → BLOCK
-- 每次 user turn 都行一次 court（tight mode 下）
-- Devil persona 係自動生成嘅 foil —— Angel 越 trustful，Devil 越 skeptical
+- Devil = opposition voice, **zero tool permissions**, always speaks first
+- Angel = executor voice, has all tools, decides only after hearing Devil
+- Devil score > Angel score → BLOCK
+- Court runs once per user turn (in tight mode)
+- Devil persona is auto-generated foil — the more trusting Angel is, the more skeptical Devil becomes
 
-### 1.4 協議無關 (Protocol-agnostic)
+### 1.4 Protocol-Agnostic / 協議無關
 
-- LLM 通訊協議抽象層：`register_protocol(name, handler_fn)`
-- 內置三個 protocol：`openai-chat`、`anthropic`、`google`
-- Provider config：`base_url` + `api_key_env` + `protocol` + `models[]`
-- 內置 auto-fallback：primary 失敗自動試 fallback
+- LLM communication protocol abstraction: `register_protocol(name, handler_fn)`
+- Three built-in protocols: `openai-chat`, `anthropic`, `google`
+- Provider config: `base_url` + `api_key_env` + `protocol` + `models[]`
+- Built-in auto-fallback: primary fails → automatic fallback
 
 ---
 
-## 2. 架構地圖
+## 2. Architecture Map
 
-### 2.1 目錄結構
+### 2.1 Directory Structure / 目錄結構
 
 ```
 baw/                        ← Code repo
-├── baw                     CLI entry point (Python, 700 lines)
-├── core/                   核心模組 (26 files)
-│   ├── loop.py             Agent loop (844 lines)
-│   ├── llm.py              LLM abstraction (405 lines)
-│   ├── adversarial.py      Angel/Devil court (216 lines)
-│   ├── tools.py            Tool registry (81 lines)
-│   ├── permission.py       三級權限引擎
-│   ├── memory.py           記憶 JSONL store (133 lines)
+├── baw                     CLI entry point (Python)
+├── core/                   Core modules (26+ files)
+│   ├── loop.py             Agent loop
+│   ├── llm.py              LLM abstraction (protocol-agnostic)
+│   ├── adversarial.py      Angel/Devil court (v2 — parallel independent)
+│   ├── tools.py            Tool registry
+│   ├── permission.py       3-tier permission engine
+│   ├── memory.py           Memory JSONL store
 │   ├── context.py          Context manager
-│   ├── fact_checker.py     事實查證
-│   ├── tone.py             語氣 profiles
+│   ├── fact_checker.py     Fact checking
+│   ├── tone.py             Tone profiles (6 modes)
 │   ├── scheduler.py        Cron daemon
 │   ├── skills.py           YAML skill system
-│   ├── learn.py            自我學習技能
-│   ├── board.py            HTML dashboard (203 lines)
+│   ├── learn.py            Self-learning
+│   ├── board.py            HTML dashboard
 │   ├── task_manager.py     Async task manager
 │   ├── github.py           GitHub integration
-│   ├── search.py           開放 search provider
-│   ├── setup.py            Setup wizard + Config CLI (267 lines)
-│   ├── commands.py         Slash commands (367 lines)
-│   ├── display.py          步驟顯示 (127 lines)
-│   ├── dream.py            每週自我整理 (105 lines)
+│   ├── search.py           Open search provider system
+│   ├── setup.py            Setup wizard + Config CLI
+│   ├── commands.py         Slash commands (with 60s cache)
+│   ├── display.py          Step display formatter
+│   ├── dream.py            Weekly self-curation
 │   ├── checkpoint.py       Checkpoint / rollback
 │   ├── degradation.py      Tool degradation chains
-│   ├── file_history.py     檔案版本 SHA256
-│   ├── autosave.py         自動 git commit
+│   ├── file_history.py     File versioning (SHA256)
+│   ├── autosave.py         Auto git commit
 │   ├── render.py           HTML renderers
 │   └── verifier.py         Per-step LLM verify
-├── tools/                  內置工具 (4 files)
+├── tools/                  Built-in tools (4 files)
 │   ├── bash.py
 │   ├── read_file.py
 │   ├── write_file.py
 │   └── web_search.py
 ├── search_providers/       Search provider plugins
-├── config.yaml             預設配置
-├── docs/                   GitHub Pages 文檔
-│   └── index.html          暗色主題雙語文檔站
-├── knowledge/              開發記憶庫（你喺度）
-├── BAW-INTRODUCTION.html   完整介紹書
-└── BAW-PLAN.html           設計原稿
+├── config.yaml             Default config
+├── docs/                   GitHub Pages documentation
+│   └── index.html          Dark-themed bilingual docs site
+├── knowledge/              Development knowledge base
+├── BAW-INTRODUCTION.html   Full introduction
+└── BAW-PLAN.html           Original design document
 
-~/.baw/                     ← 用戶設定目錄
-├── config.yaml             用戶配置
-├── SOUL.md                 Soul / 行為規則
+~/.baw/                     ← User config directory
+├── config.yaml             User config
+├── SOUL.md                 Soul / behavioral rules
 ├── .env                    API keys
-├── memory/store.jsonl      記憶儲存
-├── memory/edges.json       記憶關聯圖
-├── history/manifest.jsonl  檔案版本歷史
-├── schedule.yaml           排程定義
-├── schedule_state.json     排程狀態
-├── skills/*.yaml           已安裝技能
-├── tasks/                  背景任務輸出
-└── dashboard.html          生成式系統儀錶板
+├── memory/store.jsonl      Memory store
+├── memory/edges.json       Memory relationship graph
+├── history/manifest.jsonl  File version history
+├── schedule.yaml           Schedule definitions
+├── schedule_state.json     Schedule state
+├── skills/*.yaml           Installed skills
+├── tasks/                  Background task output
+└── dashboard.html          Generated system dashboard
 ```
 
-### 2.2 Module 相依關係
+### 2.2 Module Dependency Graph / Module 相依關係
 
 ```
 baw (CLI entry)
@@ -142,15 +147,15 @@ baw (CLI entry)
  └── core/search.py        ─── search_providers/* plugins
 ```
 
-### 2.3 Agent Loop 流程 (tight mode)
+### 2.3 Agent Loop Flow / Agent Loop 流程 (tight mode)
 
 ```
 User prompt
     │
     ▼
 [Phase 1] Plan
-    ├── Angel 生成 step plan
-    └── Devil 審查 plan
+    ├── Angel generates step plan
+    └── Devil reviews plan
          │
          ▼
 [Phase 2] Each step
@@ -174,209 +179,205 @@ User prompt
 
 ---
 
-## 3. 開發歷程
+## 3. Development Timeline
 
-### Day 1: 2026-06-07（密集開發日）
+### Day 1: 2026-06-07 (Intensive Development Day)
 
-| 時間 | Commit | 事件 |
-|------|--------|------|
-| 13:38 | `d699a15` | **Init**: BAW Agent Platform v3 — 從零 reset，核心 loop + LLM + tools + memory + adversarial + CLI |
-| 14:07 | `dab60e9` | **Kimi K2.6**: 加入 Kimi 做 primary model，auto-fallback 機制 |
-| 14:07 | `738c648` | **Config fix**: 修正 config.sample.yaml indentation |
-| 14:41 | `7f8febc` | **Search Registry**: 開放 search provider registry，內置 DuckDuckGo |
-| 15:03 | `f6b32c1` | **Self-improving**: 自我改進 loop + checkpoint system |
-| 15:29 | `8fc824a` | **P0 complete**: web_search tool + fact checker upgrade + HTML rendering + thread-safe cost tracker |
+| Time | Commit | Event |
+|------|--------|-------|
+| 13:38 | `d699a15` | **Init**: BAW Agent Platform v3 — from scratch: core loop + LLM + tools + memory + adversarial + CLI |
+| 14:07 | `dab60e9` | **Kimi K2.6**: Added Kimi as primary model with auto-fallback |
+| 14:07 | `738c648` | **Config fix**: Fixed config.sample.yaml indentation |
+| 14:41 | `7f8febc` | **Search Registry**: Open search provider registry with DuckDuckGo |
+| 15:03 | `f6b32c1` | **Self-improving**: Self-improvement loop + checkpoint system |
+| 15:29 | `8fc824a` | **P0 complete**: web_search + fact checker + HTML rendering + cost tracker |
 | 15:46 | `4be7471` | **Bug fix**: regex over-escape in claim patterns |
 | 15:58 | `cc3a165` | **Polish**: add tool list to --help |
 | 16:05 | `2897537` | **P1: Slash commands**: 12 commands + CLI integration |
-| 16:14 | `97332e2` | **P1: /rethink /court /fresh**: 三個進階 slash command |
+| 16:14 | `97332e2` | **P1: /rethink /court /fresh**: Three advanced slash commands |
 | 16:21 | `7d64e45` | **P1: Tool degradation**: bash/write/search fallback chains |
-| 17:00 | `48b52ad` | **3 modes + display**: quick/hybrid/tight execution modes + display overhaul + BTW + background delegation |
-| 17:08 | `428ddbb` | **Scheduler + Skills + Dashboard**: 三大 infra 模組 |
+| 17:00 | `48b52ad` | **3 modes + display**: quick/hybrid/tight modes + display overhaul |
+| 17:08 | `428ddbb` | **Scheduler + Skills + Dashboard**: Three infra modules |
 | 17:32 | `c0ebddb` | **Self-learning**: `--learn-skill` + `--learn-url` |
-| 17:55 | `eeca807` | **Async TaskManager + GitHub**: 背景任務管理 + GH issues/PRs/CI |
-| 17:57 | `0e9da35` | **Setup wizard + Config CLI + Chat interface**: 最後 UX 層 |
-| 18:15 | `89f7927` | **Bilingual README + docs site**: GitHub Pages 文檔 |
+| 17:55 | `eeca807` | **Async TaskManager + GitHub**: Background tasks + GH integration |
+| 17:57 | `0e9da35` | **Setup wizard + Config CLI + Chat interface**: Final UX layer |
+| 18:15 | `89f7927` | **Bilingual README + docs site**: GitHub Pages documentation |
 | 18:30 | `0aaf18d` | **English-first**: README + docs default to English |
 
-總計 **18 個實際開發 commits**，加 10 個 auto-commit（BAW agent 自己紀錄）。全 day 從零到完整 platform。
-
-### 開發模式
-
-- **主體開發**: Sticky (Hermes Agent) 用 DeepSeek V4 Flash / Kimi K2.6
-- **部分自產 commits**: BAW agent 自己入 git commit 紀錄狀態
-- **測試**: 每個模組開發後 functional test 驗證
-- **版本控制**: git commit + auto-commit cron (every 6h) + push to GitHub (SSH key `id_cornreform`)
+**Total: 18 actual dev commits** + 10 auto-commits (BAW agent self-recorded). Full platform from zero in one day.
 
 ---
 
-## 4. 設計決策記錄
+## 4. Design Decision Records
 
-### D-001: 平台名稱 BAW
+### D-001: Platform Name "BAW"
 
-- **日期**: 2026-06-07
-- **原名**: Stark（德文 "strong, clean"）
-- **改動**: 改為 BAW (Black And White)
-- **原因**: 用戶養咗兩隻狗（黑白配），Angel/Devil 哲學更貼切
-- **影響**: 所有檔案名、CLI 入口、變數名全部改曬
+- **Date**: 2026-06-07
+- **Original**: Stark (German for "strong, clean")
+- **Changed to**: BAW (Black And White)
+- **Reason**: User has two dogs (black & white), Angel/Devil philosophy fits better
 
-### D-002: Angel/Devil 雙魂法庭（v2 — 同步獨立分析）
+### D-002: Angel/Devil Dual-Soul Court (v2 — Parallel Independent Analysis)
 
-- **日期**: 2026-06-07（初始版），2026-06-07（v2 重寫）
-- **v1 設計（已廢棄）**: Devil 永遠先發言，Angel 聽完再回應。順序分析會 bias Angel 嘅判斷。
-- **v2 新設計**: Devil 同 Angel 同步獨立分析同一個目標，各自評分，互不知情。
-- **原因**: 避免順序 bias。兩個聲音都反映真實獨立觀點。BAW 以中立角色聆聽雙方。
-- **格式**: `[Devil: X/10]` + `[Angel: Y/10]` — 獨立評分，無先後次序
-- **法庭 vs 執行分離**: Court phase 冇執行權限；Execution phase 冇法庭。結論確立後直接執行。
-- **用戶態度**: BAW 回覆時保持中立，唔討好用家，會勇於反駁。用家想法唔一定合理。
+- **Date**: 2026-06-07
+- **Previous (v1, deprecated)**: Devil spoke first, Angel responded after — sequential analysis biased Angel's judgment
+- **Current (v2)**: Devil and Angel analyze the SAME goal independently and simultaneously, unaware of each other
+- **Reason**: Eliminate sequential bias. Both voices reflect genuine independent views.
+- **Court vs Execution separation**: Court phase has no execution rights; Execution phase has no court
 
-### D-003: 協議無關 LLM 架構
+### D-003: Protocol-Agnostic LLM Architecture
 
-- **日期**: 2026-06-07
-- **Decision**: `register_protocol()` 抽象層，唔 hardcode 任何 provider
-- **原因**: 避免 vendor lock-in，用戶可以自由轉模型
-- **實作**: 3 個 wire protocol (`openai-chat`, `anthropic`, `google`) + custom handler 支援
-- **Config**: `providers.<name>.protocol` 決定用邊個 handler
+- **Date**: 2026-06-07
+- **Decision**: `register_protocol()` abstraction layer, no vendor hardcoding
+- **Reason**: Avoid vendor lock-in, users freely switch models
 
-### D-004: 單一統一記憶 API
+### D-004: Single Unified Memory API
 
-- **日期**: 2026-06-07
-- **Decision**: `remember()` + `search()` 單一 interface，唔暴露底層 layers
-- **原因**: 簡化 agent 同用戶嘅使用體驗
-- **儲存**: JSONL append-only (`~/.baw/memory/store.jsonl`)
-- **評分**: 重複存取 → 加分，high score 記憶優先注入 system prompt
+- **Date**: 2026-06-07
+- **Decision**: `remember()` + `search()` single interface
+- **Storage**: JSONL append-only (`~/.baw/memory/store.jsonl`)
 
-### D-005: 三級權限 (唔係 binary)
+### D-005: 3-Tier Permissions (not binary)
 
-- **日期**: 2026-06-07
-- **Decision**: High (禁止) / Medium (提示) / Low (允許)
-- **原因**: Binary allow/deny 太粗糙。sudo/rm -rf 要 block，write_file 可以提示，read_file 直接俾
-- **Config**: `permissions.risk_levels` 用 path pattern 同 command prefix 定義
+- **Date**: 2026-06-07
+- **Decision**: High (block) / Medium (prompt) / Low (allow)
+- **Reason**: Binary allow/deny too coarse
 
-### D-006: Per-step verify 預設關閉
+### D-006: Per-Step Verify Disabled by Default
 
-- **日期**: 2026-06-07
-- **Decision**: `verify.enabled: false` 預設
-- **原因**: 每個 step 行一次 LLM verify 太貴（token + latency），有用先開
-- **使用場景**: tight mode 配合 token budget 充足時
+- **Date**: 2026-06-07
+- **Decision**: `verify.enabled: false` by default — too expensive otherwise
 
-### D-007: File version + Auto git
+### D-007: File Versioning + Auto Git
 
-- **日期**: 2026-06-07
-- **Decision**: 每次寫入記錄 ISO timestamp + SHA256 + 自動 git commit
-- **原因**: 可追溯性、rollback 能力。防止意外覆蓋重要檔案
-- **實作**: `file_history.py` (manifest) + `autosave.py` (git commit)
+- **Date**: 2026-06-07
+- **Decision**: ISO timestamp + SHA256 + auto git commit on every write
 
-### D-008: HTML 內部報告
+### D-008: HTML for Internal Reports
 
-- **日期**: 2026-06-07
-- **Decision**: BAW 內部輸出用 HTML，Telegram/CLI 用純文字
-- **原因**: HTML dashboard 同 court report 更可讀，但 terminal 唔需要 HTML
-- **例外**: `baw --board` 輸出 HTML file
+- **Date**: 2026-06-07
+- **Decision**: BAW internal output uses HTML, Telegram/CLI uses plain text
 
-### D-009: 三種執行模式
+### D-009: Three Execution Modes
 
-- **日期**: 2026-06-07
+- **Date**: 2026-06-07
 - **Decision**: Quick / Hybrid / Tight
-- **原因**: 唔同場景需要唔同安全等級。quick = 快速答問題，tight = 重要操作
-- **Config**: `mode: tight`（預設）
 
-### D-010: 六種語氣 Profile
+### D-010: Six Tone Profiles
 
-- **日期**: 2026-06-07
+- **Date**: 2026-06-07
 - **Decision**: casual / business / teaching / client-doc / ot-rt / stepwise
-- **原因**: 語氣影響 LLM response quality，對話場景唔同需要唔同語氣
-- **Config**: `tone.default: casual`
 
 ### D-011: Setup Wizard + Config CLI
 
-- **日期**: 2026-06-07
-- **Decision**: `baw --setup` 互動引導 + `baw --cfg set/get/list` 即時設定
-- **原因**: 唔係個個用戶想手動 edit YAML
-- **即時生效**: Config CLI 修改直接寫入 `~/.baw/config.yaml`
+- **Date**: 2026-06-07
+- **Decision**: `baw --setup` interactive wizard + `baw --cfg set/get/list` CLI
 
-### D-012: GitHub Pages 文檔站
+### D-012: GitHub Pages Docs Site
 
-- **日期**: 2026-06-07
-- **Decision**: `docs/index.html` dark theme + 語言切換 (繁/EN)
-- **原因**: README 太長會 overwhelming，獨立文檔站更有結構
-- **語言**: 英文 default，繁中 toggle
+- **Date**: 2026-06-07
+- **Decision**: `docs/index.html` dark theme + language toggle (EN/繁)
+- **Languages**: English default, Traditional Chinese toggle
+
+### D-013: Model Auto-Routing (2026-06-09)
+
+- **Date**: 2026-06-09
+- **Decision**: Auto-route short queries → fast model (deepseek-v4-flash), long context → large-context model (MiniMax-M2.5)
+- **Threshold**: >8,000 estimated tokens triggers long-model routing
+- **Config**: `model.route.enabled` + `model.route.threshold_tokens`
+
+### D-014: Exponential Backoff Retry (2026-06-09)
+
+- **Date**: 2026-06-09
+- **Decision**: Retry transient errors (429/503/timeout) up to 3x with 1s→2s→4s backoff
+- **Non-retryable**: 401/403/400 errors skip retry, go straight to fallback
+
+### D-015: Command Result Cache (2026-06-09)
+
+- **Date**: 2026-06-09
+- **Decision**: 60s TTL cache for static commands (/status, /help, /version, /tools)
+- **Invalidation**: /model and /tone changes invalidate /status cache
 
 ---
 
-## 5. Config 參照
+## 5. Config Reference
 
-### 5.1 完整 Config Key 列表
+### 5.1 Complete Config Key List
 
-| Key | 類型 | 預設值 | 說明 |
-|-----|------|--------|------|
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
 | `mode` | string | `tight` | Execution mode: quick/hybrid/tight |
-| `model.default` | string | `deepseek-v4-flash` | 預設 LLM 模型 ID |
-| `model.fallback` | string | (同 default) | Fallback 模型 ID |
-| `tone.default` | string | `casual` | 預設語氣 profile |
-| `adversarial.enabled` | bool | `true` | 開啟天使/魔鬼法庭 |
-| `adversarial.flag_threshold` | int | `0` | Devil 分數高於此值即 flag |
-| `adversarial.warn_threshold` | int | `2` | Devil 分數高於此值 warn 而非 block |
-| `verify.enabled` | bool | `false` | 每步 LLM verify |
+| `model.default` | string | `deepseek-v4-flash` | Default LLM model ID |
+| `model.fallback` | string | (same as default) | Fallback model ID |
+| `model.route.enabled` | bool | `true` | Auto-route by message size |
+| `model.route.short_model` | string | `deepseek-v4-flash` | Model for short queries |
+| `model.route.long_model` | string | `MiniMax-M2.5` | Model for long context |
+| `model.route.threshold_tokens` | int | `8000` | Token threshold for routing |
+| `tone.default` | string | `casual` | Default tone profile |
+| `adversarial.enabled` | bool | `true` | Enable Angel/Devil court |
+| `adversarial.flag_threshold` | int | `0` | Devil score > this → flag |
+| `adversarial.warn_threshold` | int | `2` | Devil score > this → warn not block |
+| `verify.enabled` | bool | `false` | Per-step LLM verify |
 | `fact_check.mode` | string | `normal` | off/normal/strict |
 
-### 5.2 Provider Config 結構
+### 5.2 Provider Config Structure
 
 ```yaml
 providers:
   <provider_name>:
     base_url: "https://api.example.com/v1"
-    api_key_env: "ENV_VAR_NAME"    # 從環境變數讀 key
-    protocol: "openai-chat"        # 或 anthropic/google/custom
+    api_key_env: "ENV_VAR_NAME"    # Read API key from env var
+    protocol: "openai-chat"        # or anthropic/google/custom
     models:
       - id: "model-id"
         context_window: 65536
         vision: false
         cost_per_1m_input: 0.30
         cost_per_1m_output: 1.20
-        temperature: 0.7           # 可選，override default
-        model_kwargs:              # 可選，extra LLM body params
+        temperature: 0.7           # Optional, override default
+        model_kwargs:              # Optional, extra LLM body params
           disable_reasoning: true
 ```
 
-### 5.3 權限 Config 結構
+### 5.3 Permission Config Structure
 
 ```yaml
 permissions:
   risk_levels:
-    high:       # ⛔ 禁止
+    high:       # ⛔ Blocked
       - path: "/etc/*"
       - cmd_prefix: "sudo"
       - cmd_prefix: "rm -rf"
-    medium:     # ⚠️ 提示
+    medium:     # ⚠️ Prompt user
       - tool: "write_file"
       - tool: "bash"
-    low:        # ✅ 允許
+    low:        # ✅ Allowed
       - tool: "read_file"
 ```
 
 ---
 
-## 6. LLM Provider 設定
+## 6. LLM Provider Setup
 
-### 6.1 支援中嘅 Provider
+### 6.1 Supported Providers
 
-| Provider | Protocol | 模型例子 | 狀態 |
-|----------|----------|----------|------|
-| DeepSeek | openai-chat | deepseek-v4-flash, deepseek-reasoner | **已啟用 (default)** |
-| MiniMax | openai-chat | MiniMax-M3, MiniMax-M2.5 | **已啟用** |
-| Anthropic | anthropic | claude-sonnet-4 | 已配置 (commented) |
-| Google | google | gemini-2.5-pro | 已配置 (commented) |
+| Provider | Protocol | Example Models | Status |
+|----------|----------|---------------|--------|
+| DeepSeek | openai-chat | deepseek-v4-flash, deepseek-reasoner | **Enabled (default)** |
+| MiniMax | openai-chat | MiniMax-M2.5 | **Enabled** |
+| Kimi (Moonshot) | openai-chat | kimi-k2.6 | **Enabled (fallback)** |
+| Anthropic | anthropic | claude-sonnet-4 | Configured (commented) |
+| Google | google | gemini-2.5-pro | Configured (commented) |
 
-### 6.2 加新 Provider
+### 6.2 Adding a New Provider
 
 ```yaml
-# 1. config.yaml 加 provider entry
+# 1. Add provider entry in config.yaml
 providers:
   groq:
     base_url: "https://api.groq.com/openai/v1"
     api_key_env: "GROQ_API_KEY"
-    protocol: "openai-chat"  # OpenAI 相容就用呢個
+    protocol: "openai-chat"  # Use this for OpenAI-compatible APIs
     models:
       - id: "llama-3.3-70b-versatile"
         context_window: 32768
@@ -384,7 +385,7 @@ providers:
         cost_per_1m_input: 0.59
         cost_per_1m_output: 0.79
 
-# 2. 如果是唔同 protocol，core/llm.py 加 handler
+# 2. For non-standard protocols, add a handler in core/llm.py
 from .llm import register_protocol
 def my_custom_handler(model, messages, tools, **kw):
     # custom logic here
@@ -394,34 +395,34 @@ register_protocol("my-protocol", my_custom_handler)
 
 ### 6.3 Kimi Thinking Mode Bug
 
-**問題**: Kimi K2.6 預設會用 thinking mode，導致 `content` 回傳 `None`（因為 thinking 內容喺 `reasoning_content` field）。
-**修正**: `model_kwargs.disable_reasoning: true` 避免空 content。
-**適用模型**: Kimi K2.6 (`api.moonshot.ai`)
+**Issue**: Kimi K2.6 defaults to thinking mode, causing `content` to return `None` (thinking goes into `reasoning_content` field).
+**Fix**: `model_kwargs.disable_reasoning: true` prevents empty content responses.
+**Affected models**: Kimi K2.6 (`api.moonshot.ai`)
 
 ---
 
-## 7. Search Provider 系統
+## 7. Search Provider System
 
-### 7.1 開放註冊機制
+### 7.1 Open Registration / 開放註冊機制
 
-Search provider 係 pluggable：喺 `search_providers/` 放一個 file 實作介面，call `register_search_provider()`。
+Search providers are pluggable: drop a file in `search_providers/` implementing the interface, call `register_search_provider()`.
 
-### 7.2 內置 Provider
+### 7.2 Built-in Providers / 內置 Provider
 
-| Provider | API Key | 說明 |
-|----------|---------|------|
-| DuckDuckGo | 唔需要 | 免費，`duckduckgo-search` library |
+| Provider | API Key | Description |
+|----------|---------|-------------|
+| DuckDuckGo | Not needed | Free, uses `duckduckgo-search` library |
 
-### 7.3 CLI 操作
+### 7.3 CLI Operations / CLI 操作
 
 ```bash
-baw --search-provider list                  # 列出所有 provider
-baw --search-provider guide duckduckgo      # 設定指南
-baw --search-provider api duckduckgo        # API 參考
-baw --search-provider test duckduckgo "..." # 測試
+baw --search-provider list                  # List all providers
+baw --search-provider guide duckduckgo      # Setup guide
+baw --search-provider api duckduckgo        # API reference
+baw --search-provider test duckduckgo "..." # Test search
 ```
 
-### 7.4 加新 Provider
+### 7.4 Adding a New Provider / 加新 Provider
 
 ```python
 # search_providers/tavily.py
@@ -442,220 +443,126 @@ register_search_provider(
 
 ---
 
-## 8. 天使/魔鬼法庭細則（v2 — 同步獨立分析）
+## 8. Angel/Devil Court Specs (v2 — Parallel Independent)
 
-### 8.1 Devil 角色（Independent Critic）
+### 8.1 Devil Role (Independent Critic)
 
-- **人設**: 自動生成嘅 foil — 分析目標時從風險/問題角度出發
-- **權限**: 零執行權限 — 冇 tools、冇 bash、冇寫 file（法庭階段）
-- **獨立性**: 唔知道天使講咗咩，純粹從自己角度分析
-- **輸出**: 純文字分析 + `[Devil: X/10]` 分數
-- **目的**: 提供真實嘅反對觀點，確保 BAW 唔會盲目同意
+- **Persona**: Auto-generated foil — analyzes from risk/problem perspective
+- **Permissions**: Zero execution rights — no tools, no bash, no file writes (court phase only)
+- **Independence**: Does NOT know what Angel said; purely independent analysis
+- **Output**: Plain text analysis + `[Devil: X/10]` score
+- **Purpose**: Provide genuine opposition, ensure BAW doesn't blindly agree
 
-### 8.2 Angel 角色（Independent Supporter）
+### 8.2 Angel Role (Independent Supporter)
 
-- **人設**: 自動生成嘅 complement — 分析目標時從可行性/價值角度出發
-- **權限**: 零執行權限（法庭階段）
-- **獨立性**: 唔知道魔鬼講咗咩，純粹從自己角度分析
-- **輸出**: 純文字分析 + `[Angel: Y/10]` 分數
-- **目的**: 提供真實嘅支持觀點，確保 BAW 睇到機會同可能性
+- **Persona**: Auto-generated complement — analyzes from feasibility/value perspective
+- **Permissions**: Zero execution rights (court phase only)
+- **Independence**: Does NOT know what Devil said; purely independent analysis
+- **Output**: Plain text analysis + `[Angel: Y/10]` score
+- **Purpose**: Provide genuine support, ensure BAW sees opportunities and possibilities
 
-### 8.3 BAW 中立角色
+### 8.3 BAW's Neutral Role
 
-- BAW（系統本身）唔係天使，而係中立嘅聆聽者
-- 收到兩個獨立分析後，BAW 用常識同判斷力 synthesise
-- BAW 嘅回應唔係「天使嘅回應」—— 係 BAW 自己嘅中立判斷
-- 可以同意魔鬼多啲、天使多啲、或者兩邊都唔完全同意
-- **唔討好用家** — 用家要求唔一定合理，BAW 會指出
+- BAW (the system itself) is NOT Angel — it's a neutral listener
+- After receiving two independent analyses, BAW synthesizes using common sense and judgment
+- BAW's response is NOT "Angel's response" — it's BAW's own neutral judgment
+- Can agree more with Devil, more with Angel, or partially with neither
+- **Does not please the user** — user requests may not be reasonable; BAW points this out
 
-### 8.4 辯論階段（互動模式）
+### 8.4 Debate Phase (Interactive Mode)
 
-- BAW 俾出中立分析後，用家可以回應
-- 用家 ↔ Agent 來回討論
-- BAW 可以堅持己見、讓步、或者提出替代方案
-- 直至雙方達成最終共識
+- BAW presents neutral analysis; user can respond
+- User ↔ Agent back-and-forth discussion
+- BAW can hold ground, concede, or propose alternatives
+- Until both sides reach final consensus
 
-### 8.5 執行階段（法庭之後）
+### 8.5 Execution Phase (After Court)
 
-- 結論確立後，BAW 進入執行模式
-- 唔會重新開庭（結論已確立）
+- Once the conclusion is reached, BAW enters execution mode
+- No re-litigation — the debate is settled
 - Plan → Step → Verify → Recover
-- 執行失敗時唔問用家 — 自動 retry/replan/rollback
-- 所有策略用盡先通知
+- Does NOT ask user on execution failure — auto retry/replan/rollback
+- Only notify after exhausting all strategies
 
-### 8.6 熄咗法庭
+### 8.6 Disabling the Court
 
 ```bash
 baw --cfg set adversarial.enabled false
-# 或者 config.yaml
+# or in config.yaml:
 adversarial:
   enabled: false
 ```
 
 ---
 
-## 9. Tool Degradation 機制
+## 9. Tool Degradation
 
-每個 tool 有 fallback chain，失敗時自動降級：
+Each tool has a fallback chain; on failure, automatically degrades:
 
-### bash
-
-1. 原始 timeout → 失敗
-2. Timeout 加倍（up to 300s）→ 再失敗
-3. Parent directory fallback（`cd .. && ...`）→ 再失敗
-4. 上報策略失敗，replan
-
-### write_file
-
-1. 原始路徑 → Permission denied
-2. `/tmp/` fallback（同檔名）→ 成功
-3. 記錄到 file history
-
-### web_search
-
-1. 原始 query → 無結果
-2. 縮短 query（取關鍵字）→ 無結果
-3. 換 provider（如果有 multiple providers）
-4. 回報無結果
-
-### 策略追蹤
-
-- `strategies_tried: []` list 記錄已嘗試策略
-- `MAX_CONSECUTIVE_FAILURES = 3` → 同一策略失敗 3 次換下個
-- `MAX_TOTAL_FAILURES = 6` → 全部失敗上報法庭
+| Tool | Degradation Chain |
+|------|------------------|
+| `bash` | 1. Double timeout → 2. Retry with parent dir → 3. Retry with /tmp |
+| `write_file` | 1. Retry with parent dir → 2. Retry with /tmp → 3. Offer alternative path |
+| `web_search` | 1. Simplify query (3 keywords) → 2. Try different provider |
 
 ---
 
-## 10. 已知問題 & 修正記錄
+## 10. Known Issues & Fixes
 
-### 10.1 已修正
-
-| 問題 | 日期 | 修正 |
-|------|------|------|
-| Kimi K2.6 thinking mode `content` = None | 2026-06-07 | `model_kwargs.disable_reasoning: true` |
-| `--help` epilog 冇 tool list | 2026-06-07 | 加 `epilog` 參數到 argparse |
-| regex over-escape `\s` → `\\s` in fact_checker | 2026-06-07 | 修正為 `\s`（一個 backslash） |
-| Clarify 4-選-1 UI 唔好用 | 2026-06-06 | 用文字 option list + 即刻執行 |
-
-### 10.2 注意事項
-
-- **MiniMax M2.5**: 401 auth error（主系統用 DeepSeek，MiniMax 似乎 key 有問題）
-- **SSH key**: 用 `id_cornreform` 連 `github.com-cornreform` host（`~/.ssh/config`）
-- **auto-commit**: 每 6 小時 cron job（job_id: `b73866740e51`）
-- **GH Pages**: 需要手動 enable Settings → Pages → main /docs
-
-### 10.3 安全注意
-
-- API keys 唔寫入 git（.gitignore exclude `.env` 同 `config.yaml`）
-- SSH key 專用 `id_cornreform` 唔共用其他 service
-- Permission 引擎預設 block `sudo`、`rm -rf`、`/etc/*`、`*.pem`、`*.key`
+| Issue | Status | Fix |
+|-------|--------|-----|
+| Kimi thinking mode returns empty content | ✅ Fixed | `disable_reasoning: true` in model_kwargs |
+| NPU dispatcher zombie restart loop (17,438x) | ✅ Fixed | Services disabled (scripts don't exist) |
+| Duplicate ESPHome log watcher | ✅ Fixed | Killed duplicate |
+| Step 1 display suppressed in live progress | ✅ Fixed | Removed `_step_idx > 0` guard |
 
 ---
 
-## 11. 如何擴展
+## 11. How to Extend
 
-### 11.1 加新 Tool
+### Adding a New Tool / 加新 Tool
 
-```python
-# tools/my_tool.py
-from baw.core.tools import register
+1. Create `tools/my_tool.py` with `register_tool()`
+2. Add permission rules in config.yaml
+3. Optionally add degradation chain
 
-def my_handler(param1, param2):
-    # do something
-    return result
-
-register(
-    name="my_tool",
-    description="What this tool does",
-    handler=my_handler,
-    parameters={
-        "type": "object",
-        "properties": {
-            "param1": {"type": "string", "description": "..."},
-            "param2": {"type": "integer", "description": "..."},
-        },
-        "required": ["param1"],
-    },
-    risk_level="medium",
-)
-```
-
-### 11.2 加新 LLM Protocol
+### Adding a New Protocol / 加新 Protocol
 
 ```python
-# core/llm.py 最後加
-def my_protocol_handler(model, messages, tools, **kw):
-    # 實作同 anthropic/google handler 類似結構
+from baw.core.llm import register_protocol
+
+def my_handler(model, messages, tools, temperature, max_tokens):
+    # Custom API call logic
     return LLMResponse(...)
 
-register_protocol("my-protocol", my_protocol_handler)
+register_protocol("my-protocol", my_handler)
 ```
 
-### 11.3 加新 Search Provider
-
-見 [7.4 Search Provider 加新 Provider](#74-加新-provider)
-
-### 11.4 加新 Tone
+### Adding a New Tone Profile / 加新語氣
 
 ```yaml
-# config.yaml
 tone:
   profiles:
-    executive:
-      description: "C-level brief — bullet points, key metrics, no filler"
-```
-
-### 11.5 Self-Learning Skills
-
-```bash
-# 自動學習
-baw --learn-skill "每個星期日晚上 check disk usage，如果超過 85% send 一個 summary"
-# 從 URL 學習
-baw --learn-url "https://example.com/backup-workflow.md"
+    my_tone:
+      description: "My custom tone description"
 ```
 
 ---
 
 ## 12. Roadmap
 
-### 已實現 (v0.10 — 測試版)
-
-- [x] Angel/Devil 雙魂法庭（v2 — 同步獨立分析）
-- [x] 五平台通訊框架（Telegram/Discord/Signal/WhatsApp/Matrix）
-- [x] baw-bot daemon（多平台訊息路由）
-- [x] 三種執行模式 (quick/hybrid/tight)
-- [x] 協議無關 LLM (3 protocols)
-- [x] 內置工具 (bash/read/write/web_search)
-- [x] 永不放棄哲學 (6 strategies)
-- [x] 三級權限引擎
-- [x] 統一記憶 + 事實查證
-- [x] 語氣設定 (6 profiles)
-- [x] Scheduler 排程
-- [x] Skills 技能系統
-- [x] 自我學習技能
-- [x] Async TaskManager (max 3 concurrent)
-- [x] GitHub 整合
-- [x] HTML Dashboard
-- [x] Setup Wizard + Config CLI
-- [x] 互動式 Chat 介面 (Tab 補全)
-- [x] BTW 快捷模式
-- [x] Tool degradation chains
-- [x] Per-step verify (default off)
-- [x] File history + auto git
-- [x] 每週自我 dreaming
-- [x] Bilingual docs (GitHub Pages)
-
-### 考慮中
-
-- [ ] Telegram bot 整合（接收 message 自動 run）
-- [ ] 正式 testing suite（目前靠 functional test）
-- [ ] Docker 支援
-- [ ] Web UI
-- [ ] Plugin / extension marketplace
-- [ ] Multi-user support
-- [ ] Streaming output (live LLM token display)
-
----
-
-*Last updated: 2026-06-07*
-*Maintained by: Sticky*
+- [x] Core loop + LLM + tools + memory + adversarial + CLI
+- [x] Slash commands + config CLI + setup wizard
+- [x] Scheduler + skills + dashboard
+- [x] Self-learning + background tasks + GitHub integration
+- [x] Bilingual docs + GitHub Pages
+- [x] 3-tier model selector with back button
+- [x] Route recalculation goal pursuit
+- [x] Message queue with dequeue
+- [x] Exponential backoff retry
+- [x] 60s TTL command cache
+- [x] Auto model routing (short/long queries)
+- [ ] Multi-agent swarm coordination
+- [ ] Voice pipeline (STT → LLM → TTS)
+- [ ] Plugin marketplace
+- [ ] Web UI dashboard (beyond HTML)
