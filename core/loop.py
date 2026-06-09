@@ -682,36 +682,35 @@ def run_agent(
     _dt_spec.loader.exec_module(_dt_mod)
     _delegate_fn = _dt_mod.delegate_task
 
-    _GOAL_PURSUIT_MAX_ATTEMPTS = 5  # Max total goal-pursuit iterations
-    _STEP_RETRIES = 3               # Max retries per step with alternative approaches
-    _execution_progress: list[str] = []
+    # ── Phase 3b: Goal-pursuit loop (Google Maps style) ──
+    # Google Maps: wrong turn → silently recalculates new route from current position
+    # No retries, no skipping — just instant re-route from where you are.
+    _GOAL_PURSUIT_MAX_ATTEMPTS = 5  # Max full from-scratch re-plans
+    _MAX_RECALCULATES = 10          # Max micro re-routes per pursuit (prevent infinite loop)
     steps_completed = 0
     _delegation_results: list[str] = []
-    _delegation_failed = False
+    _synthesis_results: list[str] = []  # Successful step results for final synthesis
     _goal_achieved = False
 
     for _pursuit in range(1, _GOAL_PURSUIT_MAX_ATTEMPTS + 1):
         if verbose:
             print(f"\n  🎯 Goal pursuit iteration {_pursuit}/{_GOAL_PURSUIT_MAX_ATTEMPTS}")
 
-        # ── Re-plan entire goal if previous pursuit failed ──
+        # ── (Re-)Plan entire goal ──
         if _pursuit > 1:
-            _all_failures = "\n".join(
+            _failure_log = "\n".join(
                 r[:500] for r in _delegation_results
-            ) if _delegation_results else "No specific failure info"
+            ) if _delegation_results else "No details"
 
-            _adapt_prompt = (
+            _plan_prompt = (
                 f"[ORCHESTRATOR - RETRY {_pursuit - 1}/{_GOAL_PURSUIT_MAX_ATTEMPTS}]\n\n"
                 f"Original goal: {prompt}\n\n"
-                f"Previous attempt failed at this point:\n{_all_failures}\n\n"
-                f"Analyse what went wrong and write a COMPLETELY DIFFERENT plan.\n"
-                f"Each step must be SMALL (max 1-2 tool calls).\n"
-                f"IMPORTANT: Every step MUST succeed before moving to the next.\n"
-                f"Format each step as:\n"
-                f"  Step N: <description> — <tool> — <expected outcome>\n\n"
-                f"Reply with ONLY the plan, numbered 1..N."
+                f"Previous run failed. Here's what happened:\n{_failure_log}\n\n"
+                f"Analyse what went wrong. Write a COMPLETELY DIFFERENT plan.\n"
+                f"Format:\n"
+                f"  Step N: <description> — <tool>\n"
             )
-            _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _adapt_prompt}]
+            _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _plan_prompt}]
             _plan_fb = call_llm_with_fallback(config, _plan_msgs, temperature=None)
             _plan_resp = _plan_fb.response
             total_llm_calls += 1
@@ -728,109 +727,124 @@ def run_agent(
                 _execution_plan.append({"num": 1, "desc": (_plan_resp.content or "")[:200]})
 
             _delegation_results = []
+            _synthesis_results = []
             steps_completed = 0
-            if progress_callback:
-                progress_callback("plan", "", {"iteration": _pursuit, "steps": len(_execution_plan)})
 
         if progress_callback:
-            progress_callback("goal_iteration", "", {"iteration": _pursuit, "max": _GOAL_PURSUIT_MAX_ATTEMPTS})
+            progress_callback("plan", "", {"steps": len(_execution_plan)})
 
-        # ── Execute each step — no skipping, no giving up ──
-        # Each step MUST succeed before we move to the next.
-        # If a step can't succeed after all retries, the entire pursuit iteration fails.
+        # ── Execute steps - Google Maps route navigation ──
+        # Each step tried ONCE. If fail → recalculate remaining route from here.
         _pursuit_failed = False
-        for _step_idx, _step in enumerate(_execution_plan):
-            if _pursuit_failed:
-                break  # This pursuit iteration already failed at an earlier step
+        _recalc_count = 0
+        _step_idx = 0
 
+        while _step_idx < len(_execution_plan) and not _pursuit_failed:
+            _step = _execution_plan[_step_idx]
             _step_goal = _step['desc']
+
             if progress_callback:
                 progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal})
 
-            # ── Per-step retry: keep trying different approaches until success ──
-            _step_failed_all = True  # Assume failure until proven otherwise
-            for _step_attempt in range(1, _STEP_RETRIES + 1):
-                if progress_callback:
-                    progress_callback("step_retry", "", {"step": _step_idx + 1, "attempt": _step_attempt, "goal": _step_goal})
+            _step_ctx = ""
+            if _synthesis_results:
+                _step_ctx = "Completed so far:\n" + "\n---\n".join(
+                    f"Step {i+1}:\n{r[:800]}" for i, r in enumerate(_synthesis_results)
+                )
 
-                _step_goal_actual = _step_goal
-                if _step_attempt > 1:
-                    # Analyse failure and devise alternative approach
-                    _last_error = ""
-                    try:
-                        _last_error = _delegation_results[-1] if _delegation_results else "unknown"
-                    except Exception:
-                        _last_error = "unknown"
+            _step_desc_short = _step['desc'][:80]
+            if verbose:
+                print(f"  🗺️ Step {_step_idx + 1}/{len(_execution_plan)}: {_step_desc_short}")
 
-                    _step_goal_actual = (
-                        f"[ALTERNATIVE APPROACH {_step_attempt}/{_STEP_RETRIES} — Analyse & Retry]\n"
-                        f"Original step goal: {_step['desc']}\n"
-                        f"Previous attempt failed. ERROR:\n{_last_error[:500]}\n\n"
-                        f"Analyse WHY this approach failed. Think of a COMPLETELY DIFFERENT way.\n"
-                        f"Different tool, different source, different method.\n"
-                        f"Goal: achieve the step goal above using a NEW approach.\n"
-                        f"DO NOT repeat the same approach that already failed."
-                    )
+            try:
+                _result = _delegate_fn(
+                    goal=_step_goal,
+                    context=_step_ctx,
+                    toolsets="",
+                )
+                while len(_delegation_results) <= _step_idx:
+                    _delegation_results.append("")
+                _delegation_results[_step_idx] = _result
+                _synthesis_results.append(_result)
+                steps_completed += 1
 
-                _step_ctx = ""
-                if _delegation_results:
-                    _step_ctx = "Previous steps completed:\n" + "\n---\n".join(
-                        f"Step {i+1}:\n{r[:800]}" for i, r in enumerate(_delegation_results)
-                    )
-
-                _step_desc_short = _step['desc'][:80]
+                _dsp = dsp.phase_step_done(_step_idx + 1, len(_execution_plan), _step_desc_short)
+                _display_log.append(_dsp)
                 if verbose:
-                    print(f"  🤖 Step {_step_idx + 1}/{len(_execution_plan)} (attempt {_step_attempt}/{_STEP_RETRIES}): {_step_desc_short}")
+                    print(_dsp)
+                _step_idx += 1  # Move to next step
 
-                try:
-                    _result = _delegate_fn(
-                        goal=_step_goal_actual,
-                        context=_step_ctx,
-                    )
-                    while len(_delegation_results) <= _step_idx:
-                        _delegation_results.append("")
-                    _delegation_results[_step_idx] = _result
-                    _step_failed_all = False
-                    steps_completed += 1
+            except Exception as _e:
+                while len(_delegation_results) <= _step_idx:
+                    _delegation_results.append("")
+                _delegation_results[_step_idx] = f"[FAILED] {_step_desc_short}: {_e}"
 
-                    _execution_progress.append(f"Step {_step_idx + 1}: ✅ {_step_desc_short}")
-                    _dsp = dsp.phase_step_done(_step_idx + 1, len(_execution_plan), _step_desc_short)
+                if verbose:
+                    print(f"  🚫 Step {_step_idx + 1} failed: {str(_e)[:100]}")
+                    print(f"     ↻ Google Maps recalculation...")
+
+                # ── Google Maps: recalculate remaining route from here ──
+                _recalc_count += 1
+                if _recalc_count > _MAX_RECALCULATES:
+                    _pursuit_failed = True
+                    break
+
+                _done_summary = "\n".join(
+                    f"Step {i+1}: {r[:200]}" for i, r in enumerate(_synthesis_results)
+                ) if _synthesis_results else "Nothing completed yet."
+
+                _replan_prompt = (
+                    f"[GOOGLE MAPS RECALCULATE #{_recalc_count}]\n"
+                    f"Original destination: {prompt}\n\n"
+                    f"Journey so far:\n{_done_summary}\n\n"
+                    f"Just took a wrong turn at: {_step['desc']}\n"
+                    f"Error: {str(_e)[:300]}\n\n"
+                    f"Like Google Maps: recalculate a NEW route from HERE to reach the destination.\n"
+                    f"List ONLY the remaining steps needed (numbered from 1).\n"
+                    f"Do NOT re-list already completed steps.\n"
+                    f"Format each step:\n"
+                    f"  Step N: <description> — <tool>"
+                )
+                _replan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _replan_prompt}]
+                _replan_fb = call_llm_with_fallback(config, _replan_msgs, temperature=None)
+                _replan_resp = _replan_fb.response
+                total_llm_calls += 1
+                _cost_r = calculate_cost(model, _replan_resp.input_tokens, _replan_resp.output_tokens)
+                session_cost += _cost_r
+                record_cost(f"{model.provider}/{model.id}", _replan_resp.input_tokens, _replan_resp.output_tokens, _cost_r)
+
+                _new_steps = []
+                for _line in (_replan_resp.content or "").split("\n"):
+                    _m = re.match(r'\s*(?:Step\s*)?(\d+)[.:]\s*(.*)', _line.strip())
+                    if _m:
+                        _new_steps.append({"num": int(_m.group(1)), "desc": _m.group(2)})
+
+                if _new_steps:
+                    # Replace remaining plan with new route (keep completed steps)
+                    _execution_plan = _execution_plan[:_step_idx] + _new_steps
+                    if verbose:
+                        print(f"     ✅ New route: {len(_new_steps)} remaining steps")
+                    # Don't increment _step_idx — retry this position with new first step
+                else:
+                    # Can't recalculate — entire pursuit iteration fails
+                    _pursuit_failed = True
+                    _dsp = dsp.phase_step_error(_step_idx + 1, len(_execution_plan), _step_desc_short, str(_e)[:80])
                     _display_log.append(_dsp)
                     if verbose:
-                        print(_dsp)
-                    break  # Step succeeded → move to next step
-                except Exception as _e:
-                    _err_msg = f"[FAILED attempt {_step_attempt}] {_step_desc_short}: {_e}"
-                    while len(_delegation_results) <= _step_idx:
-                        _delegation_results.append(_err_msg)
-                    _delegation_results[_step_idx] = _err_msg
-
-                    if verbose:
-                        print(f"  ❌ Attempt {_step_attempt} failed: {_e}")
-                    if _step_attempt < _STEP_RETRIES:
-                        if verbose:
-                            print(f"  🔄 Analysing failure and devising alternative approach...")
-                    else:
-                        _pursuit_failed = True
-                        _dsp = dsp.phase_step_error(_step_idx + 1, len(_execution_plan), _step_desc_short, str(_e)[:80])
-                        _display_log.append(_dsp)
-                        if verbose:
-                            print(f"  💥 Step {_step_idx + 1} failed after {_STEP_RETRIES} different approaches")
-                            print(f"     → Re-planning entire goal from scratch")
+                        print(f"     ❌ Can't recalculate route — re-planning from scratch")
+                    break
 
         # ── Self-review ──
         if not _pursuit_failed and steps_completed > 0:
             _review_prompt = (
                 f"[SELF-REVIEW] Goal: {prompt}\n\n"
-                f"All {steps_completed} steps completed.\n\n"
+                f"All steps completed.\n\n"
                 f"Results:\n"
                 + "\n".join(f"Step {i+1}:\n{r[:500]}" for i, r in enumerate(_delegation_results))
                 + f"\n\n---\n"
                 f"Given the goal, are the results sufficient? Answer with:\n"
                 f"SCORE: <0-10> (7+ = goal achieved)\n"
-                f"VERDICT: <achieved | partial | insufficient>\n"
-                f"REASON: <brief explanation>\n"
-                f"MISSING: <what is still needed, if anything>"
+                f"REASON: <brief explanation>"
             )
             _review_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _review_prompt}]
             _review_fb = call_llm_with_fallback(config, _review_msgs, temperature=0.3)
@@ -841,40 +855,23 @@ def run_agent(
             record_cost(f"{model.provider}/{model.id}", _review_resp.input_tokens, _review_resp.output_tokens, _cost3)
             _review_text = _review_resp.content or ""
 
-            if verbose:
-                print(f"\n  🔍 Self-review: {steps_completed} steps done")
-                print(f"     {_review_text[:150]}")
-
             _score_match = re.search(r'SCORE:\s*(\d+(?:\.\d+)?)', _review_text)
-            if _score_match:
-                _score = float(_score_match.group(1))
-                if _score >= 7:
-                    _goal_achieved = True
-                    if verbose:
-                        print(f"  ✅ Goal achieved (score: {_score}/10)")
-                    break
-                else:
-                    if verbose:
-                        print(f"  ⏳ Score {_score}/10 — need to retry (iteration {_pursuit}/{_GOAL_PURSUIT_MAX_ATTEMPTS})...")
-                    # Re-plan entire goal with review feedback as context
-                    _review_for_replan = _review_text[:500]
-                    _delegation_results.append(f"[SELF-REVIEW FEEDBACK] {_review_for_replan}")
-                    continue
-            else:
-                if verbose:
-                    print(f"  ⚠️ Couldn't parse score — accepting result")
+            _score = float(_score_match.group(1)) if _score_match else 0
+
+            if verbose:
+                print(f"\n  🔍 Self-review: {steps_completed} steps done, score {_score}/10")
+
+            if _score >= 7:
                 _goal_achieved = True
                 break
-        elif steps_completed == 0:
-            # Zero steps completed — re-plan
-            if _pursuit < _GOAL_PURSUIT_MAX_ATTEMPTS:
-                if verbose:
-                    print(f"  ⏳ Zero steps completed — re-planning ({_pursuit}/{_GOAL_PURSUIT_MAX_ATTEMPTS})...")
-                continue
             else:
                 if verbose:
-                    print(f"  ❌ All {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit iterations exhausted — giving up")
-        # else: _pursuit_failed but some steps done — falls through to outer loop re-plan
+                    print(f"     → Score too low, re-planning ({_pursuit}/{_GOAL_PURSUIT_MAX_ATTEMPTS})")
+                # Fall through to outer loop re-plan
+        else:
+            if _pursuit >= _GOAL_PURSUIT_MAX_ATTEMPTS:
+                if verbose:
+                    print(f"  ❌ All {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit iterations exhausted")
 
     # ── After goal loop ──
     if _goal_achieved:
