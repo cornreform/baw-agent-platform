@@ -444,24 +444,40 @@ class TelegramConnector(BaseConnector):
             self._release_slot()
 
     def _process_image_file(self, chat_id: str, photo_data: dict, msg: dict):
-        """Download an image and run OCR + BAW analysis."""
+        """Download an image and analyze with MiniMax vision (not OCR)."""
         try:
             file_id = photo_data["file_id"]
             file_name = f"photo_{file_id[:8]}.jpg"
-            self.send(chat_id, f"📥 Downloading image...")
+            self.send(chat_id, "📥 Downloading image...")
 
             local_path = self._download_file(file_id, file_name)
-            self.send(chat_id, f"🔍 Running OCR...")
 
-            content = self._extract_file_content(local_path)
+            # Use MiniMax vision (mmx) — NOT OCR
+            import subprocess as sp
+            self.send(chat_id, "👁️ Analyzing with vision...")
+            try:
+                r = sp.run(
+                    ["mmx", "vision", "describe", local_path,
+                     "--question", "Describe this image in detail. What objects, text, brands, or products do you see? If it's a product, identify it and suggest where to buy it."],
+                    capture_output=True, text=True, timeout=60,
+                )
+                vision_result = r.stdout.strip() or r.stderr.strip() or "(vision returned nothing)"
+            except sp.TimeoutExpired:
+                vision_result = "(vision timeout)"
+            except FileNotFoundError:
+                # Fallback to OCR if mmx not available
+                content = self._extract_file_content(local_path)
+                vision_result = f"OCR: {content}"
 
             prompt = (
-                f"[File: {file_name}]\n"
-                f"[Type: image]\n\n"
-                f"OCR extracted text:\n{content}\n\n"
+                f"[Image analysis via MiniMax vision]\n"
+                f"File: {file_name}\n\n"
+                f"Vision result:\n{vision_result}\n\n"
                 f"---\n"
-                f"Analyze this image content. "
-                f"Summarize what you see in Traditional Chinese."
+                f"Based on the vision analysis above, answer in Traditional Chinese:\n"
+                f"- What is shown in this image?\n"
+                f"- If it's a product: what is it, and where can I buy it?\n"
+                f"- If there are similar items: suggest alternatives."
             )
 
             self.send(chat_id, f"🤔 Analyzing with BAW...")
