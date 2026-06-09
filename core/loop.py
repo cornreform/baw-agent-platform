@@ -682,8 +682,8 @@ def run_agent(
     _dt_spec.loader.exec_module(_dt_mod)
     _delegate_fn = _dt_mod.delegate_task
 
-    # ── Phase 3b: Goal-pursuit loop (Google Maps style) ──
-    # Google Maps: wrong turn → silently recalculates new route from current position
+    # ── Phase 3b: Goal-pursuit loop ──
+    # Route recalculation: wrong turn → silently recalculates new route from current position
     # No retries, no skipping — just instant re-route from where you are.
     _GOAL_PURSUIT_MAX_ATTEMPTS = 5  # Max full from-scratch re-plans
     _MAX_RECALCULATES = 10          # Max micro re-routes per pursuit (prevent infinite loop)
@@ -733,7 +733,7 @@ def run_agent(
         if progress_callback:
             progress_callback("plan", "", {"steps": len(_execution_plan)})
 
-        # ── Execute steps - Google Maps route navigation ──
+        # ── Execute steps - route navigation ──
         # Each step tried ONCE. If fail → recalculate remaining route from here.
         _pursuit_failed = False
         _recalc_count = 0
@@ -782,9 +782,9 @@ def run_agent(
 
                 if verbose:
                     print(f"  🚫 Step {_step_idx + 1} failed: {str(_e)[:100]}")
-                    print(f"     ↻ Google Maps recalculation...")
+                    print(f"     ↻ Route recalculation...")
 
-                # ── Google Maps: recalculate remaining route from here ──
+                # ── Route recalculation: recalculate remaining route from here ──
                 _recalc_count += 1
                 if _recalc_count > _MAX_RECALCULATES:
                     _pursuit_failed = True
@@ -803,7 +803,7 @@ def run_agent(
                     f"Journey so far:\n{_done_summary}\n\n"
                     f"Just took a wrong turn at: {_step['desc']}\n"
                     f"Error: {str(_e)[:300]}\n\n"
-                    f"Like Google Maps: recalculate a NEW route from HERE to reach the destination.\n"
+                    f"Recalculate a NEW route from HERE to reach the destination.\n"
                     f"List ONLY the remaining steps needed (numbered from 1).\n"
                     f"Do NOT re-list already completed steps.\n"
                     f"Format each step:\n"
