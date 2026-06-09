@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.12-blueviolet" alt="v0.12">
+  <img src="https://img.shields.io/badge/version-0.13-blueviolet" alt="v0.13">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -18,8 +18,8 @@
 <h1 align="center">⚫ BAW — Black And White ⚪</h1>
 <p align="center"><strong>Built from scratch agent platform • 由零打造嘅 Agent Platform</strong></p>
 <p align="center">
-  🤍🖤 Angel/Devil Dual-Soul Court • Protocol-agnostic LLM • Never Surrender<br>
-  🤍🖤 Angel/Devil 雙魂法庭 • Protocol-agnostic LLM • 永不放棄哲學
+  🤍🖤 Angel/Devil Dual-Soul Court • Route Plan + Anti-Stuck • Self-Config Tools<br>
+  🤍🖤 Angel/Devil 雙魂法庭 • 路線圖執行+防死步 • 自我配置工具
 </p>
 
 ---
@@ -100,6 +100,10 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>🎙️ Voice STT (v0.11)</td><td>Telegram voice/audio auto-detected: checks model audio_input capability → configured STT method → faster-whisper local fallback. Presents setup options when none available</td></tr>
   <tr><td>📊 Context Monitor (v0.12)</td><td>Auto-detects context usage per model's context_window. >70% → auto-summarize session + save to memory + compress to last 4 msgs. 50-70% → log monitor. Silent otherwise</td></tr>
   <tr><td>🗂️ Session Management (v0.12)</td><td><code>/new</code>, <code>/list</code>, <code>/resume &lt;id&gt;</code>, <code>/summarize</code> — full session lifecycle without losing context. Help listing shows all top-level commands</td></tr>
+  <tr><td>🗺️ Route Plan Execution (v0.13)</td><td>Multi-step plan with real-time inline progress editing. 60s step timeout + same-step skip after 2 fails — never silently stops mid-route</td></tr>
+  <tr><td>🔧 Tool Self-Config (v0.13)</td><td>BAW discovers & registers its own CLI tools. No pre-config needed — finds <code>mmx</code>, writes wrapper, auto-registers</td></tr>
+  <tr><td>👁️ MiniMax Vision (v0.13)</td><td>Photo handling uses <code>mmx vision describe</code> (MiniMax M3). OCR only as fallback</td></tr>
+  <tr><td>🔄 Auto-Continue Loop (v0.13)</td><td>Goal not achieved? Auto-feed result back as next prompt (max 3 rounds). No more empty promises</td></tr>
   <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block sudo/rm -rf) / Medium (warn) / Low (allow)</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates a dark-themed system dashboard</td></tr>
   <tr><td>💬 Interactive CLI Chat</td><td>Colored banner + Tab completion + 20 slash commands</td></tr>
