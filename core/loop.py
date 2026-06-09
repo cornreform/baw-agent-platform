@@ -701,6 +701,16 @@ def run_agent(
     _display_log: list[str] = []
     if _execution_plan:
         _display_log.append(dsp.phase_plan(_execution_plan))
+        # ── Incomplete plan detection ──
+        _last_step = _execution_plan[-1]
+        _last_desc = _last_step['desc']
+        _truncated = (
+            len(_last_desc) < 30 or
+            _last_desc.rstrip().endswith(('…', '...', '，', ',')) or
+            (len(_execution_plan) > 1 and len(_last_desc) < len(_execution_plan[-2]['desc']) * 0.5)
+        )
+        if _truncated and verbose:
+            print(f"  ⚠️ Last step may be truncated: '{_last_desc[:60]}'")
 
     # ── Phase 3b: Goal-pursuit loop ──
     # Each step: execute → if fail → think alternative → retry
@@ -956,19 +966,25 @@ def run_agent(
         if verbose:
             print(f"  ⚠️ Goal not fully achieved after {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit attempts — synthesising partial results")
 
-    # ── Phase 3c: DeepSeek synthesises final response from delegation results ──
+    # ── Phase 3c: Synthesise delegation results into a conclusion ──
     if _delegation_results:
+        _step_count = len(_delegation_results)
+        _multi_source = _step_count > 1
         _synthesis_prompt = (
-            f"[ORCHESTRATOR] All {len(_execution_plan)} steps completed for goal: {prompt[:200]}\n\n"
-            f"Results from each step:\n"
-            + "\n".join(f"Step {i+1}:\n{r}" for i, r in enumerate(_delegation_results))
-            + "\n\n---\n"
-            "Verify if the user's goal was FULLY achieved:\n"
-            "- If YES: report the final outcome. Be brief.\n"
-            "- If NO: say exactly 'NOT DONE: <what's missing>' and STOP.\n"
-            "  Do NOT say 'let me go do X' or 'I will now Y' — these are empty promises.\n"
-            "  If you can't finish, be honest: state the blocker.\n"
-            "- NEVER end with a question. NEVER ask for permission. NEVER promise future action."
+            f"[ORCHESTRATOR] Goal: {prompt[:200]}\n\n"
+            f"All {_step_count} steps completed. Below are their results:\n\n"
+            + "\n---\n".join(f"Step {i+1}:\n{r[:800]}" for i, r in enumerate(_delegation_results))
+            + "\n\n---\n\n"
+            "SYNTHESISE the results into a CONCISE CONCLUSION:\n"
+            "1. Key findings from each step (1 sentence each)\n"
+            + (f"2. CROSS-REFERENCE: Do the results confirm or contradict each other? Are they about the same thing?\n" if _multi_source else "")
+            + "3. FINAL CONCLUSION: Answer the user's goal directly. Be brief.\n"
+            "4. If relevant: suggest concrete next actions or alternatives.\n\n"
+            "CRITICAL RULES:\n"
+            "- This is a CONCLUSION, not a verification. Don't say 'goal achieved' or 'score'. Just deliver the answer.\n"
+            "- If results are thin or incomplete, say what's known honestly — don't fabricate.\n"
+            "- NEVER end with a question. NEVER ask for permission. NEVER promise future action.\n"
+            "- Output format: no markdown headers, just plain paragraphs. Lead with the answer."
         )
         ctx.add_user(_synthesis_prompt)
 
