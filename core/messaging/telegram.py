@@ -919,7 +919,8 @@ class TelegramConnector(BaseConnector):
 
         # Acquire slot and start async processing in background thread
         if not self._acquire_slot():
-            self.send(chat_id, f"⏳ 目前有 {self._max_concurrency} 個任務進行中，稍後再試。")
+            pos = self._enqueue_message(chat_id, user_id, user_name, text, msg)
+            self.send(chat_id, f"⏳ Queued #{pos} — will process when a slot frees up ({self._active_count}/{self._max_concurrency} busy)")
             return
 
         self._cancel_event.clear()

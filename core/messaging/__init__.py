@@ -84,6 +84,9 @@ class BaseConnector(ABC):
         self._max_concurrency = self.config.get("max_concurrency", 3)
         self._active_count = 0
         self._active_lock = threading.Lock()
+        # ── Message queue ──
+        self._message_queue: list[dict] = []  # [{chat_id, user_id, user_name, text, msg, reply_to}]
+        self._queue_lock = threading.Lock()
         self._batch_results: list[dict] = []
         self._batch_lock = threading.Lock()
         self._batch_chat_id: str | None = None
@@ -110,12 +113,49 @@ class BaseConnector(ABC):
             return False
 
     def _release_slot(self):
-        """Release a processing slot. Triggers batch synthesis in background when idle."""
+        """Release a processing slot. If messages are queued, process the next one."""
         with self._active_lock:
             self._active_count = max(0, self._active_count - 1)
             was_last = self._active_count == 0
         if was_last:
             threading.Thread(target=self._synthesize_batch, daemon=True).start()
+        # ── Process next queued message if any ──
+        self._dequeue_next()
+
+    def _enqueue_message(self, chat_id: str, user_id: int, user_name: str, text: str, msg: dict) -> int:
+        """Enqueue a message for later processing. Returns queue position (1-indexed)."""
+        with self._queue_lock:
+            self._message_queue.append({
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "user_name": user_name,
+                "text": text,
+                "msg": msg,
+            })
+            return len(self._message_queue)
+
+    def _dequeue_next(self):
+        """Try to dequeue and process the next message. Called on slot release."""
+        with self._queue_lock:
+            if not self._message_queue:
+                return
+            next_msg = self._message_queue.pop(0)
+
+        # Acquire the slot (should always succeed since we just released)
+        if self._acquire_slot():
+            self.send(next_msg["chat_id"], "⚙️ Your queued message is now being processed...")
+            self._cancel_event.clear()
+            threading.Thread(
+                target=self._process_message,
+                args=(
+                    next_msg["chat_id"],
+                    next_msg["user_id"],
+                    next_msg["user_name"],
+                    next_msg["text"],
+                    next_msg["msg"],
+                ),
+                daemon=True,
+            ).start()
 
     def _record_batch_result(self, chat_id: str, summary: str, msg_type: str = "text"):
         """Record a concurrent task's result for batch synthesis."""
