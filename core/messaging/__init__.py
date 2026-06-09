@@ -1269,6 +1269,15 @@ class BaseConnector(ABC):
 
             output = response or ""
 
+            # ── Send plan recap as separate message (if available) ──
+            if info and info.get("plan_recap"):
+                plan_msg = info["plan_recap"]
+                # Strip HTML for Telegram
+                plan_msg = re.sub(r'<[^>]+>', '', plan_msg)
+                if len(plan_msg) > 4000:
+                    plan_msg = plan_msg[:3997] + "..."
+                self.send(chat_id, plan_msg)
+
             # ── Send court verdict as separate message (if available) ──
             if info and info.get("adversarial_raw"):
                 cv = info["adversarial_raw"]
