@@ -768,7 +768,17 @@ class BaseConnector(ABC):
         _reg(**_ld('read_file'))
         _reg(**_ld('write_file'))
         _reg(**_ld('web_search'))
+        _reg(**_ld('web_extract'))
+        _reg(**_ld('search_files'))
+        _reg(**_ld('patch'))
+        _reg(**_ld('memory'))
+        _reg(**_ld('todo'))
         _reg(**_ld('delegate_task'))
+        _reg(**_ld('vision'))
+        _reg(**_ld('browser'))
+        _reg(**_ld('image_generate'))
+        _reg(**_ld('tts'))
+        _reg(**_ld('execute_code'))
 
         # Load config
         data_dir = Path.home() / ".baw"
@@ -800,7 +810,9 @@ class BaseConnector(ABC):
         from core.tools import register as _reg, clear as _clear
         _clear()
 
-        tool_names = ["bash", "read_file", "write_file", "web_search", "delegate_task"]
+        tool_names = ["bash", "read_file", "write_file", "web_search", "web_extract",
+                      "search_files", "patch", "memory", "todo", "delegate_task",
+                      "vision", "browser", "image_generate", "tts", "execute_code"]
         errors = []
         for name in tool_names:
             try:
