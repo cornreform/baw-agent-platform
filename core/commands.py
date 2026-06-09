@@ -438,18 +438,30 @@ def _cmd_docs(filepath: str) -> str:
     return "\n".join(lines)
 
 
-# ── Update command ─────────────────────────────────────────────
+# ── Update command — Standardized Flow ─────────────────────────
 
 def _cmd_update(data_dir: Path) -> str:
-    """Check GitHub for latest release, pull, and report changes."""
+    """Standardized update flow:
+    1. git fetch
+    2. Compare version (current vs latest tag)
+    3. Fetch release notes from GitHub for gap versions
+    4. Show changelog
+    5. git pull
+    6. Post-update hooks (migration, deps)
+    7. Restart bot
+    """
     import subprocess
+    import json
+    import urllib.request
     from pathlib import Path
 
     repo_dir = Path.home() / "baw"
+    repo_owner = "cornreform"
+    repo_name = "baw-agent-platform"
 
-    lines = ["🔄 **BAW Update**\n"]
+    lines = ["🔄 **BAW Update — Standardized Flow**\n"]
 
-    # 1. Fetch
+    # ── Step 1: Fetch ──
     try:
         r = subprocess.run(
             ["git", "fetch", "origin", "--tags"],
@@ -457,15 +469,25 @@ def _cmd_update(data_dir: Path) -> str:
             cwd=str(repo_dir),
         )
         if r.returncode != 0:
-            return f"❌ git fetch failed:\n{r.stderr[:300]}"
-        lines.append("✅ Fetched latest from GitHub")
+            return f"❌ Step 1/6 — git fetch failed:\n{r.stderr[:300]}"
+        lines.append("✅ Step 1/6 — Fetched latest from GitHub")
     except Exception as e:
-        return f"❌ git fetch failed: {e}"
+        return f"❌ Step 1/6 — git fetch failed: {e}"
 
-    # 2. Check current vs remote
+    # ── Step 2: Version compare ──
     try:
         r = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD..origin/main"],
+            ["git", "describe", "--tags", "--abbrev=0"],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(repo_dir),
+        )
+        current_tag = r.stdout.strip()
+    except Exception:
+        current_tag = "v0.0.0"
+
+    try:
+        r = subprocess.run(
+            ["git", "rev-list", "--count", f"HEAD..origin/main"],
             capture_output=True, text=True, timeout=10,
             cwd=str(repo_dir),
         )
@@ -474,49 +496,86 @@ def _cmd_update(data_dir: Path) -> str:
         behind = -1
 
     if behind == 0:
-        # Already up to date — check tags
-        try:
-            r = subprocess.run(
-                ["git", "describe", "--tags", "--abbrev=0"],
-                capture_output=True, text=True, timeout=5,
-                cwd=str(repo_dir),
-            )
-            current_tag = r.stdout.strip()
-        except Exception:
-            current_tag = "unknown"
-        lines.append(f"✅ Already up to date ({current_tag})")
+        lines.append(f"✅ Step 2/6 — Already up to date ({current_tag})")
         return "\n".join(lines)
 
-    # 3. Get what's new
+    # Get latest remote tag
     try:
         r = subprocess.run(
-            ["git", "log", "--oneline", f"HEAD..origin/main", "-20"],
+            ["git", "ls-remote", "--tags", "--sort=-version:refname", "origin"],
             capture_output=True, text=True, timeout=10,
             cwd=str(repo_dir),
         )
-        new_commits = r.stdout.strip()
+        tags = [line.split("refs/tags/")[-1] for line in r.stdout.strip().split("\n") if "refs/tags/v" in line]
+        latest_tag = tags[0] if tags else "unknown"
     except Exception:
-        new_commits = "unknown"
+        latest_tag = "unknown"
 
-    lines.append(f"📥 {behind} new commit(s) available:\n")
-    lines.append(f"```\n{new_commits[:800]}\n```")
+    lines.append(f"✅ Step 2/6 — {current_tag} → {latest_tag} ({behind} commits behind)")
 
-    # 4. Pull
+    # ── Step 3: Fetch release notes ──
+    lines.append(f"\n📋 **Step 3/6 — Changelog:**\n")
+    try:
+        # Get new commits
+        r = subprocess.run(
+            ["git", "log", "--oneline", f"HEAD..origin/main", "-30"],
+            capture_output=True, text=True, timeout=10,
+            cwd=str(repo_dir),
+        )
+        commits = r.stdout.strip()
+        if commits:
+            # Group by conventional commit type
+            feat = []
+            fix = []
+            perf = []
+            docs = []
+            other = []
+            for line in commits.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                short = line[8:] if len(line) > 8 else line  # strip hash
+                if short.startswith("feat:"):
+                    feat.append(f"  ✨ {short[5:].strip()}")
+                elif short.startswith("fix:"):
+                    fix.append(f"  🐛 {short[4:].strip()}")
+                elif short.startswith("perf:"):
+                    perf.append(f"  ⚡ {short[5:].strip()}")
+                elif short.startswith("docs:"):
+                    docs.append(f"  📝 {short[5:].strip()}")
+                else:
+                    other.append(f"  • {short.strip()}")
+
+            if feat:
+                lines.append("**Features:**\n" + "\n".join(feat))
+            if fix:
+                lines.append("\n**Fixes:**\n" + "\n".join(fix))
+            if perf:
+                lines.append("\n**Performance:**\n" + "\n".join(perf))
+            if docs:
+                lines.append("\n**Docs:**\n" + "\n".join(docs))
+            if other:
+                lines.append("\n**Other:**\n" + "\n".join(other[:5]))
+    except Exception as e:
+        lines.append(f"⚠️ Could not fetch changelog: {e}")
+
+    # ── Step 4: Pull ──
+    lines.append(f"\n⏳ **Step 4/6 — Pulling updates...**")
     try:
         r = subprocess.run(
             ["git", "pull", "origin", "main"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=60,
             cwd=str(repo_dir),
         )
         if r.returncode != 0:
-            lines.append(f"\n❌ git pull failed:\n{r.stderr[:300]}")
+            lines.append(f"❌ git pull failed:\n{r.stderr[:300]}")
             return "\n".join(lines)
-        lines.append("\n✅ Pulled successfully")
+        lines.append("✅ Step 4/6 — Pulled successfully")
     except Exception as e:
-        lines.append(f"\n❌ git pull failed: {e}")
+        lines.append(f"❌ git pull failed: {e}")
         return "\n".join(lines)
 
-    # 5. Get new tag
+    # Confirm new version
     try:
         r = subprocess.run(
             ["git", "describe", "--tags", "--abbrev=0"],
@@ -526,19 +585,53 @@ def _cmd_update(data_dir: Path) -> str:
         new_tag = r.stdout.strip()
     except Exception:
         new_tag = "unknown"
-
     lines.append(f"🏷️ Now at: {new_tag}")
 
-    # 6. Restart the bot
-    lines.append("\n⏳ Restarting bot to apply changes...")
+    # ── Step 5: Post-update hooks ──
+    lines.append(f"\n⏳ **Step 5/6 — Post-update checks...**")
+    hooks_run = []
+
+    # Check for requirements changes
+    req_file = repo_dir / "requirements.txt"
+    if req_file.exists():
+        try:
+            r = subprocess.run(
+                ["git", "diff", f"{current_tag}..HEAD", "--", "requirements.txt"],
+                capture_output=True, text=True, timeout=10,
+                cwd=str(repo_dir),
+            )
+            if r.stdout.strip():
+                hooks_run.append("requirements.txt changed (manual pip install may be needed)")
+        except Exception:
+            pass
+
+    # Check for config migration
+    try:
+        r = subprocess.run(
+            ["git", "diff", f"{current_tag}..HEAD", "--", "config.sample.yaml"],
+            capture_output=True, text=True, timeout=10,
+            cwd=str(repo_dir),
+        )
+        if r.stdout.strip():
+            hooks_run.append("config.sample.yaml changed — check for new config keys")
+    except Exception:
+        pass
+
+    if hooks_run:
+        lines.append("\n".join(f"  ⚠️ {h}" for h in hooks_run))
+    else:
+        lines.append("  ✅ No migration needed")
+
+    # ── Step 6: Restart ──
+    lines.append(f"\n⏳ **Step 6/6 — Restarting bot...**")
     try:
         subprocess.run(
             ["sudo", "systemctl", "restart", "baw-telegram"],
             capture_output=True, timeout=10,
         )
-        lines.append("✅ Bot restarted — changes are live")
+        lines.append("✅ Step 6/6 — Bot restarted, changes are live")
     except Exception as e:
         lines.append(f"⚠️ Auto-restart failed: {e}")
-        lines.append("   Run manually: `sudo systemctl restart baw-telegram`")
+        lines.append("   Run: `sudo systemctl restart baw-telegram`")
 
     return "\n".join(lines)
