@@ -891,7 +891,8 @@ def run_agent(
             + "\n".join(f"Step {i+1}:\n{r}" for i, r in enumerate(_delegation_results))
             + "\n\n---\nSynthesise a final comprehensive response for the user. "
             "Present the key findings clearly. Do NOT describe the delegation or sub-agent process. "
-            "Just give the answer as if you did it yourself."
+            "Just give the answer as if you did it yourself. "
+            "NEVER end your response with a question. Execute directly."
         )
         ctx.add_user(_synthesis_prompt)
 
