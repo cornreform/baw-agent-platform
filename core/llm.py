@@ -341,10 +341,11 @@ def call_llm_with_fallback(
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
 ) -> FallbackResult:
-    """Call LLM with auto-fallback.
+    """Call LLM with auto-fallback + exponential backoff retry.
 
-    Tries primary model first. On network/auth/timeout error,
-    automatically falls back to the configured fallback model.
+    Tries primary model up to 3 times with exponential backoff (1s→2s→4s)
+    on transient errors (429, 503, timeout, connection). Non-transient
+    errors (401, 403, 400) skip retry and go straight to fallback.
 
     Config:
       model.default  -> primary model ID
@@ -352,31 +353,63 @@ def call_llm_with_fallback(
 
     Returns FallbackResult with which model was used.
     """
+    import time as _time
+
     model_cfg = config.get("model", {})
     primary_id = primary_id or model_cfg.get("default", "deepseek-v4-flash")
     fallback_id = model_cfg.get("fallback", "")
 
-    # Try primary
-    try:
-        model = get_model(config, primary_id)
-        fb_temp = model.temperature  # Always use model's own temp
-        fb_kwargs = model.model_kwargs
-        resp = _call_with_timeout(model, messages, tools, fb_temp, max_tokens)
-        return FallbackResult(
-            response=resp,
-            model_used="primary",
-            primary_model=primary_id,
-        )
-    except (RuntimeError, httpx.HTTPStatusError, httpx.TimeoutException,
-            httpx.ConnectError, ConnectionError, TimeoutError) as e:
-        error_msg = str(e)
-        if not fallback_id:
-            raise  # No fallback configured — let it propagate
+    RETRYABLE_STATUS = {429, 503, 502, 504}
+    MAX_RETRIES = 3
+    BASE_DELAY = 1.0  # seconds: 1s → 2s → 4s
 
-    # Fallback
+    # ── Try primary with exponential backoff ──
+    error_msg = ""
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            model = get_model(config, primary_id)
+            fb_temp = model.temperature
+            resp = _call_with_timeout(model, messages, tools, fb_temp, max_tokens)
+            return FallbackResult(
+                response=resp,
+                model_used="primary",
+                primary_model=primary_id,
+            )
+        except (httpx.HTTPStatusError) as e:
+            status = e.response.status_code
+            error_msg = str(e)[:300]
+            if status in RETRYABLE_STATUS and attempt < MAX_RETRIES:
+                delay = BASE_DELAY * (2 ** attempt)
+                _time.sleep(delay)
+                continue
+            break  # non-retryable or exhausted
+        except (httpx.TimeoutException, httpx.ConnectError,
+                ConnectionError, TimeoutError) as e:
+            error_msg = str(e)[:300]
+            if attempt < MAX_RETRIES:
+                delay = BASE_DELAY * (2 ** attempt)
+                _time.sleep(delay)
+                continue
+            break  # exhausted retries
+        except RuntimeError as e:
+            error_msg = str(e)[:300]
+            # Check if it's a transient error (timeout/rate-limit message)
+            if ("timeout" in error_msg.lower() or "rate" in error_msg.lower()
+                    or "overloaded" in error_msg.lower()) and attempt < MAX_RETRIES:
+                delay = BASE_DELAY * (2 ** attempt)
+                _time.sleep(delay)
+                continue
+            break  # non-retryable RuntimeError
+
+    if not fallback_id:
+        if error_msg:
+            raise RuntimeError(error_msg)
+        raise RuntimeError(f"Primary ({primary_id}) failed after {MAX_RETRIES + 1} attempts")
+
+    # ── Fallback ──
     try:
         model = get_model(config, fallback_id)
-        fb_temp = model.temperature  # Always use model's own temp
+        fb_temp = model.temperature
         resp = _call_with_timeout(model, messages, tools, fb_temp, max_tokens)
         return FallbackResult(
             response=resp,
@@ -386,7 +419,6 @@ def call_llm_with_fallback(
             error=error_msg,
         )
     except Exception as e2:
-        # Both failed — raise combined error
         raise RuntimeError(
             f"Primary ({primary_id}) failed: {error_msg}\n"
             f"Fallback ({fallback_id}) failed: {e2}"
