@@ -1102,23 +1102,55 @@ class TelegramConnector(BaseConnector):
                 continue
         return discovered
 
+    def _get_current_model_for_role(self, role: str) -> str | None:
+        """Read current model for a role from config. Returns None if unset (inherits default)."""
+        import yaml
+        from pathlib import Path
+        cfg_path = Path.home() / ".baw" / "config.yaml"
+        if not cfg_path.exists():
+            return None
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        model_cfg = cfg.get("model", {})
+        adv_cfg = cfg.get("adversarial", {})
+        exec_cfg = cfg.get("executor", {})
+        key_map = {
+            "default": model_cfg.get("default"),
+            "angel": adv_cfg.get("angel_model"),
+            "devil": adv_cfg.get("devil_model"),
+            "executor": exec_cfg.get("model"),
+        }
+        return key_map.get(role)
+
     def _send_role_selector(self, chat_id: str, text: str) -> bool:
-        """Show role selection keyboard (Default/Angel/Devil/Executor)."""
-        roles = [
-            ("Default Model", "default", "model.default"),
-            ("Angel Model", "angel", "adversarial.angel_model"),
-            ("Devil Model", "devil", "adversarial.devil_model"),
-            ("Executor Model", "executor", "executor.model"),
-        ]
+        """Show role selection keyboard with current settings."""
+        import yaml
+        from pathlib import Path
+        cfg_path = Path.home() / ".baw" / "config.yaml"
+        default_model = "unknown"
+        if cfg_path.exists():
+            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            default_model = cfg.get("model", {}).get("default", "unknown")
+
+        role_order = [("default", "Default Model"), ("angel", "Angel Model"), ("devil", "Devil Model"), ("executor", "Executor Model")]
         rows = []
-        for label, role, _ in roles:
-            rows.append([{"text": label, "callback_data": f"role_select:{role}"}])
+        status_lines = []
+        for role_key, label in role_order:
+            current = self._get_current_model_for_role(role_key)
+            if current and role_key != "default":
+                rows.append([{"text": f"  {label}: {current} ✎", "callback_data": f"role_select:{role_key}"}])
+                status_lines.append(f"  {label}: `{current}`")
+            elif current and role_key == "default":
+                rows.append([{"text": f"  {label}: {current}", "callback_data": f"role_select:{role_key}"}])
+                status_lines.append(f"  {label}: `{current}`")
+            else:
+                rows.append([{"text": f"  {label} = Default ({default_model})", "callback_data": f"role_select:{role_key}"}])
+                status_lines.append(f"  {label}: = Default (`{default_model}`)")
         try:
             resp = self._client.post(
                 f"{self._api_base}/sendMessage",
                 json={
                     "chat_id": chat_id,
-                    "text": "**Select Model Role**\nChoose which role's model to change:",
+                    "text": "**Model Configuration**\n" + "\n".join(status_lines),
                     "reply_markup": {"inline_keyboard": rows},
                     "parse_mode": "Markdown",
                 },
@@ -1134,23 +1166,36 @@ class TelegramConnector(BaseConnector):
             return False
 
     def _send_role_buttons(self, chat_id: str, msg_id: int):
-        """Edit existing message to show role selection buttons."""
-        roles = [
-            ("Default Model", "default"),
-            ("Angel Model", "angel"),
-            ("Devil Model", "devil"),
-            ("Executor Model", "executor"),
-        ]
+        """Edit existing message to show role selection buttons with current settings."""
+        import yaml
+        from pathlib import Path
+        cfg_path = Path.home() / ".baw" / "config.yaml"
+        default_model = "unknown"
+        if cfg_path.exists():
+            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            default_model = cfg.get("model", {}).get("default", "unknown")
+
+        role_order = [("default", "Default Model"), ("angel", "Angel Model"), ("devil", "Devil Model"), ("executor", "Executor Model")]
         rows = []
-        for label, role in roles:
-            rows.append([{"text": label, "callback_data": f"role_select:{role}"}])
+        status_lines = []
+        for role_key, label in role_order:
+            current = self._get_current_model_for_role(role_key)
+            if current and role_key != "default":
+                rows.append([{"text": f"  {label}: {current} ✎", "callback_data": f"role_select:{role_key}"}])
+                status_lines.append(f"  {label}: `{current}`")
+            elif current and role_key == "default":
+                rows.append([{"text": f"  {label}: {current}", "callback_data": f"role_select:{role_key}"}])
+                status_lines.append(f"  {label}: `{current}`")
+            else:
+                rows.append([{"text": f"  {label} = Default ({default_model})", "callback_data": f"role_select:{role_key}"}])
+                status_lines.append(f"  {label}: = Default (`{default_model}`)")
         try:
             self._client.post(
                 f"{self._api_base}/editMessageText",
                 json={
                     "chat_id": chat_id,
                     "message_id": msg_id,
-                    "text": "**Select Model Role**\nChoose which role's model to change:",
+                    "text": "**Model Configuration**\n" + "\n".join(status_lines),
                     "reply_markup": {"inline_keyboard": rows},
                     "parse_mode": "Markdown",
                 },
