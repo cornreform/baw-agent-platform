@@ -515,10 +515,10 @@ class BaseConnector(ABC):
             if cmd in ("model", "models"):
                 cc = self._chat_config.get(msg.chat_id, {})
                 current = cc.get("model") or "deepseek-v4-flash"
-                # Return model selector format for Telegram inline keyboard
+                # Return role-first model selector
                 return (
-                    f"[MODEL_SELECT]\n"
-                    f"**Select Provider:**\n"
+                    f"[MODEL_ROLE_SELECT]\n"
+                    f"**Select Model Role:**\n"
                     f"{current}\n"
                 )
 

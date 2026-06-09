@@ -44,6 +44,7 @@ class TelegramConnector(BaseConnector):
         self._tts_enabled = self.config.get("tts_enabled", False)
         self._tts_voice = self.config.get("tts_voice", "male-tone-1")
         self._selector_msg_id: int | None = None
+        self._selector_role: dict[str, str] = {}  # {chat_id: role} for 3-layer model selector
 
     def connect(self) -> bool:
         """Test connection by fetching bot info."""
@@ -137,6 +138,8 @@ class TelegramConnector(BaseConnector):
         if not self._client or not self._token:
             return False
         # ── Intercept model selector ——
+        if text.startswith("[MODEL_ROLE_SELECT]\n"):
+            return self._send_role_selector(chat_id, text)
         if text.startswith("[MODEL_SELECT]\n"):
             return self._send_model_selector_text(chat_id, text)
         try:
@@ -1099,6 +1102,37 @@ class TelegramConnector(BaseConnector):
                 continue
         return discovered
 
+    def _send_role_selector(self, chat_id: str, text: str) -> bool:
+        """Show role selection keyboard (Default/Angel/Devil/Executor)."""
+        roles = [
+            ("Default Model", "default", "model.default"),
+            ("Angel Model", "angel", "adversarial.angel_model"),
+            ("Devil Model", "devil", "adversarial.devil_model"),
+            ("Executor Model", "executor", "executor.model"),
+        ]
+        rows = []
+        for label, role, _ in roles:
+            rows.append([{"text": label, "callback_data": f"role_select:{role}"}])
+        try:
+            resp = self._client.post(
+                f"{self._api_base}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": "**Select Model Role**\nChoose which role's model to change:",
+                    "reply_markup": {"inline_keyboard": rows},
+                    "parse_mode": "Markdown",
+                },
+                timeout=5,
+            )
+            data = resp.json()
+            if data.get("ok"):
+                self._selector_chat = chat_id
+                self._selector_msg_id = data["result"]["message_id"]
+            return data.get("ok", False)
+        except Exception as e:
+            logger.warning(f"[Telegram] Role selector error: {e}")
+            return False
+
     def _send_model_selector_text(self, chat_id: str, text: str) -> bool:
         """Parse [MODEL_SELECT] formatted text and send provider-level keyboard."""
         lines = text.strip().split("\n")
@@ -1160,7 +1194,7 @@ class TelegramConnector(BaseConnector):
             logger.warning(f"[Telegram] Model buttons error: {e}")
 
     def _handle_callback(self, cb: dict):
-        """Handle inline keyboard callback (provider or model selection)."""
+        """Handle inline keyboard callback (role → provider → model selection)."""
         data = cb.get("data", "")
         msg = cb.get("message", {})
         chat_id = str(msg["chat"]["id"])
@@ -1175,7 +1209,35 @@ class TelegramConnector(BaseConnector):
             timeout=5,
         )
 
-        if data.startswith("provider_select:"):
+        if data.startswith("role_select:"):
+            role = data.split(":", 1)[1]
+            self._selector_role[chat_id] = role
+            role_names = {"default": "Default", "angel": "Angel", "devil": "Devil", "executor": "Executor"}
+            role_name = role_names.get(role, role)
+
+            # Show provider keyboard for this role
+            providers = self._get_providers_config()
+            if msg_id:
+                rows = []
+                for pname in providers:
+                    rows.append([{"text": pname, "callback_data": f"provider_select:{pname}"}])
+                rows.append([{"text": "← Back", "callback_data": "role_select:__back__"}])
+                try:
+                    self._client.post(
+                        f"{self._api_base}/editMessageText",
+                        json={
+                            "chat_id": chat_id,
+                            "message_id": msg_id,
+                            "text": f"**{role_name} Model**\nSelect provider:",
+                            "reply_markup": {"inline_keyboard": rows},
+                            "parse_mode": "Markdown",
+                        },
+                        timeout=5,
+                    )
+                except Exception as e:
+                    logger.warning(f"[Telegram] Role→provider error: {e}")
+
+        elif data.startswith("provider_select:"):
             pname = data.split(":", 1)[1]
             if pname == "__back__":
                 # Go back to provider list
@@ -1209,23 +1271,35 @@ class TelegramConnector(BaseConnector):
 
         elif data.startswith("model_select:"):
             model_name = data.split(":", 1)[1]
+            role = self._selector_role.get(chat_id, "default")
+
+            # Map role to config key
+            config_key_map = {
+                "default": "model.default",
+                "angel": "adversarial.angel_model",
+                "devil": "adversarial.devil_model",
+                "executor": "executor.model",
+            }
+            config_key = config_key_map.get(role, "model.default")
+            role_names = {"default": "Default", "angel": "Angel", "devil": "Devil", "executor": "Executor"}
+            role_name = role_names.get(role, role)
+
             route_msg = Message(
                 platform="telegram",
                 chat_id=chat_id,
                 user_id=str(cb["from"]["id"]),
-                text=f"/m [{model_name}]",
+                text=f"/set {config_key} {model_name}",
             )
             result = self.route(route_msg)
             # Re-acknowledge with result text for feedback
             self._client.post(
                 f"{self._api_base}/answerCallbackQuery",
-                json={"callback_query_id": cb_id, "text": f"Switched to {model_name}"},
+                json={"callback_query_id": cb_id, "text": f"{role_name} → {model_name}"},
                 timeout=5,
             )
             # Update button to show selection
             if msg_id:
                 providers = self._get_providers_config()
-                # Find which provider this model belongs to
                 sel_provider = None
                 for pn, mods in providers.items():
                     if model_name in mods:
