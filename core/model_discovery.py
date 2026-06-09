@@ -16,6 +16,7 @@ logger = logging.getLogger("baw.discovery")
 # ── Known Provider Database ──
 # Maps provider name → {env_var, base_url, protocol, known_models}
 KNOWN_PROVIDERS: dict[str, dict] = {
+    # ── Major AI labs ──
     "anthropic": {
         "env_var": "ANTHROPIC_API_KEY",
         "base_url": "https://api.anthropic.com/v1",
@@ -26,13 +27,13 @@ KNOWN_PROVIDERS: dict[str, dict] = {
         "env_var": "GEMINI_API_KEY",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "protocol": "google",
-        "model_patterns": [r"^gemini-", r"^google/"],
+        "model_patterns": [r"^gemini-", r"^google/", r"^gemma"],
     },
     "openai": {
         "env_var": "OPENAI_API_KEY",
         "base_url": "https://api.openai.com/v1",
         "protocol": "openai-chat",
-        "model_patterns": [r"^gpt-", r"^o[0-9]", r"^openai/", r"^dall-e"],
+        "model_patterns": [r"^gpt-", r"^o[0-9]", r"^openai/", r"^dall-e", r"^whisper"],
     },
     "xai": {
         "env_var": "XAI_API_KEY",
@@ -40,23 +41,81 @@ KNOWN_PROVIDERS: dict[str, dict] = {
         "protocol": "openai-chat",
         "model_patterns": [r"^grok-", r"^xai/"],
     },
+    "mistral": {
+        "env_var": "MISTRAL_API_KEY",
+        "base_url": "https://api.mistral.ai/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^mistral-", r"^codestral-", r"^pixtral", r"^ministral"],
+    },
+    "cohere": {
+        "env_var": "COHERE_API_KEY",
+        "base_url": "https://api.cohere.ai/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^cohere/", r"^command-r", r"^c4ai-"],
+    },
+
+    # ── Chinese AI ──
+    "deepseek": {
+        "env_var": "DEEPSEEK_API_KEY",
+        "base_url": "https://api.deepseek.com/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^deepseek-", r"^deepseek/"],
+    },
+    "minimax": {
+        "env_var": "MINIMAX_API_KEY",
+        "base_url": "https://api.minimax.io/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^minimax-", r"^MiniMax-", r"^abab"],
+    },
+    "moonshot": {
+        "env_var": "MOONSHOT_API_KEY",
+        "base_url": "https://api.moonshot.ai/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^kimi-", r"^moonshot-", r"^moonshot/"],
+    },
+    "stepfun": {
+        "env_var": "STEPFUN_API_KEY",
+        "base_url": "https://api.stepfun.ai/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^step-", r"^stepfun"],
+    },
+    "zhipu": {
+        "env_var": "ZHIPU_API_KEY",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^glm-", r"^zhipu", r"^chatglm", r"^cogview"],
+    },
+    "qwen": {
+        "env_var": "DASHSCOPE_API_KEY",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^qwen-", r"^dashscope"],
+    },
+    "baichuan": {
+        "env_var": "BAICHUAN_API_KEY",
+        "base_url": "https://api.baichuan-ai.com/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^baichuan", r"^Baichuan"],
+    },
+
+    # ── Inference platforms ──
     "groq": {
         "env_var": "GROQ_API_KEY",
         "base_url": "https://api.groq.com/openai/v1",
         "protocol": "openai-chat",
-        "model_patterns": [r"^llama-", r"^mixtral-", r"^groq/", r"^gemma"],
+        "model_patterns": [r"^groq/", r"^llama-", r"^mixtral-", r"^gemma"],
     },
     "together": {
         "env_var": "TOGETHER_API_KEY",
         "base_url": "https://api.together.xyz/v1",
         "protocol": "openai-chat",
-        "model_patterns": [r"^together/", r"^meta-llama/", r"^mistralai/"],
+        "model_patterns": [r"^together/", r"^meta-llama/", r"^mistralai/", r"^deepseek-ai/"],
     },
     "openrouter": {
         "env_var": "OPENROUTER_API_KEY",
         "base_url": "https://openrouter.ai/api/v1",
         "protocol": "openai-chat",
-        "model_patterns": [r"^openrouter/", r"^nousresearch/"],
+        "model_patterns": [r"^openrouter/", r"^nousresearch/", r"^meta-llama/", r"^mistralai/"],
     },
     "cerebras": {
         "env_var": "CEREBRAS_API_KEY",
@@ -70,29 +129,138 @@ KNOWN_PROVIDERS: dict[str, dict] = {
         "protocol": "openai-chat",
         "model_patterns": [r"^perplexity/", r"^pplx-", r"^sonar"],
     },
+    "deepinfra": {
+        "env_var": "DEEPINFRA_API_KEY",
+        "base_url": "https://api.deepinfra.com/v1/openai",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^deepinfra/", r"^Phind/", r"^cognitivecomputations/"],
+    },
+    "fireworks": {
+        "env_var": "FIREWORKS_API_KEY",
+        "base_url": "https://api.fireworks.ai/inference/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^fireworks/", r"^accounts/fireworks/"],
+    },
+    "replicate": {
+        "env_var": "REPLICATE_API_TOKEN",
+        "base_url": "https://api.replicate.com/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^replicate/", r"^meta/"],
+    },
+    "novita": {
+        "env_var": "NOVITA_API_KEY",
+        "base_url": "https://api.novita.ai/v3/openai",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^novita/", r"^sao10k/"],
+    },
+    "sambanova": {
+        "env_var": "SAMBANOVA_API_KEY",
+        "base_url": "https://api.sambanova.ai/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^sambanova/", r"^Meta-Llama"],
+    },
+    "hyperbolic": {
+        "env_var": "HYPERBOLIC_API_KEY",
+        "base_url": "https://api.hyperbolic.xyz/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^hyperbolic/", r"^deepseek-ai/"],
+    },
+    "lambda": {
+        "env_var": "LAMBDA_API_KEY",
+        "base_url": "https://api.lambdalabs.com/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^lambda/", r"^hermes"],
+    },
+
+    # ── Cloud / Enterprise ──
+    "azure": {
+        "env_var": "AZURE_OPENAI_API_KEY",
+        "base_url": "https://{resource}.openai.azure.com/openai/deployments/{deployment}",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^azure/"],
+    },
+    "cloudflare": {
+        "env_var": "CLOUDFLARE_API_TOKEN",
+        "base_url": "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^@cf/", r"^cloudflare/"],
+    },
+    "voyage": {
+        "env_var": "VOYAGE_API_KEY",
+        "base_url": "https://api.voyageai.com/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^voyage-"],
+    },
+    "ai21": {
+        "env_var": "AI21_API_KEY",
+        "base_url": "https://api.ai21.com/studio/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^jamba", r"^ai21/"],
+    },
 }
 
 # ── Model ID → provider hints (common models) ──
 MODEL_HINTS: dict[str, str] = {
+    # Anthropic
     "claude-sonnet-4-20250514": "anthropic",
     "claude-3-opus": "anthropic",
     "claude-3-5-sonnet": "anthropic",
     "claude-3-5-haiku": "anthropic",
+    "claude-3-haiku": "anthropic",
+    # Google
     "gemini-2.5-pro": "google",
     "gemini-2.5-flash": "google",
     "gemini-2.0-flash": "google",
+    "gemini-1.5-pro": "google",
+    # OpenAI
     "gpt-4o": "openai",
     "gpt-4o-mini": "openai",
     "gpt-4-turbo": "openai",
     "o1": "openai",
     "o1-mini": "openai",
     "o3-mini": "openai",
+    "o4-mini": "openai",
+    # xAI
     "grok-3": "xai",
     "grok-2": "xai",
+    # Mistral
+    "mistral-large": "mistral",
+    "mistral-medium": "mistral",
+    "mistral-small": "mistral",
+    "codestral": "mistral",
+    "pixtral-large": "mistral",
+    # Cohere
+    "command-r-plus": "cohere",
+    "command-r": "cohere",
+    # DeepSeek
+    "deepseek-v4-flash": "deepseek",
+    "deepseek-v4-pro": "deepseek",
+    "deepseek-reasoner": "deepseek",
+    "deepseek-chat": "deepseek",
+    # MiniMax
+    "MiniMax-M3": "minimax",
+    "MiniMax-M2.5": "minimax",
+    "MiniMax-M1": "minimax",
+    # Kimi/Moonshot
+    "kimi-k2.6": "moonshot",
+    "kimi-k2": "moonshot",
+    # StepFun
+    "step-2": "stepfun",
+    "step-1.5v": "stepfun",
+    # Groq
     "llama-3.3-70b": "groq",
     "llama-3.1-8b": "groq",
     "mixtral-8x7b": "groq",
     "gemma-2-9b": "groq",
+    # Zhipu
+    "glm-4": "zhipu",
+    "glm-4v": "zhipu",
+    "chatglm3": "zhipu",
+    # Qwen
+    "qwen-max": "qwen",
+    "qwen-plus": "qwen",
+    "qwen-turbo": "qwen",
+    "qwen-vl-max": "qwen",
 }
 
 
