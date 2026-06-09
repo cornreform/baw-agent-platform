@@ -144,7 +144,7 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
     )
     ctx.add_user(prompt)
 
-    max_iterations = 10
+    max_iterations = 5  # was 10 — prevent step timeouts exceeding idle detection
     iteration = 0
     final_content = ""
 

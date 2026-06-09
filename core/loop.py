@@ -218,6 +218,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
 MAX_STEP_RETRIES = 3
 MAX_CONSECUTIVE_FAILURES = 3
+MAX_STEP_SECONDS = 120  # individual step timeout — prevent silent hangs
 
 
 def run_agent(
@@ -789,11 +790,32 @@ def run_agent(
                 print(f"  🗺️ Step {_step_idx + 1}/{len(_execution_plan)}: {_step_desc_short}")
 
             try:
-                _result = _delegate_fn(
-                    goal=_step_goal,
-                    context=_step_ctx,
-                    toolsets="",
-                )
+                # ── Step timeout: prevent silent hangs from stuck sub-agents ──
+                _step_exc = [None]
+                _step_result = [None]
+                _step_done = threading.Event()
+
+                def _run_step():
+                    try:
+                        _step_result[0] = _delegate_fn(
+                            goal=_step_goal,
+                            context=_step_ctx,
+                            toolsets="",
+                        )
+                    except Exception as _se:
+                        _step_exc[0] = _se
+                    finally:
+                        _step_done.set()
+
+                _step_thread = threading.Thread(target=_run_step, daemon=True)
+                _step_thread.start()
+                _step_done.wait(timeout=MAX_STEP_SECONDS)
+                if not _step_done.is_set():
+                    raise TimeoutError(f"Step timed out after {MAX_STEP_SECONDS}s")
+                if _step_exc[0]:
+                    raise _step_exc[0]  # re-raise inside try block for recalc
+                _result = _step_result[0]
+
                 while len(_delegation_results) <= _step_idx:
                     _delegation_results.append("")
                 _delegation_results[_step_idx] = _result

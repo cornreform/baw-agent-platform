@@ -1281,7 +1281,7 @@ class BaseConnector(ABC):
                     # Poll for result with cancel checking every 1s
                     import time as _time
                     _idle_seconds = 0
-                    _max_idle = 180          # 3 min idle before considering stuck
+                    _max_idle = 240          # 4 min idle before considering stuck (step timeout is 120s)
                     _max_total = 1800         # 30 min absolute max
                     _total_elapsed = 0
                     while _total_elapsed < _max_total:
