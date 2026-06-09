@@ -796,6 +796,19 @@ def run_agent(
                 _step_ctx = "Completed so far:\n" + "\n---\n".join(
                     f"Step {i+1}:\n{r[:800]}" for i, r in enumerate(_synthesis_results)
                 )
+            # ── Auto-detect product/search tasks → inject source verification hint ──
+            _is_search_task = any(
+                kw in _step_goal.lower()
+                for kw in ("search", "product", "buy", "price", "where to", "哪裡", "購買", "產品", "價錢")
+            )
+            if _is_search_task:
+                _step_ctx += (
+                    "\n\n[VERIFICATION REQUIRED]\n"
+                    "- When using web_search, do NOT trust snippets alone.\n"
+                    "- For any product claim, visit the source URL to verify.\n"
+                    "- Cross-check at least 2 sources if available.\n"
+                    "- Note any ambiguity in the query and state your assumptions."
+                )
 
             _step_desc_short = _step['desc'][:80]
             if verbose:
@@ -1001,6 +1014,23 @@ def run_agent(
 
         if verbose:
             print(f"\n[LLM #{total_llm_calls}] {fb.model_used} | Synthesis complete")
+
+        # ── Post-synthesis: quick URL liveness check ──
+        _url_sources = []
+        try:
+            import re as _re, httpx as _hx
+            for _r in _delegation_results:
+                _urls = _re.findall(r'https?://[^\s\n\)]+', _r)
+                _url_sources.extend(_urls[:2])  # max 2 per result
+            if _url_sources:
+                _test_url = _url_sources[0]
+                _resp = _hx.head(_test_url, timeout=5, follow_redirects=True)
+                if _resp.status_code >= 400:
+                    _dead_note = f"\n⚠️ Source URL may be dead: {_test_url} (HTTP {_resp.status_code})"
+                    if response.content:
+                        response.content += _dead_note
+        except Exception:
+            pass  # non-critical
     else:
         # No delegation results — fall back to neutral response
         response = neutral_response

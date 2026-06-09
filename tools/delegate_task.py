@@ -138,7 +138,8 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
             "- Use write_file/bash to CREATE and MODIFY. Use read_file/web_search only as prep.\n"
             "- Report back ONLY after you've DONE the work — what you changed, not what you found.\n"
             "- NEVER describe what you WOULD do. JUST DO IT.\n"
-            "- NEVER ask questions — figure it out yourself."
+            "- NEVER ask questions — figure it out yourself.\n"
+            "- AMBIGUITY: If the task query has a typo or anomaly (e.g. 'flea car' → 'flea care'), state your assumption and proceed. Do NOT halt."
         ),
         temperature=0.5,
     )
