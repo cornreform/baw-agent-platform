@@ -324,6 +324,30 @@ def calculate_cost(model: ModelDef, input_tokens: int, output_tokens: int) -> fl
 # ── Auto-fallback ──────────────────────────────────────────────
 
 
+def _estimate_tokens(messages: list[dict]) -> int:
+    """Rough token estimate: ~4 chars per token for mixed CN/EN text."""
+    total = 0
+    for msg in messages:
+        content = msg.get("content", "") or ""
+        total += len(content) // 3  # conservative: 3 chars ≈ 1 token for CN
+    return total
+
+
+def _route_model(config: dict, messages: list[dict], primary_id: str) -> str:
+    """Auto-route to long-context model if message size exceeds threshold."""
+    route_cfg = config.get("model", {}).get("route", {})
+    if not route_cfg.get("enabled"):
+        return primary_id
+
+    threshold = route_cfg.get("threshold_tokens", 8000)
+    estimated = _estimate_tokens(messages)
+    if estimated > threshold:
+        long_model = route_cfg.get("long_model", "")
+        if long_model:
+            return long_model
+    return route_cfg.get("short_model", primary_id)
+
+
 @dataclass
 class FallbackResult:
     response: LLMResponse
@@ -358,6 +382,9 @@ def call_llm_with_fallback(
     model_cfg = config.get("model", {})
     primary_id = primary_id or model_cfg.get("default", "deepseek-v4-flash")
     fallback_id = model_cfg.get("fallback", "")
+
+    # ── Auto-route based on message size ──
+    primary_id = _route_model(config, messages, primary_id)
 
     RETRYABLE_STATUS = {429, 503, 502, 504}
     MAX_RETRIES = 3
