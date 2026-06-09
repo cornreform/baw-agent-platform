@@ -222,6 +222,20 @@ class TelegramConnector(BaseConnector):
             return message_id
         return ""
 
+    def send_typing(self, chat_id: str) -> bool:
+        """Send typing indicator to show '...' in Telegram."""
+        if not self._client or not self._token:
+            return False
+        try:
+            r = self._client.post(
+                f"{self._api_base}/sendChatAction",
+                json={"chat_id": chat_id, "action": "typing"},
+                timeout=5,
+            )
+            return r.status_code == 200
+        except Exception:
+            return False
+
     _MEDIA_EXT_MAP = {
         ".png": "sendPhoto", ".jpg": "sendPhoto", ".jpeg": "sendPhoto",
         ".webp": "sendPhoto", ".gif": "sendPhoto",

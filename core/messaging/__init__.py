@@ -1249,8 +1249,16 @@ class BaseConnector(ABC):
             info = {}
             all_plan_recaps = []
 
+            # Send typing indicator
+            if chat_id:
+                self.send_typing(chat_id)
+
             for _round in range(1, _MAX_AUTO_ROUNDS + 1):
                 _current_prompt = prompt if _round == 1 else output  # Feed output back
+
+                # Refresh typing indicator each round
+                if chat_id and _round > 1:
+                    self.send_typing(chat_id)
 
                 with ThreadPoolExecutor(1) as pool:
                     fut = pool.submit(
@@ -1301,10 +1309,10 @@ class BaseConnector(ABC):
                 goal_achieved = info.get("goal_achieved", True) if info else True
                 if goal_achieved:
                     break
-                if "NOT DONE" not in output:
-                    break  # No clear blocker signal — stop
+                # Goal not achieved — auto-continue to next round
                 if _round >= _MAX_AUTO_ROUNDS:
-                    break  # Max rounds reached
+                    output += "\n\n⚠️ Max auto-rounds reached. Goal may be incomplete."
+                    break
                 if self._cancel_event.is_set():
                     break
 
