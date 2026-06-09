@@ -438,6 +438,12 @@ def call_llm_with_fallback(
         raise RuntimeError(f"Primary ({primary_id}) failed after {MAX_RETRIES + 1} attempts")
 
     # ── Fallback ──
+    import logging
+    _flog = logging.getLogger("baw.llm")
+    _flog.warning(
+        f"[LLM] Primary ({primary_id}) failed: {error_msg[:120]} → "
+        f"falling back to {fallback_id}"
+    )
     try:
         model = get_model(config, fallback_id)
         fb_temp = model.temperature
