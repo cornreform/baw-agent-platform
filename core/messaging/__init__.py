@@ -1403,6 +1403,9 @@ class BaseConnector(ABC):
             # Limit to 4000 chars
             if len(output) > 4000:
                 output = output[:3997] + "..."
+            # ── Guarantee non-empty output — user must always see a result ──
+            if not output.strip():
+                output = "✅ Completed. (No additional output — check inline progress above for step details.)"
             return output.strip()
 
         except Exception as e:

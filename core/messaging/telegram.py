@@ -1098,6 +1098,9 @@ class TelegramConnector(BaseConnector):
             if self._cancel_event.is_set():
                 _reaction_stop.set()
                 return
+            if not response or not response.strip():
+                logger.warning(f"[Telegram] Empty response from BAW for: {text[:80]}")
+                response = "✅ Done. (No additional output.)"
             if response:
                 self.send(chat_id, response)
                 self._record_batch_result(chat_id, response[:200], "text")
