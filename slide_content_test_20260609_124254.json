@@ -1,0 +1,47 @@
+[
+  {
+    "type": "text",
+    "text": {
+      "title": "測試標題",
+      "content": "第一行\n第二行"
+    }
+  },
+  {
+    "type": "chart",
+    "chart": {
+      "chart_type": "bar",
+      "title": "銷售圖",
+      "data": [
+        {
+          "label": "A",
+          "value": 10
+        },
+        {
+          "label": "B",
+          "value": 20
+        }
+      ]
+    }
+  },
+  {
+    "type": "text_chart",
+    "text": {
+      "title": "分析",
+      "content": "圖表分析"
+    },
+    "chart": {
+      "chart_type": "pie",
+      "title": "比例",
+      "data": [
+        {
+          "label": "X",
+          "value": 50
+        },
+        {
+          "label": "Y",
+          "value": 50
+        }
+      ]
+    }
+  }
+]

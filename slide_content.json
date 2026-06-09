@@ -1,0 +1,34 @@
+{
+  "title": "Presentation Title",
+  "subtitle": "Generated with python-pptx",
+  "slides": [
+    {
+      "type": "text",
+      "title": "Overview",
+      "content": [
+        "This is a sample presentation created with python-pptx.",
+        "It demonstrates text, charts, and combined layouts.",
+        "The library provides powerful PPTX generation capabilities."
+      ]
+    },
+    {
+      "type": "chart",
+      "title": "Sales Data",
+      "chart_file": "chart_bar.png",
+      "chart_data": {
+        "labels": ["Q1", "Q2", "Q3", "Q4"],
+        "values": [100, 150, 120, 180]
+      }
+    },
+    {
+      "type": "text_chart",
+      "title": "Performance Analysis",
+      "content": [
+        "Q4 showed the highest growth.",
+        "Overall trend is positive.",
+        "Target exceeded by 20%."
+      ],
+      "chart_file": "chart_line.png"
+    }
+  ]
+}
