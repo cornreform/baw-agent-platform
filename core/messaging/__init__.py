@@ -1225,58 +1225,83 @@ class BaseConnector(ABC):
                     except Exception:
                         pass
 
-            # Run BAW with a timeout via thread pool
-            with ThreadPoolExecutor(1) as pool:
-                fut = pool.submit(
-                   run_agent,
-                   prompt=prompt,
-                   config=config,
-                   data_dir=data_dir,
-                   mode=mode,
-                   verbose=False,
-                   conversation_history=conv_history,
-                   progress_callback=_on_progress,
-                )
-                # Poll for result with cancel checking every 1s
-                import time as _time
-                _idle_seconds = 0
-                _max_idle = 180          # 3 min idle before considering stuck
-                _max_total = 1800         # 30 min absolute max
-                _total_elapsed = 0
-                while _total_elapsed < _max_total:
-                   try:
-                       response, info = fut.result(timeout=1)
-                       break
-                   except TimeoutError:
-                       _total_elapsed += 1
-                       # Extend if thread is alive and making progress
-                       with _progress_lock:
-                           idle = time.time() - _last_progress
-                       if idle > _max_idle:
-                           _idle_seconds += 1
-                           if _idle_seconds > 30:  # idle > 180+30 = 210s total
+            # Run BAW with a timeout via thread pool — multi-round loop
+            # If goal not achieved, auto-feed output back as next prompt (max 3 rounds)
+            _MAX_AUTO_ROUNDS = 3
+            output = ""
+            info = {}
+            all_plan_recaps = []
+
+            for _round in range(1, _MAX_AUTO_ROUNDS + 1):
+                _current_prompt = prompt if _round == 1 else output  # Feed output back
+
+                with ThreadPoolExecutor(1) as pool:
+                    fut = pool.submit(
+                       run_agent,
+                       prompt=_current_prompt,
+                       config=config,
+                       data_dir=data_dir,
+                       mode=mode,
+                       verbose=False,
+                       conversation_history=conv_history if _round == 1 else None,
+                       progress_callback=_on_progress if _round == 1 else None,
+                    )
+                    # Poll for result with cancel checking every 1s
+                    import time as _time
+                    _idle_seconds = 0
+                    _max_idle = 180          # 3 min idle before considering stuck
+                    _max_total = 1800         # 30 min absolute max
+                    _total_elapsed = 0
+                    while _total_elapsed < _max_total:
+                       try:
+                           response, info = fut.result(timeout=1)
+                           break
+                       except TimeoutError:
+                           _total_elapsed += 1
+                           with _progress_lock:
+                               idle = time.time() - _last_progress
+                           if idle > _max_idle:
+                               _idle_seconds += 1
+                               if _idle_seconds > 30:
+                                   fut.cancel()
+                                   return "⏳ Task stuck (no progress for >3min)."
+                           else:
+                               _idle_seconds = 0
+                           if self._cancel_event.is_set():
                                fut.cancel()
-                               return "⏳ Task stuck (no progress for >3min). Try /stop to cancel, or split into smaller steps."
-                       else:
-                           _idle_seconds = 0
-                       if self._cancel_event.is_set():
-                           fut.cancel()
-                           return "⏹ Cancelled."
-                else:
-                    # Timeout after 120s without result
-                    fut.cancel()
-                    return "⏳ Task took too long (>5min). Try /stop to cancel, or split into smaller steps."
+                               return "⏹ Cancelled."
+                    else:
+                        fut.cancel()
+                        return "⏳ Task took too long (>30min)."
 
-            output = response or ""
+                output = response or ""
 
-            # ── Send plan recap as separate message (if available) ──
-            if info and info.get("plan_recap"):
-                plan_msg = info["plan_recap"]
-                # Strip HTML for Telegram
-                plan_msg = re.sub(r'<[^>]+>', '', plan_msg)
-                if len(plan_msg) > 4000:
-                    plan_msg = plan_msg[:3997] + "..."
-                self.send(chat_id, plan_msg)
+                # Collect plan recaps
+                if info and info.get("plan_recap"):
+                    all_plan_recaps.append(info["plan_recap"])
+
+                # ── Auto-continue if goal NOT achieved ──
+                goal_achieved = info.get("goal_achieved", True) if info else True
+                if goal_achieved:
+                    break
+                if "NOT DONE" not in output:
+                    break  # No clear blocker signal — stop
+                if _round >= _MAX_AUTO_ROUNDS:
+                    break  # Max rounds reached
+                if self._cancel_event.is_set():
+                    break
+
+                # Feed into next round
+                conv_history = None  # Clear context for auto-continuation
+
+            # ── Send all plan recaps as separate messages ──
+            if all_plan_recaps:
+                for plan_msg in all_plan_recaps:
+                    if plan_msg:
+                        plan_msg = re.sub(r'<[^>]+>', '', plan_msg)
+                        if len(plan_msg) > 4000:
+                            plan_msg = plan_msg[:3997] + "..."
+                        self.send(chat_id, plan_msg)
 
             # ── Send court verdict as separate message (if available) ──
             if info and info.get("adversarial_raw"):
