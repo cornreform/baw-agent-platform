@@ -171,8 +171,27 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
         fact_mode = config.get("fact_check", {}).get("mode", "normal")
         tools_list = ", ".join(t.name for t in list_tools())
 
+        # Build available models summary
+        available_models = []
+        for pname, pdata in config.get("providers", {}).items():
+            for m in pdata.get("models", []):
+                mid = m.get("id", "?")
+                caps = m.get("capabilities", [])
+                available_models.append(f"{mid} ({pname}: {', '.join(caps)})")
+        models_summary = ", ".join(available_models) if available_models else "none configured"
+        default_model = config.get("model", {}).get("default", "unknown")
+        config_path = data_dir / "config.yaml" if data_dir else Path.home() / ".baw" / "config.yaml"
+        env_path = data_dir / ".env" if data_dir else Path.home() / ".baw" / ".env"
+
         system_prompt += (
-            f"\n\n## Dynamic context\n"
+            f"\n\n## System config\n"
+            f"- Config file: {config_path}\n"
+            f"- Env file: {env_path}\n"
+            f"- Default model: {default_model}\n"
+            f"- Available models: {models_summary}\n"
+            f"  NEVER fabricate model names. Only use models from this list.\n"
+            f"  If you need a model not in the list, you must add it to config.yaml first.\n"
+            f"\n## Dynamic context\n"
             f"- Current tone: {tone}\n"
             f"- Fact check mode: {fact_mode}\n"
             f"- Available tools: {tools_list}\n"

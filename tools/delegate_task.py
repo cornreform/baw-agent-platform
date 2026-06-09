@@ -118,7 +118,7 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
     # ── Run sub-agent in quick mode (no court/plan) ──
     ctx = Context(
         system_prompt=(
-            "You are a focused task executor running on MiniMax. "
+            "You are a focused task executor. "
             "Your job: use tools to accomplish the delegated goal. "
             "Report back concisely — what you did and key results. "
             "NEVER ask questions — figure it out yourself."
