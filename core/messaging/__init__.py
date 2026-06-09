@@ -1012,6 +1012,10 @@ class BaseConnector(ABC):
                     try:
                         if step_type == "tool" and name:
                             self.send(chat_id, f"🔧 `{name}`")
+                        elif step_type == "plan":
+                            meta = args or {}
+                            total = meta.get("steps", "?")
+                            self.send(chat_id, f"🗺️ Route plan: {total} steps")
                         elif step_type == "recalc":
                             meta = args or {}
                             self.send(chat_id, f"↻ Recalculating route... (step {meta.get('step','?')}/#{meta.get('count','?')})")
