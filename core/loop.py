@@ -694,19 +694,16 @@ def run_agent(
         if verbose:
             print(f"\n  🎯 Goal pursuit iteration {_pursuit}/{_GOAL_PURSUIT_MAX_ATTEMPTS}")
 
-        # ── Re-plan if not first attempt ──
-        if _pursuit > 1:
-            # Ask LLM for a different approach based on previous failures
+        # ── Re-plan only if ALL steps failed last time ──
+        if _pursuit > 1 and steps_completed == 0:
             _history_for_plan = "\n".join(
-                f"Attempt {i+1} Step {j+1}: {r[:300]}"
-                for i, results in enumerate([_delegation_results])
-                for j, r in enumerate(results) if r.startswith("[FAILED]")
-            ) if _delegation_results else ""
+                r[:300] for r in _delegation_results if r.startswith("[FAILED]")
+            ) if _delegation_results else "No specific failure info"
 
             _adapt_prompt = (
                 f"[ORCHESTRATOR - RETRY {_pursuit - 1}/{_GOAL_PURSUIT_MAX_ATTEMPTS}]\n\n"
                 f"Original goal: {prompt}\n\n"
-                f"Previous attempts failed. Here's what went wrong:\n{_history_for_plan or 'No specific failure info'}\n\n"
+                f"All previous attempts failed. Here's what went wrong:\n{_history_for_plan}\n\n"
                 f"Think of a COMPLETELY DIFFERENT approach to achieve the goal.\n"
                 f"Write a new step-by-step execution plan.\n"
                 f"Each step must be SMALL (max 1-2 tool calls).\n"
@@ -722,7 +719,6 @@ def run_agent(
             session_cost += _cost2
             record_cost(f"{model.provider}/{model.id}", _plan_resp.input_tokens, _plan_resp.output_tokens, _cost2)
 
-            # Parse new plan
             _execution_plan = []
             for _line in (_plan_resp.content or "").split("\n"):
                 _m = re.match(r'\s*(?:Step\s*)?(\d+)[.:]\s*(.*)', _line.strip())
@@ -731,40 +727,43 @@ def run_agent(
             if not _execution_plan:
                 _execution_plan.append({"num": 1, "desc": (_plan_resp.content or "")[:200]})
 
-            # Reset delegation results for fresh run
             _delegation_results = []
             _delegation_failed = False
 
             if progress_callback:
                 progress_callback("plan", "", {"iteration": _pursuit, "steps": len(_execution_plan)})
 
+        # Skip re-plan if partial progress exists — continue with remaining steps
+        if _pursuit > 1 and steps_completed > 0:
+            if verbose:
+                print(f"  ⏩ {steps_completed} steps already done, continuing with remaining...")
+            _delegation_failed = False
+
         if progress_callback:
             progress_callback("goal_iteration", "", {"iteration": _pursuit, "max": _GOAL_PURSUIT_MAX_ATTEMPTS})
 
         # ── Execute each plan step with adaptive retry ──
-        _pursuit_step_failed = False
+        # Failed steps are SKIPPED — we continue to the next step
         for _step_idx, _step in enumerate(_execution_plan):
-            if _pursuit_step_failed:
-                break  # This pursuit iteration failed; try new plan next iteration
+            # Skip steps that already completed in a previous pursuit
+            if _step_idx < len(_delegation_results) and not _delegation_results[_step_idx].startswith("[FAILED]") and not _delegation_results[_step_idx].startswith("[SKIPPED]"):
+                continue
 
             _step_goal = _step['desc']
             if progress_callback:
                 progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal})
 
             # ── Per-step retry loop ──
-            _step_succeeded = False
             for _step_attempt in range(1, _STEP_RETRIES + 1):
                 if progress_callback:
                     progress_callback("step_retry", "", {"step": _step_idx + 1, "attempt": _step_attempt, "goal": _step_goal})
 
                 _step_goal_actual = _step_goal
                 if _step_attempt > 1:
-                    # Adapt this specific step with alternative approach
                     _step_goal_actual = (
                         f"[ALTERNATIVE APPROACH {_step_attempt}/{_STEP_RETRIES}]\n"
                         f"Original step goal: {_step['desc']}\n"
                         f"Previous attempt failed. Think of a COMPLETELY DIFFERENT way to achieve this step.\n"
-                        f"Be creative — try a different tool, different source, different method.\n"
                         f"Goal: {_step_goal_actual}"
                     )
 
@@ -783,8 +782,10 @@ def run_agent(
                         goal=_step_goal_actual,
                         context=_step_ctx,
                     )
-                    _delegation_results.append(_result)
-                    _step_succeeded = True
+                    # Extend list if needed (step may have been SKIPPED placeholder)
+                    while len(_delegation_results) <= _step_idx:
+                        _delegation_results.append("")
+                    _delegation_results[_step_idx] = _result
                     steps_completed += 1
 
                     _execution_progress.append(f"Step {_step_idx + 1}: ✅ {_step_desc_short}")
@@ -794,32 +795,39 @@ def run_agent(
                         print(_dsp)
                     break  # Step succeeded, move to next step
                 except Exception as _e:
-                    _delegation_results.append(f"[FAILED attempt {_step_attempt}] {_step_desc_short}: {_e}")
                     if verbose:
                         print(f"  ❌ Attempt {_step_attempt} failed: {_e}")
                     if _step_attempt < _STEP_RETRIES:
                         if verbose:
                             print(f"  🔄 Trying alternative approach...")
                     else:
-                        _delegation_failed = True
-                        _pursuit_step_failed = True
+                        # All retries exhausted — SKIP this step, continue to next
+                        while len(_delegation_results) <= _step_idx:
+                            _delegation_results.append("")
+                        _delegation_results[_step_idx] = f"[SKIPPED] {_step_desc_short}: {_e}"
                         _dsp = dsp.phase_step_error(_step_idx + 1, len(_execution_plan), _step_desc_short, str(_e)[:80])
                         _display_log.append(_dsp)
                         if verbose:
-                            print(f"  ❌ Step {_step_idx + 1} exhausted all {_STEP_RETRIES} approaches")
+                            print(f"  ⏭️ Step {_step_idx + 1} skipped (all {_STEP_RETRIES} approaches failed)")
 
-        # ── Self-review: did we achieve the goal? ──
-        if not _pursuit_step_failed and _delegation_results:
+        # ── Self-review ──
+        _skipped = sum(1 for r in _delegation_results if r.startswith("[SKIPPED]"))
+        _completed = steps_completed
+        _total = len(_execution_plan)
+
+        if _completed > 0:
+            # At least some steps completed — review and move on
             _review_prompt = (
                 f"[SELF-REVIEW] Goal: {prompt}\n\n"
-                f"Steps completed:\n"
+                f"Steps completed: {_completed}/{_total} ({_skipped} skipped)\n\n"
+                f"Results:\n"
                 + "\n".join(f"Step {i+1}:\n{r[:500]}" for i, r in enumerate(_delegation_results))
                 + f"\n\n---\n"
-                f"Have we achieved the goal? Answer with:\n"
-                f"SCORE: <0-10> (7+ = achieved)\n"
-                f"VERDICT: <achieved | partially | failed>\n"
+                f"Given the goal, are the completed steps sufficient? Answer with:\n"
+                f"SCORE: <0-10> (7+ = enough to answer the user)\n"
+                f"VERDICT: <sufficient | partial | insufficient>\n"
                 f"REASON: <brief explanation>\n"
-                f"GAP: <what's still missing, if anything>"
+                f"MISSING: <what critical info is still missing>"
             )
             _review_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _review_prompt}]
             _review_fb = call_llm_with_fallback(config, _review_msgs, temperature=0.3)
@@ -831,11 +839,10 @@ def run_agent(
             _review_text = _review_resp.content or ""
 
             if verbose:
-                print(f"\n  🔍 Self-review result: {_review_text[:150]}")
+                print(f"\n  🔍 Self-review: {_completed}/{_total} steps done, {_skipped} skipped")
+                print(f"     {_review_text[:150]}")
 
-            # Parse score
             _score_match = re.search(r'SCORE:\s*(\d+(?:\.\d+)?)', _review_text)
-            _verdict_match = re.search(r'VERDICT:\s*(\w+)', _review_text)
             if _score_match:
                 _score = float(_score_match.group(1))
                 if _score >= 7:
@@ -843,22 +850,30 @@ def run_agent(
                     if verbose:
                         print(f"  ✅ Goal achieved (score: {_score}/10)")
                     break
-                else:
+                elif _pursuit < _GOAL_PURSUIT_MAX_ATTEMPTS and _skipped == _total:
+                    # Everything skipped, try a fresh plan
+                    steps_completed = 0  # reset so re-plan triggers
                     if verbose:
-                        print(f"  ⏳ Goal not yet achieved (score: {_score}/10), retrying with new approach...")
-                    _delegation_failed = True
-                    # Keep delegation_results for plan adaptation
-                    continue  # Next pursuit iteration
+                        print(f"  ⏳ All steps failed — retrying with new overall approach...")
+                    continue
+                else:
+                    # Partial result — accept it and move on to synthesis
+                    _goal_achieved = True  # Accept partial result
+                    if verbose:
+                        print(f"  ✓ Accepting partial result ({_completed}/{_total}, score {_score}/10)")
+                    break
             else:
-                # Can't parse — assume partially done, let it continue
-                if verbose:
-                    print(f"  ⚠️ Couldn't parse self-review score, treating as incomplete")
-                _delegation_failed = True
-                continue
+                _goal_achieved = True  # Can't parse but we have results
+                break
         else:
-            # No delegation results or step failed — try new plan
-            if verbose:
-                print(f"  ⏳ No successful results to review, trying new approach...")
+            # Zero steps completed — try re-plan
+            if _pursuit < _GOAL_PURSUIT_MAX_ATTEMPTS:
+                if verbose:
+                    print(f"  ⏳ All steps failed — retrying with new overall approach ({_pursuit}/{_GOAL_PURSUIT_MAX_ATTEMPTS})...")
+                continue
+            else:
+                if verbose:
+                    print(f"  ❌ All {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit iterations exhausted — giving up")
 
     # ── After goal loop ──
     if _goal_achieved:
