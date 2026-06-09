@@ -1216,23 +1216,30 @@ class BaseConnector(ABC):
                         _progress_lines = [f"🗺️ Route plan: {total} steps"]
                         _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines))
                     elif step_type == "tool" and name:
-                        _progress_lines.append(f"🔧 `{name}`")
+                        _progress_lines.append(f"🔧 `{name[:30]}`")
+                        _lines = _progress_lines[-6:]
+                        if len(_progress_lines) > 6:
+                            _lines.insert(0, "  ...")
                         if _progress_msg_id:
-                            self.send(chat_id, "\n".join(_progress_lines[-8:]),
+                            self.send(chat_id, "\n".join(_lines),
                                        edit_msg_id=_progress_msg_id)
                         else:
-                            _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines[-8:]))
+                            _progress_msg_id = self.send(chat_id, "\n".join(_lines))
                     elif step_type == "delegate":
                         meta = args or {}
                         s = meta.get("step", "")
                         t = meta.get("total", "")
-                        g = meta.get("goal", "")[:80]
+                        g = meta.get("goal", "")[:50]  # keep short for inline
                         _progress_lines.append(f"  ✅ Step {s}/{t}: {g}")
+                        # Keep last 6 lines only for inline editing
+                        _lines = _progress_lines[-6:]
+                        if len(_progress_lines) > 6:
+                            _lines.insert(0, "  ...")
                         if _progress_msg_id:
-                            self.send(chat_id, "\n".join(_progress_lines[-10:]),
+                            self.send(chat_id, "\n".join(_lines),
                                        edit_msg_id=_progress_msg_id)
                         else:
-                            _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines[-10:]))
+                            _progress_msg_id = self.send(chat_id, "\n".join(_lines))
                     elif step_type == "recalc":
                         meta = args or {}
                         _progress_lines.append(f"↻ Recalculating... (step {meta.get('step','?')})")
