@@ -743,8 +743,9 @@ def run_agent(
             _step = _execution_plan[_step_idx]
             _step_goal = _step['desc']
 
-            if progress_callback:
-                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal, "recalc": _recalc_count})
+            # Show progress only on first attempt at this position, not on every recalculation
+            if _recalc_count == 0 and progress_callback:
+                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal})
 
             _step_ctx = ""
             if _synthesis_results:
@@ -789,6 +790,9 @@ def run_agent(
                     _pursuit_failed = True
                     break
 
+                if progress_callback:
+                    progress_callback("recalc", "", {"step": _step_idx + 1, "count": _recalc_count, "error": str(_e)[:60]})
+
                 _done_summary = "\n".join(
                     f"Step {i+1}: {r[:200]}" for i, r in enumerate(_synthesis_results)
                 ) if _synthesis_results else "Nothing completed yet."
@@ -822,6 +826,7 @@ def run_agent(
                 if _new_steps:
                     # Replace remaining plan with new route (keep completed steps)
                     _execution_plan = _execution_plan[:_step_idx] + _new_steps
+                    _recalc_count = 0  # Reset — next attempt shows normal step number
                     if verbose:
                         print(f"     ✅ New route: {len(_new_steps)} remaining steps")
                     # Don't increment _step_idx — retry this position with new first step

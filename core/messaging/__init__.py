@@ -972,16 +972,15 @@ class BaseConnector(ABC):
                     try:
                         if step_type == "tool" and name:
                             self.send(chat_id, f"🔧 `{name}`")
+                        elif step_type == "recalc":
+                            meta = args or {}
+                            self.send(chat_id, f"🗺️ Recalculating route... (step {meta.get('step','?')}/#{meta.get('count','?')})")
                         elif step_type == "delegate":
                             meta = args or {}
                             s = meta.get("step", "")
                             t = meta.get("total", "")
                             g = meta.get("goal", "")[:80]
-                            recalc = meta.get("recalc", 0)
-                            if recalc > 0:
-                                self.send(chat_id, f"🗺️ Step {s}/{t} (reroute #{recalc}): {g}")
-                            else:
-                                self.send(chat_id, f"🗺️ Step {s}/{t}: {g}")
+                            self.send(chat_id, f"🗺️ Step {s}/{t}: {g}")
                     except Exception:
                         pass
 
