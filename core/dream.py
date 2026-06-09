@@ -80,8 +80,12 @@ def dream(data_dir: Path, dry_run: bool = False) -> dict:
     
     # --- Step 3: Run memory decay ---
     if memory_path.exists():
-        from baw.core.memory import MemoryStore
-        store = MemoryStore(data_dir)
+        try:
+            from baw.core.memory import MemoryStore
+            store = MemoryStore(data_dir)
+        except (ImportError, ModuleNotFoundError):
+            from .memory import MemoryStore
+            store = MemoryStore(data_dir)
         if not dry_run:
             store.decay()
         report["changes"].append("Memory decay applied")
