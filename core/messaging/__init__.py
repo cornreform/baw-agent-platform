@@ -974,7 +974,7 @@ class BaseConnector(ABC):
                             self.send(chat_id, f"🔧 `{name}`")
                         elif step_type == "recalc":
                             meta = args or {}
-                            self.send(chat_id, f"🗺️ Recalculating route... (step {meta.get('step','?')}/#{meta.get('count','?')})")
+                            self.send(chat_id, f"↻ Recalculating route... (step {meta.get('step','?')}/#{meta.get('count','?')})")
                         elif step_type == "delegate":
                             meta = args or {}
                             s = meta.get("step", "")
