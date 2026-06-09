@@ -1195,6 +1195,40 @@ class BaseConnector(ABC):
             else:
                 conv_history = None
 
+            # ── Intent Shift Detection ──
+            if conv_history and chat_id:
+                _last_user_msgs = [
+                    m.get("content", "") for m in conv_history
+                    if m.get("role") == "user"
+                ]
+                if len(_last_user_msgs) >= 2:
+                    _prev_topic = _last_user_msgs[-2][:300]  # 2nd-to-last user message
+                    _intent_prompt = (
+                        f"Previous topic: {_prev_topic}\n"
+                        f"New message: {prompt[:300]}\n\n"
+                        f"Is this the SAME topic? Answer YES or NO only."
+                    )
+                    try:
+                        from ..llm import call_llm_with_fallback as _icf
+                        _intent_fb = _icf(
+                            config,
+                            [{"role": "user", "content": _intent_prompt}],
+                            temperature=0,
+                        )
+                        _intent_text = (_intent_fb.response.content or "").strip().upper()
+                        if _intent_text.startswith("NO"):
+                            logger.info(
+                                f"[Intent] Shift detected: '{_prev_topic[:60]}' → '{prompt[:60]}'"
+                            )
+                            conv_history = None  # Reset context — fresh start
+                            # Add brief context note so BAW knows there was a shift
+                            prompt = (
+                                f"[Topic shift — previous conversation was about: "
+                                f"{_prev_topic[:100]}]\n\n{prompt}"
+                            )
+                    except Exception:
+                        pass  # Non-critical — skip detection if LLM call fails
+
             # ── Progress tracking + real-time Telegram updates (inline edit) ──
             _last_progress = time.time()
             _progress_lock = threading.Lock()
