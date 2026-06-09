@@ -166,6 +166,12 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
         )
 
     if not quick_mode:
+        # ── Load ORCHESTRATOR.md if exists ──
+        orch_path = base_path / "ORCHESTRATOR.md"
+        if orch_path.exists():
+            orch_text = orch_path.read_text(encoding="utf-8")
+            system_prompt += f"\n\n{orch_text}"
+
         # Dynamic context (only for full modes)
         tone = config.get("tone", {}).get("default", "casual")
         fact_mode = config.get("fact_check", {}).get("mode", "normal")
