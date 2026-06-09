@@ -44,18 +44,30 @@ def _import_baw():
     return True  # tools registered
 
 def _get_minimax_config() -> dict:
-    """Load config and use the configured executor model (no hardcode)."""
+    """Load config and use the configured executor model (no hardcode).
+    Falls back gracefully if executor model is not in providers list."""
     import yaml
     data_dir = Path.home() / ".baw"
     cfg = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
 
-    # Use configured models rather than hardcoding MiniMax
     model_cfg = cfg.get("model", {})
     executor_model = (
-        cfg.get("executor", {}).get("model") or   # Explicit executor config
-        model_cfg.get("fallback") or               # Fallback model
-        model_cfg.get("default", "deepseek-v4-flash")  # Default model
+        cfg.get("executor", {}).get("model") or
+        model_cfg.get("fallback") or
+        model_cfg.get("default", "deepseek-v4-flash")
     )
+
+    # Verify executor model actually exists in providers
+    providers = cfg.get("providers", {})
+    model_exists = any(
+        m["id"] == executor_model
+        for p in providers.values()
+        for m in p.get("models", [])
+    )
+    if not model_exists:
+        # Fall back to default model
+        executor_model = model_cfg.get("default", "deepseek-v4-flash")
+
     cfg["model"] = {
         "default": executor_model,
         "fallback": model_cfg.get("fallback", executor_model),
