@@ -41,6 +41,7 @@ def _import_baw():
     _reg(**_ld("read_file"))
     _reg(**_ld("write_file"))
     _reg(**_ld("web_search"))
+    _reg(**_ld("vision"))
     return True  # tools registered
 
 def _get_minimax_config() -> dict:
