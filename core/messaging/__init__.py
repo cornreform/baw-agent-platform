@@ -428,6 +428,9 @@ class BaseConnector(ABC):
             if cmd in ("reload",):
                 return self._baw_reload()
 
+            if cmd in ("update", "upgrade", "up"):
+                return self._update_with_progress(msg.chat_id)
+
             if cmd in ("evolve", "ev"):
                 try:
                     from ..evolve import get_evolve_stats
@@ -903,6 +906,200 @@ class BaseConnector(ABC):
             return ""
         header = f"⚙️ **{count} steps**"
         return header + "\n" + "\n".join(tool_lines)
+
+    def _update_with_progress(self, chat_id: str) -> str:
+        """Standardized update flow with per-step progress display."""
+        import subprocess
+        import time as _time
+        from pathlib import Path
+
+        repo_dir = Path.home() / "baw"
+        total_steps = 6
+        step = 0
+
+        def _step(label: str):
+            nonlocal step
+            step += 1
+            self.send(chat_id, f"🔄 **BAW Update** — Step {step}/{total_steps}\n{label}")
+
+        def _done(label: str):
+            self.send(chat_id, f"  ✅ Step {step}/{total_steps} — {label}")
+
+        def _warn(label: str):
+            self.send(chat_id, f"  ⚠️ Step {step}/{total_steps} — {label}")
+
+        # ── Step 1/6: Fetch ──
+        _step("Fetching latest from GitHub...")
+        try:
+            r = subprocess.run(
+                ["git", "fetch", "origin", "--tags"],
+                capture_output=True, text=True, timeout=30,
+                cwd=str(repo_dir),
+            )
+            if r.returncode != 0:
+                _warn(f"git fetch failed: {r.stderr[:200]}")
+                return ""
+            _done("Fetched latest tags")
+        except Exception as e:
+            _warn(f"git fetch error: {e}")
+            return ""
+
+        # ── Step 2/6: Version compare ──
+        _step("Comparing versions...")
+        try:
+            r = subprocess.run(
+                ["git", "describe", "--tags", "--abbrev=0"],
+                capture_output=True, text=True, timeout=5,
+                cwd=str(repo_dir),
+            )
+            current_tag = r.stdout.strip()
+        except Exception:
+            current_tag = "v0.0.0"
+
+        try:
+            r = subprocess.run(
+                ["git", "rev-list", "--count", "HEAD..origin/main"],
+                capture_output=True, text=True, timeout=10,
+                cwd=str(repo_dir),
+            )
+            behind = int(r.stdout.strip() or "0")
+        except Exception:
+            behind = -1
+
+        if behind == 0:
+            _done(f"Already up to date ({current_tag})")
+            return ""
+
+        try:
+            r = subprocess.run(
+                ["git", "ls-remote", "--tags", "--sort=-version:refname", "origin"],
+                capture_output=True, text=True, timeout=10,
+                cwd=str(repo_dir),
+            )
+            tags = [line.split("refs/tags/")[-1] for line in r.stdout.strip().split("\n") if "refs/tags/v" in line]
+            latest_tag = tags[0] if tags else "unknown"
+        except Exception:
+            latest_tag = "unknown"
+
+        _done(f"{current_tag} → {latest_tag} ({behind} commits behind)")
+
+        # ── Step 3/6: Changelog ──
+        _step("Reading changelog...")
+        changelog_parts = []
+        try:
+            r = subprocess.run(
+                ["git", "log", "--oneline", "HEAD..origin/main", "-30"],
+                capture_output=True, text=True, timeout=10,
+                cwd=str(repo_dir),
+            )
+            commits = r.stdout.strip()
+            if commits:
+                feat, fix, perf, docs, other = [], [], [], [], []
+                for line in commits.split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    short = line[8:] if len(line) > 8 else line
+                    if short.startswith("feat:"):
+                        feat.append(f"  ✨ {short[5:].strip()}")
+                    elif short.startswith("fix:"):
+                        fix.append(f"  🐛 {short[4:].strip()}")
+                    elif short.startswith("perf:"):
+                        perf.append(f"  ⚡ {short[5:].strip()}")
+                    elif short.startswith("docs:"):
+                        docs.append(f"  📝 {short[5:].strip()}")
+                    else:
+                        other.append(f"  • {short.strip()}")
+
+                if feat:
+                    changelog_parts.append("**Features:**\n" + "\n".join(feat))
+                if fix:
+                    changelog_parts.append("**Fixes:**\n" + "\n".join(fix))
+                if perf:
+                    changelog_parts.append("**Performance:**\n" + "\n".join(perf))
+                if docs:
+                    changelog_parts.append("**Docs:**\n" + "\n".join(docs))
+                if other:
+                    changelog_parts.append("**Other:**\n" + "\n".join(other[:5]))
+            _done(f"{len(commits.split(chr(10))) if commits else 0} commits grouped")
+        except Exception as e:
+            _warn(f"Changelog unavailable: {e}")
+
+        # Send changelog as a separate message
+        if changelog_parts:
+            self.send(chat_id, "\n\n".join(changelog_parts))
+
+        # ── Step 4/6: Pull ──
+        _step("Pulling updates...")
+        try:
+            r = subprocess.run(
+                ["git", "pull", "origin", "main"],
+                capture_output=True, text=True, timeout=60,
+                cwd=str(repo_dir),
+            )
+            if r.returncode != 0:
+                _warn(f"git pull failed: {r.stderr[:200]}")
+                return ""
+            _done("Pulled successfully")
+        except Exception as e:
+            _warn(f"git pull error: {e}")
+            return ""
+
+        try:
+            r = subprocess.run(
+                ["git", "describe", "--tags", "--abbrev=0"],
+                capture_output=True, text=True, timeout=5,
+                cwd=str(repo_dir),
+            )
+            new_tag = r.stdout.strip()
+            self.send(chat_id, f"🏷️ Now at: **{new_tag}**")
+        except Exception:
+            pass
+
+        # ── Step 5/6: Post-update checks ──
+        _step("Running post-update checks...")
+        hooks = []
+        req_file = repo_dir / "requirements.txt"
+        if req_file.exists():
+            try:
+                r = subprocess.run(
+                    ["git", "diff", f"{current_tag}..HEAD", "--", "requirements.txt"],
+                    capture_output=True, text=True, timeout=10,
+                    cwd=str(repo_dir),
+                )
+                if r.stdout.strip():
+                    hooks.append("requirements.txt changed — run pip install")
+            except Exception:
+                pass
+        try:
+            r = subprocess.run(
+                ["git", "diff", f"{current_tag}..HEAD", "--", "config.sample.yaml"],
+                capture_output=True, text=True, timeout=10,
+                cwd=str(repo_dir),
+            )
+            if r.stdout.strip():
+                hooks.append("config.sample.yaml changed — check new keys")
+        except Exception:
+            pass
+
+        if hooks:
+            for h in hooks:
+                _warn(h)
+        else:
+            _done("No migration needed")
+
+        # ── Step 6/6: Restart ──
+        _step("Restarting bot...")
+        try:
+            subprocess.run(
+                ["sudo", "systemctl", "restart", "baw-telegram"],
+                capture_output=True, timeout=10,
+            )
+            _done("Bot restarted — changes live")
+        except Exception as e:
+            _warn(f"Manual restart needed: sudo systemctl restart baw-telegram")
+
+        return ""  # All output sent via self.send()
 
     def _run_baw(self, prompt: str, chat_id: str | None = None) -> str:
         """Run BAW in-process (no subprocess), with session history."""
