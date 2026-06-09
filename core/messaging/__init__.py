@@ -977,7 +977,11 @@ class BaseConnector(ABC):
                             s = meta.get("step", "")
                             t = meta.get("total", "")
                             g = meta.get("goal", "")[:80]
-                            self.send(chat_id, f"🤖 Delegating step {s}/{t}: {g}")
+                            recalc = meta.get("recalc", 0)
+                            if recalc > 0:
+                                self.send(chat_id, f"🗺️ Step {s}/{t} (reroute #{recalc}): {g}")
+                            else:
+                                self.send(chat_id, f"🗺️ Step {s}/{t}: {g}")
                     except Exception:
                         pass
 

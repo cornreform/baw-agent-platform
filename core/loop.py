@@ -744,7 +744,7 @@ def run_agent(
             _step_goal = _step['desc']
 
             if progress_callback:
-                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal})
+                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal, "recalc": _recalc_count})
 
             _step_ctx = ""
             if _synthesis_results:
