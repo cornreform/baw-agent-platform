@@ -103,6 +103,10 @@ def handle_slash(command: str, args: list[str],
     if cmd == "tools":
         return _cached("tools", _cmd_tools)
 
+    if cmd in ("docs", "docschain", "dc"):
+        filepath = " ".join(args) if args else "."
+        return _cmd_docs(filepath)
+
     # ── New P1 commands ──
     if cmd in ("rethink", "rt"):
         return _cmd_rethink(args, config, data_dir, verbose)
@@ -396,3 +400,36 @@ def _cmd_fresh(args: list[str], config: dict, data_dir: Path, verbose: bool) -> 
         return response
     except Exception as e:
         return f"Fresh start failed: {e}"
+
+
+# ── Docs Chain command ─────────────────────────────────────────
+
+def _cmd_docs(filepath: str) -> str:
+    """Show the docs chain for a given file path."""
+    from .docs_chain import find_docs_chain, read_docs_chain
+    from pathlib import Path
+
+    path = Path(filepath).resolve()
+    chain = find_docs_chain(str(path))
+
+    if not chain:
+        return f"No docs chain found for: {filepath}\nTry creating docs/README.md in the project root."
+
+    lines = [f"📚 **Docs Chain for**: `{path}`\n"]
+    lines.append(f"Found {len(chain)} doc(s):\n")
+    for i, doc in enumerate(chain, 1):
+        try:
+            rel = doc.relative_to(Path.home())
+        except ValueError:
+            rel = doc
+        size = len(doc.read_text()) if doc.exists() else 0
+        lines.append(f"  {i}. `~/{rel}` ({size} chars)")
+
+    lines.append(f"\n---\n")
+    # Show full chain content (capped)
+    docs_text = read_docs_chain(str(path))
+    if len(docs_text) > 5000:
+        docs_text = docs_text[:5000] + "\n\n... (truncated)"
+    lines.append(docs_text)
+
+    return "\n".join(lines)
