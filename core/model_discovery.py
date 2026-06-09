@@ -197,6 +197,14 @@ KNOWN_PROVIDERS: dict[str, dict] = {
         "protocol": "openai-chat",
         "model_patterns": [r"^jamba", r"^ai21/"],
     },
+
+    # ── Free / Community ──
+    "agnes": {
+        "env_var": "AGNES_API_KEY",
+        "base_url": "https://apihub.agnes-ai.com/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^agnes-", r"^agnes/"],
+    },
 }
 
 # ── Model ID → provider hints (common models) ──
@@ -261,6 +269,11 @@ MODEL_HINTS: dict[str, str] = {
     "qwen-plus": "qwen",
     "qwen-turbo": "qwen",
     "qwen-vl-max": "qwen",
+    # Agnes AI (free)
+    "agnes-2.0-flash": "agnes",
+    "agnes-image-2.0": "agnes",
+    "agnes-image-2.1-flash": "agnes",
+    "agnes-video-v2.0": "agnes",
 }
 
 
@@ -394,6 +407,8 @@ def _guess_context_window(model_id: str) -> int:
         return 131_072
     if "llama-3" in model_lower:
         return 128_000
+    if "agnes" in model_lower:
+        return 131_072
     return 131_072  # safe default
 
 
