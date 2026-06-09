@@ -120,6 +120,13 @@ def _find_model(config: dict, model_id: str) -> Optional[dict]:
                         "base_url": pcfg.get("base_url", ""),
                         "api_key_env": pcfg.get("api_key_env", ""),
                         **m}
+
+    # ── Auto-discovery: try to add the model if we can detect its provider ──
+    from .model_discovery import auto_discover_model
+    discovered = auto_discover_model(config, model_id)
+    if discovered:
+        return discovered
+
     return None
 
 
