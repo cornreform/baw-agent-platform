@@ -107,6 +107,9 @@ def handle_slash(command: str, args: list[str],
         filepath = " ".join(args) if args else "."
         return _cmd_docs(filepath)
 
+    if cmd in ("update", "upgrade", "up"):
+        return _cmd_update(data_dir)
+
     # ── New P1 commands ──
     if cmd in ("rethink", "rt"):
         return _cmd_rethink(args, config, data_dir, verbose)
@@ -431,5 +434,111 @@ def _cmd_docs(filepath: str) -> str:
     if len(docs_text) > 5000:
         docs_text = docs_text[:5000] + "\n\n... (truncated)"
     lines.append(docs_text)
+
+    return "\n".join(lines)
+
+
+# ── Update command ─────────────────────────────────────────────
+
+def _cmd_update(data_dir: Path) -> str:
+    """Check GitHub for latest release, pull, and report changes."""
+    import subprocess
+    from pathlib import Path
+
+    repo_dir = Path.home() / "baw"
+
+    lines = ["🔄 **BAW Update**\n"]
+
+    # 1. Fetch
+    try:
+        r = subprocess.run(
+            ["git", "fetch", "origin", "--tags"],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(repo_dir),
+        )
+        if r.returncode != 0:
+            return f"❌ git fetch failed:\n{r.stderr[:300]}"
+        lines.append("✅ Fetched latest from GitHub")
+    except Exception as e:
+        return f"❌ git fetch failed: {e}"
+
+    # 2. Check current vs remote
+    try:
+        r = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD..origin/main"],
+            capture_output=True, text=True, timeout=10,
+            cwd=str(repo_dir),
+        )
+        behind = int(r.stdout.strip() or "0")
+    except Exception:
+        behind = -1
+
+    if behind == 0:
+        # Already up to date — check tags
+        try:
+            r = subprocess.run(
+                ["git", "describe", "--tags", "--abbrev=0"],
+                capture_output=True, text=True, timeout=5,
+                cwd=str(repo_dir),
+            )
+            current_tag = r.stdout.strip()
+        except Exception:
+            current_tag = "unknown"
+        lines.append(f"✅ Already up to date ({current_tag})")
+        return "\n".join(lines)
+
+    # 3. Get what's new
+    try:
+        r = subprocess.run(
+            ["git", "log", "--oneline", f"HEAD..origin/main", "-20"],
+            capture_output=True, text=True, timeout=10,
+            cwd=str(repo_dir),
+        )
+        new_commits = r.stdout.strip()
+    except Exception:
+        new_commits = "unknown"
+
+    lines.append(f"📥 {behind} new commit(s) available:\n")
+    lines.append(f"```\n{new_commits[:800]}\n```")
+
+    # 4. Pull
+    try:
+        r = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(repo_dir),
+        )
+        if r.returncode != 0:
+            lines.append(f"\n❌ git pull failed:\n{r.stderr[:300]}")
+            return "\n".join(lines)
+        lines.append("\n✅ Pulled successfully")
+    except Exception as e:
+        lines.append(f"\n❌ git pull failed: {e}")
+        return "\n".join(lines)
+
+    # 5. Get new tag
+    try:
+        r = subprocess.run(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(repo_dir),
+        )
+        new_tag = r.stdout.strip()
+    except Exception:
+        new_tag = "unknown"
+
+    lines.append(f"🏷️ Now at: {new_tag}")
+
+    # 6. Restart the bot
+    lines.append("\n⏳ Restarting bot to apply changes...")
+    try:
+        subprocess.run(
+            ["sudo", "systemctl", "restart", "baw-telegram"],
+            capture_output=True, timeout=10,
+        )
+        lines.append("✅ Bot restarted — changes are live")
+    except Exception as e:
+        lines.append(f"⚠️ Auto-restart failed: {e}")
+        lines.append("   Run manually: `sudo systemctl restart baw-telegram`")
 
     return "\n".join(lines)
