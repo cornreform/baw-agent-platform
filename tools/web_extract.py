@@ -1,115 +1,101 @@
-"""BAW built-in: web_extract — extract web page content as markdown.
+"""BAW built-in: web page text extraction via requests + BeautifulSoup"""
 
-Like Hermes web_extract: fetches a URL and returns clean markdown text.
-Uses readability-lxml for content extraction when available, falls back to plain HTML-to-text.
-"""
+import requests
+from bs4 import BeautifulSoup
 import re
-from pathlib import Path
 
 
-def web_extract(urls: str) -> str:
-    """Extract content from one or more web page URLs.
+def web_extract(url: str, strip_lines: bool = True, max_chars: int = 8000) -> str:
+    """Fetch a web page and extract plain text content using requests + BeautifulSoup.
+
+    Strips scripts, styles, and excessive whitespace. Returns readable plain text.
 
     Args:
-        urls: Comma-separated list of URLs to fetch (max 3).
+        url: Full URL to fetch (http/https)
+        strip_lines: Remove empty lines for compact output (default: True)
+        max_chars: Max characters to return (default: 8000). Use 0 for no limit.
 
     Returns:
-        Markdown text from each URL, or error messages.
+        Extracted plain text content from the web page.
     """
-    url_list = [u.strip() for u in urls.split(",") if u.strip()]
-    if not url_list:
-        return "Error: at least one URL is required"
-    if len(url_list) > 3:
-        return "Error: max 3 URLs per call"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
 
-    results = []
-    for url in url_list[:3]:
-        try:
-            content = _extract_one(url)
-            results.append(f"## {url}\n\n{content[:8000]}")
-        except Exception as e:
-            results.append(f"## {url}\n\n❌ Error: {e}")
-
-    return "\n\n---\n\n".join(results)
-
-
-def _extract_one(url: str) -> str:
-    """Extract content from a single URL. Tries readability, falls back to basic."""
-    import urllib.request
-    import urllib.error
-
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "BAW/1.0 (bot; +https://github.com/cornreform/baw)",
-            "Accept": "text/html,application/xhtml+xml",
-        },
-    )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        return f"HTTP {e.code}: {e.reason}"
-    except urllib.error.URLError as e:
-        return f"URL error: {e.reason}"
-    except Exception as e:
-        return f"Fetch error: {e}"
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+    except requests.exceptions.Timeout:
+        return f"Error: request to {url} timed out"
+    except requests.exceptions.RequestException as e:
+        return f"Error: {e}"
 
-    # Try readability
-    try:
-        from readability import Document
-        doc = Document(html)
-        title = doc.title() or ""
-        content = doc.summary()
-        # Strip HTML tags, leave basic markdown-like formatting
-        content = _html_to_text(content)
-        result = f"{title}\n{content}" if title else content
-        return result[:8000] if result else "(empty page)"
-    except ImportError:
-        pass
+    # Parse HTML and extract text
+    soup = BeautifulSoup(resp.text, "html.parser")
 
-    # Fallback: basic HTML-to-text
-    text = _html_to_text(html)
-    return text[:8000] if text.strip() else "(empty page)"
+    # Remove non-content elements
+    for tag in soup(["script", "style", "nav", "footer", "header",
+                      "noscript", "iframe", "form", "button", "aside"]):
+        tag.decompose()
 
+    # Get text, join lines
+    text = soup.get_text(separator="\n")
 
-def _html_to_text(html: str) -> str:
-    """Basic HTML to plain text conversion."""
-    # Remove scripts and styles
-    html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    # Replace common block elements with newlines
-    for tag in ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "tr", "br"]:
-        html = re.sub(f"</?{tag}[^>]*>", "\n", html, flags=re.IGNORECASE)
-    # Remove remaining tags
-    html = re.sub(r"<[^>]+>", "", html)
-    # Decode entities
-    html = html.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-    html = html.replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " ")
-    # Collapse whitespace
-    html = re.sub(r"\n\s*\n", "\n\n", html)
-    html = re.sub(r" {2,}", " ", html)
-    return html.strip()
+    # Clean whitespace
+    lines = []
+    for line in text.splitlines():
+        line = line.strip()
+        if strip_lines and not line:
+            continue
+        lines.append(line)
+
+    cleaned = "\n".join(lines)
+
+    # Collapse multiple blank lines (if not strip_lines)
+    if not strip_lines:
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+    # Truncate if needed
+    if max_chars > 0 and len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars] + "\n\n[... truncated, full content exceeds limit]"
+
+    return cleaned if cleaned.strip() else f"No extractable text found at {url}"
 
 
 TOOL_DEF = {
     "name": "web_extract",
     "description": (
-        "Extract content from web page URLs as markdown text. "
-        "Use this to READ the full content of a page found via web_search. "
-        "Supports up to 3 URLs per call. Results are truncated at 8000 chars each. "
-        "URLs must be comma-separated."
+        "Fetch a web page and extract plain text using requests + BeautifulSoup. "
+        "Use this to read articles, documentation, or any HTML content "
+        "when you need the raw text without rendering. "
+        "Strips scripts, styles, nav bars, and other non-content elements. "
+        "Returns clean, readable text."
     ),
     "handler": web_extract,
     "parameters": {
         "type": "object",
         "properties": {
-            "urls": {
+            "url": {
                 "type": "string",
-                "description": "Comma-separated list of URLs to extract (max 3)",
+                "description": "Full URL to fetch and extract text from (e.g. 'https://example.com/page')",
+            },
+            "strip_lines": {
+                "type": "boolean",
+                "description": "Remove empty lines for compact output (default: True)",
+            },
+            "max_chars": {
+                "type": "integer",
+                "description": (
+                    "Max characters to return (default: 8000). "
+                    "Use 0 for no limit (full page)."
+                ),
             },
         },
-        "required": ["urls"],
+        "required": ["url"],
     },
     "risk_level": "low",
 }
