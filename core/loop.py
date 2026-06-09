@@ -743,10 +743,9 @@ def run_agent(
             _step = _execution_plan[_step_idx]
             _step_goal = _step['desc']
 
-            # Only show step progress for step 2+ (step 1 is covered by plan message)
-            # This prevents flood when recalculation produces new "Step 1" each time
-            if _step_idx > 0 and progress_callback:
-                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal})
+            # Show step progress for all steps (including step 1)
+            if progress_callback:
+                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal[:80]})
 
             _step_ctx = ""
             if _synthesis_results:
