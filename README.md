@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.13-blueviolet" alt="v0.13">
+  <img src="https://img.shields.io/badge/version-0.14-blueviolet" alt="v0.14">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -104,6 +104,10 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>🔧 Tool Self-Config (v0.13)</td><td>BAW discovers & registers its own CLI tools. No pre-config needed — finds <code>mmx</code>, writes wrapper, auto-registers</td></tr>
   <tr><td>👁️ MiniMax Vision (v0.13)</td><td>Photo handling uses <code>mmx vision describe</code> (MiniMax M3). OCR only as fallback</td></tr>
   <tr><td>🔄 Auto-Continue Loop (v0.13)</td><td>Goal not achieved? Auto-feed result back as next prompt (max 3 rounds). No more empty promises</td></tr>
+  <tr><td>🧰 Expanded Tools (v0.14)</td><td>15 built-in tools: patch, web_extract, search_files, memory, todo, vision, browser, image_generate, tts, execute_code</td></tr>
+  <tr><td>🎯 Per-Task Model Routing (v0.14)</td><td><code>model.task_rules</code> keyword matching routes sub-agents to optimal models. search→kimi, code→deepseek, vision→MiniMax</td></tr>
+  <tr><td>🏷️ In-Task Model Override (v0.14)</td><td><code>[model: X] [stt: Y]</code> tags in user prompts override capability routing. Tags stripped before LLM sees them. Per-task only</td></tr>
+  <tr><td>🧠 Orchestrator Rules (v0.14)</td><td>5 optimization rules loaded from ORCHESTRATOR.md: Inline Gate, Macro-Step Grouping, Context Injection, Sequential Default, Shared Scratchpad</td></tr>
   <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block sudo/rm -rf) / Medium (warn) / Low (allow)</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates a dark-themed system dashboard</td></tr>
   <tr><td>💬 Interactive CLI Chat</td><td>Colored banner + Tab completion + 20 slash commands</td></tr>
@@ -174,18 +178,29 @@ baw/                        ← Code repo
 │   ├── autosave.py         Auto git commit
 │   ├── render.py           HTML renderer
 │   └── verifier.py         Per-step LLM verification
-├── tools/                  Built-in tools
+├── tools/                  Built-in tools (15 tools)
 │   ├── bash.py             Shell execution
 │   ├── read_file.py        File reading
 │   ├── write_file.py       File writing
 │   ├── web_search.py       Web search
-│   └── delegate_task.py    MiniMax sub-agent delegation (v0.11)
+│   ├── web_extract.py      Web content extraction
+│   ├── search_files.py     Codebase search (ripgrep)
+│   ├── patch.py            Targeted find-replace editing
+│   ├── memory.py           Memory read/write/search
+│   ├── todo.py             Task list management
+│   ├── delegate_task.py    Sub-agent delegation (v0.11)
+│   ├── vision.py           Image analysis (MiniMax)
+│   ├── browser.py          Web automation (stub, v0.14)
+│   ├── image_generate.py   AI image generation (stub, v0.14)
+│   ├── tts.py              Text-to-speech (stub, v0.14)
+│   └── execute_code.py     Python sandbox (stub, v0.14)
 ├── config.yaml             Default config
 └── docs/                   GitHub Pages documentation
 
 ~/.baw/                     ← User data directory
 ├── config.yaml             User config
 ├── SOUL.md                 Soul / behaviour rules
+├── ORCHESTRATOR.md         Sub-agent optimization rules (v0.14)
 ├── .env                    API keys
 ├── memory/store.jsonl      Memory storage
 ├── skills/*.yaml           Custom skills
@@ -313,6 +328,14 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>🎙️ Voice STT (v0.11)</td><td>Telegram 語音自動檢測：檢查模型 audio_input 能力 → STT 設定 → faster-whisper 本地 fallback。冇可用方案時列出安裝選項</td></tr>
   <tr><td>📊 Context Monitor (v0.12)</td><td>自動檢測 context 使用量。>70% → 自動 LLM 總結 + save 落記憶 + 壓縮 session（留最後 4 句 + summary header）</td></tr>
   <tr><td>🗂️ Session 管理 (v0.12)</td><td><code>/new</code>、<code>/list</code>、<code>/resume &lt;id&gt;</code>、<code>/summarize</code> — 完整 session lifecycle，唔再怕 context 爆</td></tr>
+  <tr><td>🗺️ Route Plan 執行 (v0.13)</td><td>多步驟路線圖 + 即時 inline progress edit。60s step timeout + 連 fail 2 次 skip — 永遠唔會 silent stop</td></tr>
+  <tr><td>🔧 Tool Self-Config (v0.13)</td><td>BAW 自己發現 + 登記 CLI 工具。唔使預先設定 — 搵到 <code>mmx</code>、寫 wrapper、自動 register</td></tr>
+  <tr><td>👁️ MiniMax Vision (v0.13)</td><td>圖片處理用 <code>mmx vision describe</code> (MiniMax M3)。OCR 只做 fallback</td></tr>
+  <tr><td>🔄 Auto-Continue Loop (v0.13)</td><td>目標未達成？自動將結果傳返做下一個 prompt（max 3 rounds）。唔會再空口講白話</td></tr>
+  <tr><td>🧰 擴充工具集 (v0.14)</td><td>15 個內置工具：patch、web_extract、search_files、memory、todo、vision、browser、image_generate、tts、execute_code</td></tr>
+  <tr><td>🎯 按 Task 選 Model (v0.14)</td><td><code>model.task_rules</code> 關鍵字配對自動路由。search→kimi、code→deepseek、vision→MiniMax</td></tr>
+  <tr><td>🏷️ Task 內 Model Override (v0.14)</td><td><code>[model: X] [stt: Y]</code> tag 覆蓋功能路由。Tag 自動 strip，LLM 睇唔到。只對當前 task 有效</td></tr>
+  <tr><td>🧠 Orchestrator 規則 (v0.14)</td><td>5 條優化規則由 ORCHESTRATOR.md 載入：Inline Gate、Macro-Step Grouping、Context Injection、Sequential Default、Shared Scratchpad</td></tr>
   <tr><td>🛡️ 三級權限引擎</td><td>High（禁止 sudo/rm -rf）/ Medium（提示）/ Low（允許）</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> 一鍵生成深色主題系統儀錶板</td></tr>
   <tr><td>💬 互動式 CLI Chat</td><td>彩色 banner + Tab 補全 slash commands + 20 個指令</td></tr>
@@ -383,18 +406,29 @@ baw/                        ← Code repo
 │   ├── autosave.py         自動 git commit
 │   ├── render.py           HTML renderer
 │   └── verifier.py         Per-step verify
-├── tools/                  內置工具
-│   ├── bash.py             Shell 執行
+├── tools/                  內置工具 (15 tools)
+│   ├── bash.py             命令執行
 │   ├── read_file.py        讀檔案
 │   ├── write_file.py       寫檔案
-│   ├── web_search.py       Web search
-│   └── delegate_task.py    MiniMax 子 agent 分工 (v0.11)
+│   ├── web_search.py       Web 搜尋
+│   ├── web_extract.py      Web 內容提取
+│   ├── search_files.py     程式碼搜尋 (ripgrep)
+│   ├── patch.py            精準檔案編輯
+│   ├── memory.py           記憶讀寫
+│   ├── todo.py             任務管理
+│   ├── delegate_task.py    子代理委派 (v0.11)
+│   ├── vision.py           圖片分析 (MiniMax)
+│   ├── browser.py          Web 自動化 (stub, v0.14)
+│   ├── image_generate.py   AI 圖片生成 (stub, v0.14)
+│   ├── tts.py              語音合成 (stub, v0.14)
+│   └── execute_code.py     Python 沙盒 (stub, v0.14)
 ├── config.yaml             預設配置
 └── docs/                   GitHub Pages 文檔
 
 ~/.baw/                     ← 用戶設定目錄
 ├── config.yaml             用戶配置
 ├── SOUL.md                 Soul / 行為規則
+├── ORCHESTRATOR.md         子代理優化規則 (v0.14)
 ├── .env                    API keys
 ├── memory/store.jsonl      記憶儲存
 ├── skills/*.yaml           自訂 skills
