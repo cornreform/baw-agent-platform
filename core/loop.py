@@ -716,8 +716,8 @@ def run_agent(
     # ── Phase 3b: Goal-pursuit loop ──
     # Route recalculation: wrong turn → silently recalculates new route from current position
     # No retries, no skipping — just instant re-route from where you are.
-    _GOAL_PURSUIT_MAX_ATTEMPTS = 3  # Max full from-scratch re-plans (tight: prevent loop flood)
-    _MAX_RECALCULATES = 3           # Max micro re-routes per pursuit (tight: 3 chances per plan)
+    _GOAL_PURSUIT_MAX_ATTEMPTS = 3  # Max full from-scratch re-plans
+    _MAX_RECALCULATES = 5           # Max micro re-routes per pursuit (generous: 5 chances)
     steps_completed = 0
     _delegation_results: list[str] = []
     _synthesis_results: list[str] = []  # Successful step results for final synthesis
