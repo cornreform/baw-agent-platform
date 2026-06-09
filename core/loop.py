@@ -1015,5 +1015,6 @@ def run_agent(
         "adversarial_raw": court_result,
         "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
         "plan_recap": plan_recap.strip(),
+        "goal_achieved": _goal_achieved,
     }
     return findings, info
