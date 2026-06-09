@@ -457,18 +457,18 @@ class TelegramConnector(BaseConnector):
             return f"[Unsupported file type: {ext}. Cannot extract content.]"
 
     def _process_document_file(self, chat_id: str, doc: dict, msg: dict):
-        """Download, extract, and analyze a document via BAW."""
+        """Download, extract, and analyze a document via BAW. Inline edit — one message."""
         try:
             file_id = doc["file_id"]
             file_name = doc.get("file_name", "document")
-            self.send(chat_id, f"📥 Downloading **{file_name}**...")
+
+            status_id = self.send(chat_id, f"📥 Downloading **{file_name}**...")
 
             local_path = self._download_file(file_id, file_name)
-            self.send(chat_id, f"🔍 Extracting content...")
+            self.send(chat_id, f"🔍 Extracting content...", edit_msg_id=status_id)
 
             content = self._extract_file_content(local_path)
 
-            # Build analysis prompt
             prompt = (
                 f"[File: {file_name}]\n"
                 f"[Type: {doc.get('mime_type', 'unknown')}]\n\n"
@@ -479,8 +479,16 @@ class TelegramConnector(BaseConnector):
                 f"If it's a technical document, identify the main topics."
             )
 
-            self.send(chat_id, f"🤔 Analyzing with BAW...")
+            self.send(chat_id, f"🤔 Analyzing with BAW...", edit_msg_id=status_id)
             response = self._run_baw(prompt, chat_id=chat_id)
+            try:
+                self._client.post(
+                    f"{self._api_base}/deleteMessage",
+                    json={"chat_id": chat_id, "message_id": int(status_id)},
+                    timeout=5,
+                )
+            except Exception:
+                pass
             self.send(chat_id, response)
             self._record_batch_result(chat_id, response[:200], "document")
 
@@ -491,17 +499,18 @@ class TelegramConnector(BaseConnector):
             self._release_slot()
 
     def _process_image_file(self, chat_id: str, photo_data: dict, msg: dict):
-        """Download an image and analyze with MiniMax vision (not OCR)."""
+        """Download an image and analyze with MiniMax vision (not OCR). Inline edit — one message."""
         try:
             file_id = photo_data["file_id"]
             file_name = f"photo_{file_id[:8]}.jpg"
-            self.send(chat_id, "📥 Downloading image...")
+
+            # ── Single inline-edited status message ──
+            status_id = self.send(chat_id, "📥 Downloading image...")
 
             local_path = self._download_file(file_id, file_name)
 
-            # Use MiniMax vision (mmx) — NOT OCR
             import subprocess as sp
-            self.send(chat_id, "👁️ Analyzing with vision...")
+            self.send(chat_id, "👁️ Analyzing with vision...", edit_msg_id=status_id)
             try:
                 r = sp.run(
                     ["mmx", "vision", "describe", local_path,
@@ -512,7 +521,6 @@ class TelegramConnector(BaseConnector):
             except sp.TimeoutExpired:
                 vision_result = "(vision timeout)"
             except FileNotFoundError:
-                # Fallback to OCR if mmx not available
                 content = self._extract_file_content(local_path)
                 vision_result = f"OCR: {content}"
 
@@ -527,8 +535,17 @@ class TelegramConnector(BaseConnector):
                 f"- If there are similar items: suggest alternatives."
             )
 
-            self.send(chat_id, f"🤔 Analyzing with BAW...")
+            self.send(chat_id, "🤔 Analyzing with BAW...", edit_msg_id=status_id)
             response = self._run_baw(prompt, chat_id=chat_id)
+            # Delete the status message, send clean result
+            try:
+                self._client.post(
+                    f"{self._api_base}/deleteMessage",
+                    json={"chat_id": chat_id, "message_id": int(status_id)},
+                    timeout=5,
+                )
+            except Exception:
+                pass
             self.send(chat_id, response)
             self._record_batch_result(chat_id, response[:200], "image")
 

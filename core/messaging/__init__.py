@@ -1326,14 +1326,13 @@ class BaseConnector(ABC):
                 # Feed into next round
                 conv_history = None  # Clear context for auto-continuation
 
-            # ── Send all plan recaps as separate messages ──
+            # ── Prepend plan recap to output (single message, no delay) ──
             if all_plan_recaps:
-                for plan_msg in all_plan_recaps:
-                    if plan_msg:
-                        plan_msg = re.sub(r'<[^>]+>', '', plan_msg)
-                        if len(plan_msg) > 4000:
-                            plan_msg = plan_msg[:3997] + "..."
-                        self.send(chat_id, plan_msg)
+                plan_recap_clean = "\n".join(
+                    re.sub(r'<[^>]+>', '', p) for p in all_plan_recaps if p
+                )
+                if plan_recap_clean:
+                    output = plan_recap_clean + "\n" + output
 
             # ── Send court verdict as separate message (if available) ──
             if info and info.get("adversarial_raw"):
