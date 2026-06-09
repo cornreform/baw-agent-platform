@@ -44,19 +44,43 @@ def _import_baw():
     _reg(**_ld("vision"))
     return True  # tools registered
 
-def _get_minimax_config() -> dict:
-    """Load config and use the configured executor model (no hardcode).
-    Falls back gracefully if executor model is not in providers list."""
+def _resolve_executor_model(cfg: dict, goal: str = "") -> str:
+    """Resolve which model to use for a delegated task.
+
+    Priority:
+    1. model.task_rules — keyword match on goal (first match wins)
+    2. executor.model — configured executor model
+    3. model.fallback or model.default — final fallback
+    """
+    import re
+    model_cfg = cfg.get("model", {})
+
+    # ── Check per-task rules ──
+    if goal:
+        for rule in model_cfg.get("task_rules", []) or []:
+            pattern = rule.get("match", "")
+            if pattern and re.search(pattern, goal, re.IGNORECASE):
+                matched_model = rule.get("model", "")
+                if matched_model:
+                    return matched_model
+
+    # ── Fall back to executor.model → fallback → default ──
+    return (
+        cfg.get("executor", {}).get("model") or
+        model_cfg.get("fallback") or
+        model_cfg.get("default", "deepseek-v4-flash")
+    )
+
+
+def _get_minimax_config(goal: str = "") -> dict:
+    """Load config and resolve the executor model (per-task routing support).
+    Falls back gracefully if resolved model is not in providers list."""
     import yaml
     data_dir = Path.home() / ".baw"
     cfg = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
 
     model_cfg = cfg.get("model", {})
-    executor_model = (
-        cfg.get("executor", {}).get("model") or
-        model_cfg.get("fallback") or
-        model_cfg.get("default", "deepseek-v4-flash")
-    )
+    executor_model = _resolve_executor_model(cfg, goal)
 
     # Verify executor model actually exists in providers
     providers = cfg.get("providers", {})
@@ -111,7 +135,7 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
     from core.tools import execute_tool, get_openai_tools
     from core.context import Context
     openai_tools = get_openai_tools()
-    config = _get_minimax_config()
+    config = _get_minimax_config(goal)
 
     # ── Restrict toolsets if specified ──
     if toolsets:
