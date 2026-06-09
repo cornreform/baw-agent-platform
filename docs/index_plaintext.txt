@@ -1,0 +1,654 @@
+BAW — Black And White Agent Platform 
+
+BAW 
+
+Built-from-scratch Agent Platform — Angel/Devil Dual-Soul Court 由零打造嘅 Agent Platform — Angel/Devil 雙魂法庭 
+
+v0.10 Linux + macOS Protocol-agnostic Never Surrender 
+
+📑 目錄 📑 Table of Contents 
+
+核心特色 Features 
+
+安裝 & 設定 Installation 
+
+快速開始 Quick Start 
+
+三種執行模式 Execution Modes 
+
+天使/魔鬼法庭 Angel/Devil Court 
+
+設定精靈 Setup Wizard 
+
+Config CLI Config CLI 
+
+互動式 Chat Interactive Chat 
+
+指令一覽 Commands 
+
+Slash 指令 Slash Commands 
+
+Scheduler 排程 Scheduler 
+
+Skills 技能 Skills 
+
+背景任務 Async Tasks 
+
+GitHub 整合 GitHub 
+
+語氣設定 Tone Profiles 
+
+系統架構 Architecture 
+
+✨ 核心特色 ✨ Core Features 
+
+⚖️ 
+Angel/Devil 法庭 Angel/Devil Court 
+
+Devil 先發言審查，零執行權。Angel 聽完再決定。分數比對決定執行或 BLOCK。 Devil speaks first with ZERO execution power. Angel listens then decides. Score comparison determines action. 
+
+🧠 
+永不放棄 Never Surrender 
+
+失敗→retry→replan→rollback。6 種策略用盡先上報，唔問用戶點做。 Fail→retry→replan→rollback. Exhausts 6 strategies before reporting. Never asks the user. 
+
+🔌 
+協議無關 LLM Protocol-agnostic LLM 
+
+OpenAI/Anthropic/Google 協議通吃。一行 config 轉模型，內置 cost tracking。 OpenAI/Anthropic/Google protocols. One-line config switch, built-in cost tracking. 
+
+⚙️ 
+三種執行模式 3 Execution Modes 
+
+Quick（最快）/ Hybrid（平衡）/ Tight（完整 court+plan+verify） Quick (fastest) / Hybrid (balanced) / Tight (full pipeline) 
+
+🗣️ 
+6 種語氣 Profile 6 Tone Profiles 
+
+casual / business / teaching / client-doc / ot-rt / stepwise，隨時切換 casual / business / teaching / client-doc / ot-rt / stepwise, switch anytime 
+
+📝 
+自我學習技能 Self-Learning Skills 
+
+俾句描述/URL，BAW 自動分析拆解生成 YAML skill。 Give a description or URL — BAW analyzes, decomposes, and generates a YAML skill. 
+
+🔄 
+Cron Scheduler Cron Scheduler 
+
+Cron 表達式定時執行任務。60s 背景 polling daemon。 Cron-expression scheduled tasks. 60s background polling daemon. 
+
+📁 
+背景 Async Task Async Background Tasks 
+
+--delegate 背景執行，主 terminal 即時 free。Max 3 concurrent。 --delegate runs in background, main terminal freed. Max 3 concurrent. 
+
+🐙 
+GitHub 整合 GitHub Integration 
+
+issues/PRs/CI/repos 直接從 CLI 操作。 issues/PRs/CI/repos directly from the CLI. 
+
+🔍 
+開放 Search Provider Open Search Provider 
+
+內置 DuckDuckGo（免費無 key），可 pluggable 升級。 Built-in DuckDuckGo (free, no key). Pluggable upgrade path. 
+
+💾 
+記憶 + 事實查證 Memory + Fact Check 
+
+JSONL append‑only 記憶 + 內部評分 + 三級事實驗證。 JSONL append-only memory + internal scoring + 3-level fact verification. 
+
+🛡️ 
+三級權限引擎 3-Level Permission Engine 
+
+High（禁止 sudo/rm -rf）/ Medium（提示）/ Low（允許） High (block sudo/rm -rf) / Medium (warn) / Low (allow) 
+
+📊 
+HTML Dashboard HTML Dashboard 
+
+--board 一鍵生成深色主題系統儀錶板。 --board generates a dark-themed system dashboard. 
+
+💬 
+互動式 CLI Chat Interactive CLI Chat 
+
+彩色 banner + Tab 補全 + 20 個 slash commands。 Colored banner + Tab completion + 20 slash commands. 
+
+⚙️ 
+Setup Wizard + Config CLI Setup Wizard + Config CLI 
+
+--setup / --cfg set/get/list 即時設定。 --setup / --cfg set/get/list — real-time config. 
+
+📁 
+檔案版本 + Auto Git File History + Auto Git 
+
+每次寫入 SHA256 + ISO timestamp + 自動 git commit。 Every write logged with SHA256 + ISO timestamp + auto git commit. 
+
+📦 安裝 & 設定 📦 Installation & Setup 
+
+最低要求 Requirements 
+
+Python 3.11+（建議 3.12） 
+
+macOS / Linux 
+
+Git（auto-commit 用） 
+
+API Key for LLM provider（DeepSeek, MiniMax, 或其他） 
+
+安裝步驟 Installation Steps 
+# Clone repo git clone https://github.com/cornreform/baw-agent-platform.git ~/baw
+cd ~/baw # Install dependencies pip install pyyaml httpx duckduckgo-search croniter # Create CLI link ln -sf ~/baw/baw ~/.local/bin/baw # Confirm baw --version 
+
+⚠️ 如果 `baw: command not found` If `baw: command not found` 
+
+將 ~/.local/bin 加入 PATH： Add ~/.local/bin to your PATH: 
+Bash: echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc 
+Zsh: echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc 
+Fish: fish_add_path "$HOME/.local/bin" 
+
+設定 API Keys API Key Setup 
+# 方法一：用 .env file echo "DEEPSEEK_API_KEY=sk-your-key-here" >> ~/.baw/.env
+echo "MINIMAX_API_KEY=your-key-here" >> ~/.baw/.env # 方法二：用環境變數 export DEEPSEEK_API_KEY=sk-your-key-here
+export MINIMAX_API_KEY=your-key-here 
+
+🚀 快速開始 🚀 Quick Start 
+# 跑一個 prompt（單句模式） baw "list files in current directory" # 指定語氣 baw --tone business "寫一份合作提案" # 快速 LLM 問題（無 court/plan） baw --btw "Now UTC+8 幾點？" # 背景執行長時間任務 baw --delegate "scan project directory and report code stats" # 互動式設定精靈 baw --setup # 進入互動式 Chat 模式 baw 
+
+💡 第一件事 First thing to try 
+
+行 baw --setup 設定你嘅 mode / tone / court / model，然後 baw "say hello" 睇下 BAW 點運作。 Run baw --setup to configure mode/tone/court/model, then baw "say hello" to see BAW in action. 
+
+⚙️ 三種執行模式 ⚙️ Execution Modes 
+
+模式 Mode 
+
+Flag 
+
+Court 
+
+Plan 
+
+Verify 
+
+速度 Speed 
+
+🚀 Quick 
+
+--mode quick 
+
+❌ 
+
+❌ 
+
+❌ 
+
+最快 Fastest 
+
+⚖️ Hybrid 
+
+--mode hybrid 
+
+❌ 
+
+✅ 
+
+❌ 
+
+平衡 Balanced 
+
+🛡️ Tight 
+
+--mode tight （default） 
+
+✅ 
+
+✅ 
+
+✅ 
+
+最全面 Most thorough 
+
+Quick 
+
+純 LLM call，無 court、無 planning、無 verify。最快，適合簡單查詢。 Pure LLM call — no court, no planning, no verify. Fastest. Best for simple queries. 
+
+Hybrid 
+
+有 step plan 引導執行，但 skip court 同 verify。平衡速度同可控性。 Step plan guides execution, but skips court and verify. Balanced speed and control. 
+
+Tight（預設） 
+
+完整 pipeline：Plan → Devil 審查 → Angel 執行 → 每步 verify → checkpoint → report。最安全。 Full pipeline: Plan → Devil review → Angel execute → per-step verify → checkpoint → report. Most secure. 
+# 改預設模式 baw --cfg set mode hybrid # 單次 override baw --mode quick "現在幾點？" 
+
+⚖️ 天使/魔鬼法庭 ⚖️ Angel/Devil Court 
+
+BAW 嘅核心機制。每次執行任務前，Devil 先發言挑戰，Angel 聽完先決定點做。 The heart of BAW. Before every task, the Devil speaks first as opposing counsel, then the Angel responds and decides. 
+
+流程 Flow 
+
+用戶落指令 — e.g.「delete all .log files」 User gives command — e.g. "delete all .log files" 
+
+👿 Devil 先發言 — 指出風險，但無工具權限，得把口 👿 Devil speaks first — identifies risks, but has ZERO execution power 
+
+Devil 比風險分數 — [Devil: 7/10] Devil scores risk — [Devil: 7/10] 
+
+😇 Angel 聽完回應 — 有齊工具，可以執行 😇 Angel responds — has full tool access, can execute 
+
+比對分數 — Angel 分數 > Devil → 繼續；否則 BLOCK Compare scores — Angel score > Devil → proceed; else BLOCK 
+
+執行 — Angel 用工具做嘢，逐 step checkpoint Execute — Angel uses tools, step-by-step with checkpoints 
+$ baw "清空 /tmp 嘅 .tmp 檔案" 👿 Devil review: [Devil: 6/10]
+ 危險操作。雖然係 /tmp，但可能有正在使用嘅 temp file。
+ 建議先 list 出要 delete 嘅檔案，確認無 process 使用。 😇 Angel response: [Angel: 8/10]
+ 同意 Devil。我會先 list files → check lsof →
+ 只 delete 無使用嘅 .tmp files → 報告結果。 📋 Plan:
+ 1. ls -la /tmp/*.tmp 列出目標
+ 2. lsof /tmp/*.tmp 檢查使用中
+ 3. rm 無使用嘅檔案
+ 4. 報告共刪除 N 個檔案 
+
+可以用 baw --cfg set adversarial.enabled false 熄咗法庭。 Disable the court with baw --cfg set adversarial.enabled false . 
+
+🎯 互動式設定精靈 🎯 Setup Wizard 
+
+唔想手動改 YAML？行 baw --setup 就用得。 Don't want to edit YAML? Run baw --setup . 
+
+═══════════════════════════════════ 
+BAW Setup Wizard 
+Choose how BAW executes tasks: 
+quick = no court, no plan (fastest) 
+hybrid = plan only, no court (balanced) 
+tight = full court + plan + verify 
+? Execution mode [tight] _ 
+
+逐步引導設定： Guides you through: 
+
+Execution Mode（quick / hybrid / tight） Execution Mode (quick / hybrid / tight) 
+
+Tone Profile（casual / business / teaching / ...） Tone Profile (casual / business / teaching / ...) 
+
+Adversarial Court（enable / disable） Adversarial Court (enable / disable) 
+
+Fact Checking（off / normal / strict） Fact Checking (off / normal / strict) 
+
+Default Model（LLM 模型 ID） Default Model (LLM model ID) 
+
+全部設定即時寫入 ~/.baw/config.yaml ，即刻生效。 All settings are written to ~/.baw/config.yaml immediately. 
+
+⚡ Config CLI ⚡ Config CLI 
+
+使用中隨時用 baw --cfg 查看或修改設定，唔使開 editor： View or change settings on-the-fly — no editor needed: 
+# List all settings baw --cfg list # Query a specific key (dot notation) baw --cfg get model.default
+baw --cfg get tone.default
+baw --cfg get adversarial.enabled # Change a setting immediately baw --cfg set mode hybrid
+baw --cfg set tone.default business
+baw --cfg set adversarial.enabled false # Show all available config keys baw --cfg help 
+
+💬 互動式 Chat 介面 💬 Interactive Chat 
+
+直接 baw （唔畀 prompt）就進入互動式 chat 模式： Run baw without a prompt to enter interactive chat mode: 
+
+◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈ 
+BAW Interactive Chat 
+Model: deepseek-v4-flash • Tone: casual • Mode: tight 
+Type /help for commands • Ctrl+D or /exit to quit 
+◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈◈ 
+
+BAW> list files 
+📋 Plan: 
+1. 用 bash ls 列出當前目錄 
+▶️ Step 1: 用 bash ls... ✅ 
+Done — 1/1 steps 
+BAW> _ 
+
+Tab 自動補全 Tab Completion 
+
+輸入 / 後按 Tab 會見到所有可用 slash command。 Type / and press Tab to see all available slash commands. 
+
+📋 完整指令一覽 📋 Full Command Reference 
+
+Command 
+
+功能 Function 
+
+baw "prompt" 
+
+執行 agent（單句模式） Run agent (single-shot) 
+
+baw（無 prompt） 
+
+互動式 Chat 模式 Interactive Chat mode 
+
+baw --mode quick/hybrid/tight 
+
+執行模式 override Execution mode override 
+
+baw --tone <profile> 
+
+語氣 override Tone override 
+
+baw --model <id> 
+
+模型 override Model override 
+
+baw --verbose 
+
+詳細輸出 + 成本 Verbose output + cost 
+
+baw --dry-run 
+
+試行（唔改 file） Dry run (no changes) 
+
+baw --btw "q" 
+
+快速 LLM 問題 Quick LLM question 
+
+baw --delegate "task" 
+
+背景執行任務 Background task execution 
+
+baw --task-id <id> 
+
+檢查背景任務狀態 Check background task status 
+
+baw --tasks 
+
+列表背景任務 List all background tasks 
+
+baw --task-cancel <id> 
+
+取消背景任務 Cancel a background task 
+
+baw --version 
+
+版本資訊 Show version 
+
+baw --status 
+
+系統狀態 System status 
+
+baw --remember "text" 
+
+儲存記憶 Save memory 
+
+baw --search "q" 
+
+搜尋記憶 Search memory 
+
+baw --setup 
+
+互動設定精靈 Interactive setup wizard 
+
+baw --cfg list 
+
+Config 列表 List configuration 
+
+baw --cfg get <k> 
+
+查詢設定 Query a setting 
+
+baw --cfg set <k> <v> 
+
+修改設定 Change a setting 
+
+baw --board 
+
+生成 HTML Dashboard Generate HTML dashboard 
+
+baw --gh <cmd> 
+
+GitHub 操作 GitHub operations 
+
+baw --schedule-list|add|rm 
+
+排程管理 Schedule management 
+
+baw --skill-list|run 
+
+Skills 管理 Skill management 
+
+baw --learn-skill "desc" 
+
+自我學習技能 Self-learn a skill 
+
+baw --search-provider <cmd> 
+
+Search provider 管理 Search provider management 
+
+🎮 Slash 指令 (Chat) 🎮 Slash Commands (Chat) 
+
+Chat 模式入面用 / 開頭嘅快捷指令： Quick commands inside chat mode, prefixed with / : 
+
+Command 
+
+Alias 
+
+功能 Function 
+
+/help 
+
+/h, /? 
+
+顯示所有指令 Show all slash commands 
+
+/status 
+
+/s 
+
+BAW 狀態 BAW status 
+
+/version 
+
+/v 
+
+版本 + git log Version + git log 
+
+/model <id> 
+
+/m 
+
+即時轉模型 Switch model 
+
+/tone <p> 
+
+/t 
+
+即時轉語氣 Switch tone profile 
+
+/mode <m> 
+
+- 
+
+即時轉執行模式 Switch execution mode 
+
+/remember 
+
+/r 
+
+儲存記憶 Save memory 
+
+/search 
+
+- 
+
+搜尋記憶 Search memory 
+
+/rethink 
+
+- 
+
+用替代分析重做上次 prompt Rerun last prompt with alternative analysis 
+
+/court 
+
+- 
+
+顯示上次天使/魔鬼判決 Show last Angel/Devil verdict 
+
+/fresh 
+
+- 
+
+無 soul 無 memory 嘅原始 LLM Raw LLM — no soul, no memory 
+
+/btw 
+
+- 
+
+快速 LLM 提問 Quick LLM question 
+
+/delegate 
+
+- 
+
+背景執行任務 Background task 
+
+/tasks 
+
+- 
+
+背景任務列表 List background tasks 
+
+/board 
+
+- 
+
+生成 Dashboard Generate dashboard 
+
+/exit 
+
+/quit, Ctrl+D 
+
+離開 Exit 
+
+/clear 
+
+- 
+
+清螢幕 Clear screen 
+
+💡 /rethink 用法 Using /rethink 
+
+當你覺得 BAW 上次做得唔好， /rethink 會用同一個 prompt 但完全唔同嘅分析角度重做一次。 If BAW's last response wasn't great, /rethink re-runs the same prompt with a completely different analytical approach. 
+
+🔄 Scheduler 排程 🔄 Scheduler 
+
+BAW 內置 cron-based 定時任務系統： BAW has a built-in cron-based scheduled task system: 
+# 每日凌晨 3 點做 backup baw --schedule-add daily-backup '0 3 * * *' 'backup important files' # 每小時 check disk baw --schedule-add hourly-disk '0 * * * *' 'check disk > 90%' # 列表 baw --schedule-list # 移除 baw --schedule-rm hourly-disk 
+
+Scheduler 行 background daemon（每 60 秒 poll 一次），支援 cron 表達式、last-run 追蹤、避免 duplicate。 Background daemon polls every 60 seconds. Supports cron expressions, last-run tracking, and duplicate prevention. 
+
+🧩 Skills 技能系統 🧩 Skills System 
+
+Skills 係可重用嘅 YAML 任務模版。 Skills are reusable YAML task templates. 
+# 列出所有 skills baw --skill-list 📋 Available Skills:
+ daily-git-push — Auto commit & push BAW repo
+ disk-check — Check disk usage
+ system-health — System health report # 執行 skill baw --skill-run system-health # 自我學習（俾句描述） baw --learn-skill "每小時 check CPU 溫度，超過 75°C 就報警" 🧠 Learning from description...
+✅ Created skill 'system_temp_monitor' — 2 steps # 從 URL 學習 baw --learn-url "https://example.com/backup-guide" 
+
+📁 背景 Async 任務 📁 Async Background Tasks 
+
+長時間任務可以 delegate 去背景，主 terminal 即時 free： Delegate long-running tasks to the background — your terminal stays free: 
+# Delegate 去背景 baw --delegate "分析呢個 project 嘅 code quality" 📋 Task ID: baw_20260607_123456_abc # Check 狀態 baw --task-id baw_20260607_123456_abc # 全部任務一覧 baw --tasks # 取消 baw --task-cancel baw_20260607_123456_abc 
+
+TaskManager 自動管理 concurrency（max 3），超出嘅自動排隊。 TaskManager manages concurrency (max 3), queuing any excess automatically. 
+
+🐙 GitHub 整合 🐙 GitHub Integration 
+
+經 gh CLI 或 GITHUB_TOKEN 直接操作 GitHub： Direct GitHub operations via gh CLI or GITHUB_TOKEN : 
+# Setup guide baw --gh setup # Issues baw --gh issues cornreform/baw-agent-platform
+baw --gh create-issue myuser/myrepo "Bug: login fails" "details..." # PRs & CI baw --gh prs cornreform/baw-agent-platform
+baw --gh ci cornreform/baw-agent-platform main # Repos baw --gh repos cornreform # Self status baw --gh status 
+
+🎭 語氣設定 🎭 Tone Profiles 
+
+Tone 
+
+場景 Scenario 
+
+casual 
+
+日常吹水 — 粵語口語、短句、emoji OK Daily chat — casual, emoji OK 
+
+business 
+
+客戶文件 — 合作邀約 tone Client documents — professional tone 
+
+teaching 
+
+教學文件 — 直接俾 .md Educational — direct .md output 
+
+client-doc 
+
+Client facing — 零 comment 零 meta Client facing — no comments, no meta 
+
+ot-rt 
+
+快速執行 — 做完先報 Just do it — report when done 
+
+stepwise 
+
+逐步執行 — 每步等 confirm Step by step — confirm before proceeding 
+
+# 設定預設語氣 baw --cfg set tone.default teaching # 單次 override baw --tone business "寫一份合作提案" # Chat 模式即時轉 BAW> /tone casual 
+
+🏗️ 系統架構 🏗️ Architecture 
+baw/ ← Code repo ├── baw CLI entry point (Python) ├── core/ 核心模組 Core modules │ ├── loop.py Agent loop (plan → execute → report) │ ├── llm.py Multi-protocol LLM abstraction │ ├── adversarial.py Angel/Devil 雙魂法庭 Dual-soul court │ ├── tools.py Tool registry │ ├── permission.py 三級權限引擎 3-level permission │ ├── memory.py JSONL memory + scoring │ ├── fact_checker.py 三級事實驗證 3-mode fact verification │ ├── tone.py 語氣 profiles Tone profiles │ ├── scheduler.py Cron scheduler daemon │ ├── skills.py YAML skill system │ ├── learn.py 自我學習技能 Self-learning skills │ ├── board.py HTML Dashboard generator │ ├── task_manager.py 背景 Task 管理 Async task manager │ ├── github.py GitHub 整合 Integration │ ├── search.py 開放 search provider registry │ ├── setup.py Setup wizard + Config CLI │ ├── commands.py Slash commands │ ├── display.py 步驟顯示格式化 Step display │ ├── dream.py 每週自我整理 Weekly self-curation │ ├── checkpoint.py Checkpoint / rollback │ ├── degradation.py Tool degradation chains │ ├── file_history.py 檔案版本 SHA256 history │ ├── autosave.py 自動 git commit Auto save │ ├── render.py HTML renderer │ └── verifier.py Per-step LLM verification ├── tools/ 內置工具 Built-in tools │ ├── bash.py Shell 執行 Execution │ ├── read_file.py 讀檔案 File reading │ ├── write_file.py 寫檔案 File writing │ └── web_search.py Web 搜索 Search ├── config.yaml 預設配置 Default config └── docs/ GitHub Pages 文檔 Docs ~/.baw/ ← 用戶設定 User data ├── config.yaml 用戶配置 User config ├── SOUL.md Soul / 行為規則 Behaviour rules ├── .env API keys ├── memory/store.jsonl 記憶儲存 Memory storage ├── skills/*.yaml 自訂 skills Custom skills └── tasks/ 背景任務 Background task output 
+
+核心設計原則 Core Design Principles 
+
+永不問用戶 Never Ask the User — BAW 自己 planning → executing → recovering，唔會拋問題返俾用戶。 BAW plans, executes, and recovers on its own — never defers decisions to the user. 
+
+永不放棄 Never Surrender — 6 種策略用盡先上報。Tool timeout → 加倍 timeout → parent dir fallback → replan → rollback。 Exhausts 6 strategies before reporting. Tool timeout → double timeout → parent dir fallback → replan → rollback. 
+
+協議無關 Protocol Agnostic — OpenAI / Anthropic / Google 任你揀，config.yaml 一行搞定。 OpenAI / Anthropic / Google — one line in config.yaml. 
+
+開放可插拔 Open and Pluggable — Search provider、LLM protocol、tools 全部可以註冊擴展。 Search providers, LLM protocols, and tools are all registerable and extensible. 
+
+📡 多平台即時通訊 📡 Multi-Platform Messaging 
+
+BAW 可以透過 baw-bot daemon 連接各大主流通訊平台。你喺 Telegram/Discord/Matrix 打 message，BAW 會自動處理。 BAW connects to major messaging platforms via the baw-bot daemon. Send a message on Telegram/Discord/Matrix — BAW processes it automatically. 
+
+平台 Platform 
+
+狀態 Status 
+
+設定 Setup 
+
+📱 Telegram 
+
+✅ 完整支援 ✅ Full 
+
+@BotFather 開 Bot → token @BotFather → token 
+
+💬 Discord 
+
+✅ 完整支援 ✅ Full 
+
+Discord Developer Portal → token Dev Portal → Bot → token 
+
+🔊 Signal 
+
+⚙️ 
+
+需 signal-cli daemon signal-cli required 
+
+💚 WhatsApp 
+
+⚙️ 
+
+Cloud API / Business API Cloud or Business API 
+
+🧩 Matrix 
+
+✅ 完整支援 ✅ Full 
+
+任何 Matrix homeserver Any Matrix homeserver 
+
+# Start all configured connectors baw-bot # Start specific platform only baw-bot --platform telegram # List available connectors baw-bot --list # Quick Telegram test baw-bot --token "***" 
+
+💡 Slash Commands in Chat Slash Commands in Chat 
+
+喺任何平台都可以用 slash commands： /btw 、 /tone 、 /mode 、 /court 、 /memory 、 /search 等等。冇 slash 嘅訊息會直接送俾 BAW 處理。 Use slash commands on any platform: /btw , /tone , /mode , /court , /memory , /search , etc. Messages without slashes are sent directly to BAW. 
+
