@@ -1314,8 +1314,8 @@ class BaseConnector(ABC):
                     )
                     # Poll for result with cancel checking every 1s
                     import time as _time
-                    _idle_seconds = 0
-                    _max_idle = 180          # 3 min idle before considering stuck (step timeout is 60s)
+                    _stuck_seconds = 0
+                    _max_stuck = 600         # 10 min with no progress callbacks → truly stuck
                     _max_total = 1800         # 30 min absolute max
                     _total_elapsed = 0
                     while _total_elapsed < _max_total:
@@ -1325,14 +1325,15 @@ class BaseConnector(ABC):
                        except TimeoutError:
                            _total_elapsed += 1
                            with _progress_lock:
-                               idle = time.time() - _last_progress
-                           if idle > _max_idle:
-                               _idle_seconds += 1
-                               if _idle_seconds > 30:
+                               _progress_since = time.time() - _last_progress
+                           # Future is alive — but are we getting progress callbacks?
+                           if _progress_since > _max_stuck:
+                               _stuck_seconds += 1
+                               if _stuck_seconds > 30:
                                    fut.cancel()
-                                   return "⏳ Task stuck (no progress for >3min)."
+                                   return "⏳ Task stuck (no progress for >10min)."
                            else:
-                               _idle_seconds = 0
+                               _stuck_seconds = 0
                            if self._cancel_event.is_set():
                                fut.cancel()
                                return "⏹ Cancelled."
