@@ -129,6 +129,13 @@ BAW_BANNER = r"""
 def _welcome(cfg):
     model = cfg.get("model", {}).get("default", "?")
     provider = cfg.get("model", {}).get("provider", "—")
+    tone = cfg.get("tone", {}).get("default", "casual")
+    fact_check = cfg.get("fact_check", {}).get("mode", "normal")
+    adversarial = cfg.get("adversarial", {}).get("enabled", False)
+    caps = cfg.get("capabilities", {})
+    max_concurrency = cfg.get("max_concurrency", "—")
+    task_rules = cfg.get("model", {}).get("task_rules", [])
+    route_enabled = cfg.get("model", {}).get("route", {}).get("enabled", False)
 
     # 1. Banner
     for line in BAW_BANNER.splitlines():
@@ -137,7 +144,7 @@ def _welcome(cfg):
     console.print(Text("Black And White · Agent Platform", style="baw.subtitle", justify="center"))
     console.print(Rule(style="baw.accent"))
 
-    # 2. Status bar — models / sessions / memory
+    # 2. Mini stats bar
     stats = Table(show_header=False, box=None, padding=(0, 2), expand=True, show_edge=False)
     for _ in range(6):
         stats.add_column(width=3, justify="center")
@@ -149,17 +156,106 @@ def _welcome(cfg):
     )
     console.print(stats)
 
-    # 3. Active model + provider
+    # 3. Core info — model, provider, tone, fact-check, adversarial
     info = Table(show_header=False, box=box.SIMPLE, border_style="baw.accent",
                  padding=(0, 2), expand=True)
-    info.add_column(style="baw.key", width=12)
+    info.add_column(style="baw.key", width=14)
     info.add_column(style="baw.val")
+
+    # Model + provider
     info.add_row("model", f"[baw.gold]{model}[/]")
     info.add_row("provider", provider or "[baw.muted]auto[/]")
+
+    # Tone
+    tone_desc = {
+        "casual": "粵語口語，短句，emoji OK",
+        "business": "專業商業文件用詞",
+        "client-doc": "客戶面向 — 零 comment，直接 artifact",
+        "teaching": "教學文件 — 直接俾 .md",
+        "ot-rt": "快速執行 — 做完先報",
+        "stepwise": "逐步確認 — 每步報結果",
+    }.get(tone, tone)
+    info.add_row("tone", f"[baw.purple]{tone}[/] — [baw.dim]{tone_desc}[/]")
+
+    # Fact check
+    fc_color = {"strict": "red", "normal": "yellow", "relaxed": "green"}.get(fact_check, "yellow")
+    fc_desc = {
+        "strict": "所有 factual claim 必須有 source 否則 block",
+        "normal": "盡量搵 source，冇就註明 unsourced",
+        "relaxed": "容許 common knowledge 唔使 source",
+    }.get(fact_check, fact_check)
+    info.add_row("fact-check", f"[{fc_color}]{fact_check}[/] — [baw.dim]{fc_desc}[/]")
+
+    # Adversarial
+    if adversarial:
+        adv_model = cfg.get("adversarial", {}).get("devil_model", "—")
+        info.add_row("adversarial", f"[baw.success]✓ enabled[/] — [baw.dim]devil: {adv_model}[/]")
+    else:
+        info.add_row("adversarial", f"[baw.muted]✗ disabled[/]")
+
+    # Concurrency
+    info.add_row("concurrency", f"[baw.purple]{max_concurrency}[/] [baw.dim]max parallel tasks[/]")
+
     console.print(info)
     console.print()
 
-    # 4. Slash commands
+    # 4. Capability routing matrix
+    route_table = Table(show_header=False, box=None, padding=(0, 1), expand=True, show_edge=False)
+    items = []
+    for cap in ("chat", "vision", "tts", "stt", "image_generation", "browser", "delegate_task"):
+        cap_cfg = caps.get(cap, {})
+        m = cap_cfg.get("model", "") if isinstance(cap_cfg, dict) else ""
+        method = cap_cfg.get("method", "") if isinstance(cap_cfg, dict) else ""
+        target = m or method
+        if target:
+            items.append(f"[baw.key]{cap}[/] [baw.dim]→[/] [baw.val]{target}[/]")
+
+    # Layout in 3 columns
+    while len(items) % 3 != 0:
+        items.append("")
+    for i in range(0, len(items), 3):
+        cols = []
+        for j in range(3):
+            if i + j < len(items):
+                cols.append(items[i + j])
+        for _ in range(3 - len(cols)):
+            cols.append("")
+    # Use a simple table for capability matrix
+    cap_t = Table(show_header=False, box=None, padding=(0, 2), expand=True, show_edge=False)
+    cap_t.add_column(style="baw.purple", width=24)
+    cap_t.add_column(style="baw.muted", width=24)
+    cap_t.add_column(style="baw.purple", width=24)
+    for i in range(0, len(items), 3):
+        row = items[i:i+3]
+        while len(row) < 3:
+            row.append("")
+        cap_t.add_row(*row)
+
+    console.print(Panel(cap_t, title="⚡  Capability Routing", border_style="baw.accent", title_align="left"))
+
+    # 5. Task routing (if configured)
+    if task_rules or route_enabled:
+        route_info = []
+        if route_enabled:
+            rcfg = cfg.get("model", {}).get("route", {})
+            short_m = rcfg.get("short_model", "—")
+            long_m = rcfg.get("long_model", "—")
+            threshold = rcfg.get("threshold_tokens", "—")
+            route_info.append(f"[baw.key]auto-route[/] [baw.dim]→ short: {short_m}, long: {long_m} (>{threshold} tokens)[/]")
+        for rule in task_rules:
+            match = rule.get("match", "?")
+            m = rule.get("model", "?")
+            route_info.append(f"[baw.key]task[/] [baw.dim]'{match}' →[/] [baw.val]{m}[/]")
+        if route_info:
+            console.print()
+            console.print(Panel(
+                "\n".join(route_info),
+                title="🎯  Task Routing Rules",
+                border_style="baw.accent",
+                title_align="left",
+            ))
+
+    # 6. Slash commands
     cmds = Table(show_header=False, box=None, padding=(0, 1), expand=True, show_edge=False)
     cmds.add_column(style="baw.cmd", width=14, no_wrap=True)
     cmds.add_column(style="baw.muted")
@@ -178,7 +274,7 @@ def _welcome(cfg):
     )
     console.print(Panel(cmds, title="⌨  Commands", border_style="baw.accent", title_align="left"))
 
-    # 5. Recent sessions
+    # 7. Recent sessions
     rt = _recent_sessions_table(5)
     if rt:
         console.print()
