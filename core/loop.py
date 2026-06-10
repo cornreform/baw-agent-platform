@@ -1060,7 +1060,10 @@ def run_agent(
                         )
                         _result = _inline_result.stdout.strip() or _inline_result.stderr.strip()
                         if _inline_result.returncode != 0 and not _result:
-                            _result = f"[Inline failed: exit {_inline_result.returncode}] {_inline_result.stderr[:500]}"
+                            raise RuntimeError(
+                                f"Inline step failed (exit {_inline_result.returncode}): "
+                                f"{_inline_result.stderr[:200]}"
+                            )
                         else:
                             _result = _result[:2000]
                     except Exception as _ie:
