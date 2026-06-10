@@ -253,7 +253,14 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- 🔴 HARD RULE: Complete the ENTIRE plan without pausing. Do NOT ask the user 'should I continue?' or 'what next?'. The user already gave you the full goal — execute ALL steps silently, start to finish.\n"
             f"- 🔴 After each step completes, immediately proceed to the next step. Do NOT wait, do NOT summarize, do NOT ask for permission.\n"
             f"- 🔴 Only speak when ALL steps are done. Present the final result only. No partial reports.\n"
-            f"- NEVER end your response with a question. Execute directly."
+            f"- NEVER end your response with a question. Execute directly.\n"
+            f"\n## Sending files to user\n"
+            f"- To send audio (mp3, wav), images (png, jpg), or documents to the user, include MEDIA:/absolute/path in your output:\n"
+            f"  MEDIA:/tmp/baw_voice_test/female-tone-1.mp3\n"
+            f"- The MEDIA: tag is stripped from text and the file is sent as a native Telegram attachment.\n"
+            f"- Use this for TTS audio, generated images, screenshots, or any file the user asked to receive.\n"
+            f"- Always include MEDIA: tags AFTER your text message, one per line.\n"
+            f"- NEVER say 'I can't send files' — you CAN, use MEDIA: tags."
         )
 
     return system_prompt
@@ -718,7 +725,11 @@ def run_agent(
         f"  ## Group B — <phase name>\n"
         f"  Step B-1: <description>\n\n"
         f"Reply with ONLY the plan, using this grouped format.\n"
-        f"Max 5 groups. Each group: 1-5 steps."
+        f"Max 5 groups. Each group: 1-5 steps.\n"
+        f"MACRO-STEP RULE: Each group should represent a single unified action.\n"
+        f"- Group A (Research): one step reads config+env, one step tests API — NOT 4 micro-steps.\n"
+        f"- Group B (Execute): one step applies all changes, one step verifies — NOT 6 micro-steps.\n"
+        f"- NEVER split a single curl/test/config-write into multiple steps. Batch related work."
     )
     _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": plan_prompt}]
     plan_fb = call_llm_with_fallback(
@@ -835,6 +846,55 @@ def run_agent(
     _dt_mod = _dt_iu.module_from_spec(_dt_spec)
     _dt_spec.loader.exec_module(_dt_mod)
     _delegate_fn = _dt_mod.delegate_task
+
+    # ── Helper: extract known facts from completed steps ──
+    import re as _re2
+    def _extract_facts(results: list[str]) -> str:
+        """Scan completed step results for reusable facts: URLs, file paths, config keys, API patterns."""
+        if not results:
+            return ""
+        _facts = []
+        _seen = set()
+        for _r in results:
+            _txt = str(_r)[:2000]
+            # Extract URLs
+            for _m in _re2.findall(r'(https?://[^\s<>"]+)', _txt):
+                if _m not in _seen:
+                    _seen.add(_m)
+                    _facts.append(f"  URL: {_m}")
+            # Extract file paths
+            for _m in _re2.findall(r'(/(?:home|tmp|etc|usr)/[^\s:,"\']+)', _txt):
+                if _m not in _seen:
+                    _seen.add(_m)
+                    _facts.append(f"  PATH: {_m}")
+            # Extract config keys
+            for _m in _re2.findall(r'(?:config|yaml)\s*[.:]\s*([a-z_]+(?:\.[a-z_]+)+)', _txt, _re2.IGNORECASE):
+                if _m not in _seen:
+                    _seen.add(_m)
+                    _facts.append(f"  CONFIG: {_m}")
+        if _facts:
+            return "KNOWN FACTS (from previous steps — DO NOT re-discover):\n" + "\n".join(_facts[:15])
+        return ""
+
+    # ── Helper: inline gate — skip sub-agent spawn for trivial steps ──
+    _INLINE_PATTERNS = [
+        r'\b(read|cat|grep|ls|head|tail|stat|file|which|find)\b',  # read-only
+        r'\b(curl|wget)\b.*\b(GET|check|test|verify|ping)\b',       # curl GET test
+        r'\b(echo|print|env|whoami|pwd|date)\b',                     # no-side-effect
+    ]
+    _INLINE_PATTERNS_C = [_re2.compile(p, _re2.IGNORECASE) for p in _INLINE_PATTERNS]
+
+    def _is_inline_candidate(goal: str) -> bool:
+        """Check if a step goal describes a trivial read/check that doesn't need sub-agent spawn."""
+        for _pat in _INLINE_PATTERNS_C:
+            if _pat.search(goal):
+                return True
+        # Also check: single tool call described
+        if goal.count(" ") < 15 and not any(
+            kw in goal.lower() for kw in ("write", "modify", "create", "install", "delete", "generate", "build")
+        ):
+            return True
+        return False
 
     # ── Phase 3b: Goal-pursuit loop ──
     # Route recalculation: wrong turn → silently recalculates new route from current position
@@ -953,6 +1013,10 @@ def run_agent(
                 _step_ctx = "Completed so far:\n" + "\n---\n".join(
                     f"Step {i+1}:\n{r[:800]}" for i, r in enumerate(_synthesis_results)
                 )
+                # Inject extracted known facts so sub-agent doesn't re-discover
+                _facts = _extract_facts(_synthesis_results)
+                if _facts:
+                    _step_ctx += "\n\n" + _facts
             # ── Auto-detect product/search tasks → inject source verification hint ──
             _is_search_task = any(
                 kw in _step_goal.lower()
@@ -972,31 +1036,49 @@ def run_agent(
                 print(f"  🗺️ Step {_g} {_si}/{_gt}: {_step_desc_short}")
 
             try:
-                # ── Step timeout: prevent silent hangs from stuck sub-agents ──
-                _step_exc = [None]
-                _step_result = [None]
-                _step_done = threading.Event()
-
-                def _run_step():
+                # ── Inline gate: skip sub-agent spawn for trivial read/check steps ──
+                if _is_inline_candidate(_step_goal):
+                    if verbose:
+                        print(f"  ⚡ Inline gate: running step directly (no sub-agent spawn)")
                     try:
-                        _step_result[0] = _delegate_fn(
-                            goal=_step_goal,
-                            context=_step_ctx,
-                            toolsets="",
+                        import subprocess as _sp2
+                        _inline_result = _sp2.run(
+                            _step_goal, shell=True, capture_output=True, text=True, timeout=30,
+                            cwd=str(Path.home()),
                         )
-                    except Exception as _se:
-                        _step_exc[0] = _se
-                    finally:
-                        _step_done.set()
+                        _result = _inline_result.stdout.strip() or _inline_result.stderr.strip()
+                        if _inline_result.returncode != 0 and not _result:
+                            _result = f"[Inline failed: exit {_inline_result.returncode}] {_inline_result.stderr[:500]}"
+                        else:
+                            _result = _result[:2000]
+                    except Exception as _ie:
+                        _result = f"[Inline error: {_ie}]"
+                else:
+                    # ── Step timeout: prevent silent hangs from stuck sub-agents ──
+                    _step_exc = [None]
+                    _step_result = [None]
+                    _step_done = threading.Event()
 
-                _step_thread = threading.Thread(target=_run_step, daemon=True)
-                _step_thread.start()
-                _step_done.wait(timeout=MAX_STEP_SECONDS)
-                if not _step_done.is_set():
-                    raise TimeoutError(f"Step timed out after {MAX_STEP_SECONDS}s")
-                if _step_exc[0]:
-                    raise _step_exc[0]  # re-raise inside try block for recalc
-                _result = _step_result[0]
+                    def _run_step():
+                        try:
+                            _step_result[0] = _delegate_fn(
+                                goal=_step_goal,
+                                context=_step_ctx,
+                                toolsets="",
+                            )
+                        except Exception as _se:
+                            _step_exc[0] = _se
+                        finally:
+                            _step_done.set()
+
+                    _step_thread = threading.Thread(target=_run_step, daemon=True)
+                    _step_thread.start()
+                    _step_done.wait(timeout=MAX_STEP_SECONDS)
+                    if not _step_done.is_set():
+                        raise TimeoutError(f"Step timed out after {MAX_STEP_SECONDS}s")
+                    if _step_exc[0]:
+                        raise _step_exc[0]  # re-raise inside try block for recalc
+                    _result = _step_result[0]
 
                 while len(_delegation_results) <= _step_idx:
                     _delegation_results.append("")
