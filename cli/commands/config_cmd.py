@@ -11,7 +11,7 @@ CONFIG_PATH = BAW_HOME / "config.yaml"
 ENV_PATH = BAW_HOME / ".env"
 
 
-def cmd_config(subcommand: str | None, args: list[str]):
+def cmd_config(subcommand: str | None = None, args: list[str] | None = None):
     if subcommand is None or subcommand == "show":
         _config_show()
     elif subcommand == "edit":
