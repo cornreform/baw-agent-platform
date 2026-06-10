@@ -156,22 +156,27 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
     ctx = Context(
         system_prompt=(
             "You are an EXECUTION agent — your ONLY job is to DO, not to research or describe.\n"
-            "- If the task says 'write file X', WRITE IT. Do not just check if the file exists.\n"
-            "- If the task says 'modify config', MODIFY IT. Do not just read and report.\n"
-            "- If the task says 'install package', INSTALL IT. Do not just check versions.\n"
-            "- Use write_file/bash to CREATE and MODIFY. Use read_file/web_search only as prep.\n"
+            "- 🚨 READ CAREFULLY: Your LAST message MUST include a tool call. Text-only responses are USELESS.\n"
+            "- If the task says 'write file X', WRITE IT using write_file. Do not say 'I will write it'.\n"
+            "- If the task says 'call API', USE bash to curl/wget/python to call it NOW.\n"
+            "- If the task says 'modify config', USE write_file to MODIFY IT. Do not just read and report.\n"
+            "- If the task says 'generate audio', GENERATE IT. Do not describe what audio would sound like.\n"
+            "- NEVER output a text description without a tool call. Text-only = wasted iteration.\n"
+            "- FIRST message: call a tool. Not 'let me think' — CALL THE TOOL.\n"
+            "- If you hit an error (API key, missing tool), try an alternative IMMEDIATELY.\n"
+            "- python3 is ALWAYS available. urllib.request is in stdlib. Use it when curl is missing.\n"
+            "- DO NOT explain what went wrong. FIX IT or try another way.\n"
             "- Report back ONLY after you've DONE the work — what you changed, not what you found.\n"
-            "- NEVER describe what you WOULD do. JUST DO IT.\n"
             "- NEVER ask questions — figure it out yourself.\n"
-            "- AMBIGUITY: If the task query has a typo or anomaly (e.g. 'flea car' → 'flea care'), state your assumption and proceed. Do NOT halt."
         ),
         temperature=0.5,
     )
     ctx.add_user(prompt)
 
-    max_iterations = 5  # was 10 — prevent step timeouts exceeding idle detection
+    max_iterations = 12  # enough for complex tasks (API calls + retries + fallback)
     iteration = 0
     final_content = ""
+    _tool_calls_made = 0  # track if sub-agent actually used tools
 
     for iteration in range(max_iterations):
         fb = call_llm_with_fallback(
@@ -188,6 +193,7 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
         if not resp.tool_calls:
             break
 
+        _tool_calls_made += len(resp.tool_calls)
         ctx.add_assistant(resp.content, resp.tool_calls)
 
         for tc in resp.tool_calls:
@@ -203,6 +209,26 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
 
     # ── Format result ──
     result = final_content.strip() or "(no output)"
+
+    # ── Failure detection: if sub-agent described problems but didn't ACTUALLY solve ──
+    _failure_keywords = [
+        "failed", "error", "無法", "失敗", "placeholder",
+        "not found", "not installed", "cannot", "unable",
+        "冇實際執行", "只係講", "迷失方向", "唔 work",
+        "冇做到", "未有", "sub-agent",
+    ]
+    _result_lower = result.lower()
+    _is_failure = any(kw in _result_lower for kw in _failure_keywords) and _tool_calls_made == 0
+    # Also detect: sub-agent just described what happened without taking action
+    if _tool_calls_made == 0 and len(result) > 50:
+        _is_failure = True  # long text output without any tool call = LLM just talked
+
+    if _is_failure:
+        raise RuntimeError(
+            f"Sub-agent produced description but no execution "
+            f"(0 tool calls, {len(result)} chars output). "
+            f"First 200 chars: {result[:200]}"
+        )
     return (
         f"[Sub-agent MiniMax result]\n"
         f"{result}\n"
