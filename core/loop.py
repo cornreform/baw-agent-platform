@@ -794,6 +794,7 @@ def run_agent(
         _recalc_count = 0
         _step_idx = 0
         _same_step_fails = {}  # {step_desc: count} — skip after 2 fails
+        _position_fails = {}    # {step_idx: count} — skip ANY step at this position after 3 fails
 
         while _step_idx < len(_execution_plan) and not _pursuit_failed:
             _step = _execution_plan[_step_idx]
@@ -875,6 +876,19 @@ def run_agent(
                 # ── Same-step skip: don't retry the exact same thing forever ──
                 _same_key = _step_desc_short[:60]  # use first 60 chars as key
                 _same_step_fails[_same_key] = _same_step_fails.get(_same_key, 0) + 1
+                _position_fails[_step_idx] = _position_fails.get(_step_idx, 0) + 1
+
+                # Position-based: if position 0 (step 1) fails 3+ times → skip ANYTHING here
+                if _position_fails.get(_step_idx, 0) >= 3:
+                    if verbose:
+                        print(f"  ⏭️ Step {_step_idx+1} position stuck after {_position_fails[_step_idx]} attempts — skipping")
+                    _synthesis_results.append(f"[SKIPPED-POS] {_step_desc_short}")
+                    _dsp = f"  ⏭️ Skipped Step {_step_idx+1}: {_step_desc_short}"
+                    _display_log.append(_dsp)
+                    _step_idx += 1
+                    _recalc_count = 0
+                    continue
+
                 if _same_step_fails[_same_key] >= 2:
                     if verbose:
                         print(f"  ⏭️ Skipping stuck step: {_step_desc_short} ({_same_step_fails[_same_key]} failures)")
