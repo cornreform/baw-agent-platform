@@ -249,6 +249,8 @@ MODEL_HINTS: dict[str, str] = {
     "MiniMax-M3": "minimax",
     "MiniMax-M2.5": "minimax",
     "MiniMax-M1": "minimax",
+    "image-01": "minimax",       # MiniMax official image-gen model
+    "video-01": "minimax",       # MiniMax official video-gen model
     # Kimi/Moonshot
     "kimi-k2.6": "moonshot",
     "kimi-k2": "moonshot",
@@ -318,8 +320,10 @@ def guess_provider(model_id: str) -> Optional[str]:
 def auto_discover_model(config: dict, model_id: str, data_dir: Path | None = None) -> Optional[dict]:
     """Try to auto-discover and add a model to config.
 
-    If the model isn't in config but we can detect its provider AND
-    the API key exists, auto-add the provider + model to config.yaml.
+    Priority:
+      1. Already-configured providers (have API key in .env) — search their known model patterns
+      2. Free/community alternatives (Agnes AI) — only if no configured provider matches
+      3. Other known providers — only if API key exists
 
     Returns the model info dict if successful, None otherwise.
     """
@@ -331,25 +335,53 @@ def auto_discover_model(config: dict, model_id: str, data_dir: Path | None = Non
                         "base_url": pcfg.get("base_url", ""),
                         "api_key_env": pcfg.get("api_key_env", ""), **m}
 
-    # Guess provider
+    # Step 1: Find which providers are already configured (have API keys)
+    configured = _get_configured_providers(config)
+
+    # Step 2: Does this model match any configured provider's patterns?
     provider_name = guess_provider(model_id)
-    if not provider_name:
-        return None
+    if provider_name and provider_name in configured:
+        pinfo = KNOWN_PROVIDERS.get(provider_name)
+        if pinfo:
+            return _add_model_to_provider(config, provider_name, model_id, pinfo, data_dir)
 
-    pinfo = KNOWN_PROVIDERS.get(provider_name)
-    if not pinfo:
-        return None
+    # Step 3: If no configured provider matches, try free alternatives
+    # Agnes AI — free tier for chat, image, video
+    if hasattr(logger, "info"):
+        logger.info(f"[Discover] No configured provider for '{model_id}' — checking free alternatives")
+    if _find_env_key("AGNES_API_KEY") or True:  # Agnes is free, try anyway
+        if "agnes" in model_id.lower():
+            return _add_model_to_provider(config, "agnes", model_id,
+                                          KNOWN_PROVIDERS.get("agnes", {}), data_dir)
 
-    # Check API key exists
-    env_var = pinfo["env_var"]
-    if not _find_env_key(env_var):
-        logger.info(f"[Discover] Provider '{provider_name}' detected for '{model_id}' but {env_var} not found")
-        return None
+    # Step 4: Try other known providers (only if API key exists)
+    if provider_name:
+        pinfo = KNOWN_PROVIDERS.get(provider_name)
+        if pinfo:
+            env_var = pinfo["env_var"]
+            if _find_env_key(env_var):
+                return _add_model_to_provider(config, provider_name, model_id, pinfo, data_dir)
+            else:
+                logger.info(f"[Discover] Provider '{provider_name}' detected for '{model_id}' but {env_var} not found")
 
-    # Does this provider already exist in config?
+    return None
+
+
+def _get_configured_providers(config: dict) -> set[str]:
+    """Return set of provider names that have API keys configured in .env."""
+    configured = set()
+    for pname, pinfo in config.get("providers", {}).items():
+        env_var = pinfo.get("api_key_env", "")
+        if env_var and _find_env_key(env_var):
+            configured.add(pname)
+    return configured
+
+
+def _add_model_to_provider(config: dict, provider_name: str, model_id: str,
+                            pinfo: dict, data_dir: Path | None) -> dict:
+    """Add a model to a provider and save config. Returns model info dict."""
     providers = config.setdefault("providers", {})
     if provider_name in providers:
-        # Provider exists — just add the model
         existing_models = providers[provider_name].setdefault("models", [])
         existing_ids = {m["id"] for m in existing_models}
         if model_id not in existing_ids:
@@ -361,10 +393,9 @@ def auto_discover_model(config: dict, model_id: str, data_dir: Path | None = Non
             _save_config(config, data_dir)
             logger.info(f"[Discover] Auto-added model '{model_id}' to existing provider '{provider_name}'")
     else:
-        # New provider — add full config
         providers[provider_name] = {
-            "api_key_env": env_var,
-            "base_url": pinfo["base_url"],
+            "api_key_env": pinfo.get("env_var", ""),
+            "base_url": pinfo.get("base_url", ""),
             "models": [{
                 "id": model_id,
                 "capabilities": ["chat"],
@@ -376,12 +407,11 @@ def auto_discover_model(config: dict, model_id: str, data_dir: Path | None = Non
         _save_config(config, data_dir)
         logger.info(f"[Discover] Auto-added provider '{provider_name}' + model '{model_id}'")
 
-    # Return model info
     return {
         "id": model_id,
         "provider": provider_name,
-        "base_url": pinfo["base_url"],
-        "api_key_env": env_var,
+        "base_url": pinfo.get("base_url", ""),
+        "api_key_env": pinfo.get("env_var", ""),
         "capabilities": ["chat"],
         "context_window": _guess_context_window(model_id),
     }
