@@ -1325,11 +1325,16 @@ class BaseConnector(ABC):
                     return
                 try:
                     if step_type == "plan":
-                        # New batch → send fresh message
+                        # Plan message — edit if exists, else new
                         meta = args or {}
-                        total = meta.get("steps", "?")
-                        _progress_lines = [f"🗺️ Route plan: {total} steps"]
-                        _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines))
+                        total = meta.get("steps", 0)
+                        plan_text = f"🗺️ Route plan: {total} step{'s' if total != 1 else ''}"
+                        if _progress_msg_id:
+                            # Edit existing plan message (dynamic update)
+                            self.send(chat_id, plan_text, edit_msg_id=_progress_msg_id)
+                        else:
+                            _progress_lines = [plan_text]
+                            _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines))
                     elif step_type == "tool" and name:
                         _progress_lines.append(f"🔧 `{name[:30]}`")
                         _lines = _progress_lines[-6:]
