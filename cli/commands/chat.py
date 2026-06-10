@@ -76,7 +76,9 @@ def _deep_merge(base, override):
 
 def _get_api_key(config):
     """Resolve API key from config."""
-    provider_name = config.get("model", {}).get("provider")
+    provider_name = config.get("model", {}).get("provider") or list(config.get("providers", {}).keys())[:1]
+    if isinstance(provider_name, list):
+        provider_name = provider_name[0] if provider_name else "deepseek"
     if provider_name:
         pinfo = config.get("providers", {}).get(provider_name, {})
         env_var = pinfo.get("api_key_env", "")
