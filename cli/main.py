@@ -299,6 +299,20 @@ def main():
         _show_help()
         return
 
+    # Handle --version / -V
+    if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-V"):
+        import subprocess as _sp
+        try:
+            ver = _sp.run(
+                ["git", "describe", "--tags", "--always", "--dirty"],
+                capture_output=True, text=True, timeout=5,
+                cwd=str(Path(__file__).resolve().parent.parent),
+            ).stdout.strip()
+        except Exception:
+            ver = "unknown"
+        console.print(f"[baw.gold]baw[/baw.gold] [baw.value]{ver}[/baw.value]")
+        return
+
     # Parse subcommand
     if len(sys.argv) < 2:
         # Default: interactive chat
@@ -313,7 +327,7 @@ def main():
     if canonical is None:
         console.print(f"[baw.error]Unknown command:[/baw.error] {cmd}")
         console.print("[baw.dim]Run [baw.gold]baw --help[/baw.gold] to see available commands.[/baw.dim]")
-        return
+        sys.exit(1)
 
     # Extract subcommand and remaining args
     subcommand = sys.argv[2] if len(sys.argv) > 2 else None
@@ -347,7 +361,8 @@ def main():
             cmd_tui_chat()
         elif canonical == "restart":
             from cli.commands.restart import cmd_restart
-            cmd_restart()
+            force = "--force" in args if args else False
+            cmd_restart(force=force)
         elif canonical == "skill":
             from cli.commands.skill_cmd import cmd_skill
             cmd_skill(subcommand, args)
@@ -361,6 +376,7 @@ def main():
         console.print("\n[baw.dim]👋 Bye.[/baw.dim]")
     except Exception as e:
         console.print(f"[baw.error]Error:[/baw.error] {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
