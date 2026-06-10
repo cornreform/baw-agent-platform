@@ -1,16 +1,15 @@
-"""baw dashboard — responsive live TUI dashboard powered by Textual.
-Auto-adjusts to terminal size. Purple + Gold theme with explanatory subtitles.
-Shows: system, models (+ Angel/Devil), connectors, sessions, memory, activity.
+"""baw dashboard — live multi-panel TUI dashboard powered by Textual.
+Purple + Gold theme. 5-second auto-refresh. Responsive layout.
 """
 from __future__ import annotations
-import os, json, time, re
+import os, json, re
 from pathlib import Path
 from datetime import datetime
 
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, RichLog, Static
+from textual.widgets import Header, Footer, RichLog
+from textual.containers import VerticalScroll, Horizontal, Grid
 from textual.binding import Binding
-from textual.containers import VerticalScroll, Horizontal
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
@@ -19,7 +18,7 @@ BAW_HOME = Path.home() / ".baw"
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-def _yaml(path: Path) -> dict:
+def _parse_yaml(path: Path) -> dict:
     try:
         import yaml
         return yaml.safe_load(path.read_text()) or {}
@@ -44,257 +43,262 @@ def _human_size(n: int) -> str:
     return f"{n:.1f} TB"
 
 def _relative_time(ts: float) -> str:
+    import time
     diff = time.time() - ts
-    if diff < 60: return f"{int(diff)}s ago"
-    if diff < 3600: return f"{int(diff/60)}m ago"
-    if diff < 86400: return f"{int(diff/3600)}h ago"
-    return f"{int(diff/86400)}d ago"
+    if diff < 60:
+        return f"{int(diff)}s"
+    if diff < 3600:
+        return f"{int(diff/60)}m"
+    if diff < 86400:
+        return f"{int(diff/3600)}h"
+    return f"{int(diff/86400)}d"
+
+# ═══════════════════════════════════════════════════════════════════════
+# Panels: rich renderables built per refresh tick
+# ═══════════════════════════════════════════════════════════════════════
+
+def _panel_system() -> Panel:
+    uptime = "—"
+    try:
+        with open("/proc/uptime") as f:
+            sec = int(float(f.read().split()[0]))
+        d, h = divmod(sec, 86400)
+        h, m = divmod(sec // 3600, 60)
+        if d:
+            uptime = f"{d}d {h}h"
+        elif h:
+            uptime = f"{h}h {m}m"
+        else:
+            uptime = f"{m}m"
+    except Exception:
+        pass
+
+    t = Table(show_header=False, box=None, padding=(0, 1), expand=True)
+    t.add_column(style="bold magenta", width=12)
+    t.add_column(style="white")
+    t.add_row("🖥 Host", os.uname().nodename)
+    t.add_row("🔄 Uptime", uptime)
+    t.add_row("🐍 Python", os.uname().sysname)
+    t.add_row("🕐 Now", datetime.now().strftime("%H:%M:%S"))
+
+    return Panel(t, title="[bold yellow]⚙ System[/]", border_style="magenta",
+                 subtitle="[dim]Host health[/]")
 
 
-# ── Dashboard App ────────────────────────────────────────────────────
+def _panel_models() -> Panel:
+    cfg = _parse_yaml(BAW_HOME / "config.yaml")
+    providers = cfg.get("providers", {})
+    caps = cfg.get("capabilities", {})
+    default = cfg.get("model", {}).get("default", "—")
+    adv = cfg.get("adversarial", {})
+    devil_model = adv.get("devil_model", "—")
+    angel_model = default
+
+    t = Table(box=None, padding=(0, 1), expand=True, show_header=True)
+    t.add_column("Provider", style="magenta")
+    t.add_column("Model", style="white")
+    t.add_column("Ctx", style="dim", justify="right")
+    t.add_column("★", style="yellow", width=2)
+
+    for pname, pinfo in providers.items():
+        for m in pinfo.get("models", []):
+            mid = m.get("id", "?")
+            ctx = m.get("context_window", 0)
+            ctx_str = f"{ctx//1000}K" if ctx >= 1000 else str(ctx)
+            star = "★" if mid == default else ""
+            t.add_row(pname, mid, ctx_str, star)
+
+    # Adversarial footer
+    t.add_row()
+    t.add_row("[bold]😇 Angel[/]", f"[green]{angel_model}[/]", "", "")
+    t.add_row("[bold]👿 Devil[/]", f"[red]{devil_model}[/]", "", "")
+
+    routes = []
+    for cap in ("chat", "vision", "tts", "stt", "image_generation"):
+        cap_cfg = caps.get(cap, {})
+        model = cap_cfg.get("model", "") if isinstance(cap_cfg, dict) else ""
+        if model:
+            routes.append(f"[dim]{cap}:[/] {model}")
+
+    return Panel(t, title="[bold yellow]🤖 Models[/]", border_style="magenta",
+                 subtitle="  ".join(routes) if routes else "[dim]Capability routing[/]")
+
+
+def _panel_connectors() -> Panel:
+    telegram_env = BAW_HOME / "telegram.env"
+    t = Table(show_header=False, box=None, padding=(0, 2), expand=True)
+    t.add_column(style="bold", width=3)
+    t.add_column(style="yellow")
+    t.add_column(style="dim")
+
+    if telegram_env.exists():
+        content = telegram_env.read_text()
+        if "BAW_TELEGRAM_TOKEN" in content:
+            t.add_row("●", "Telegram", "Connected")
+            m = re.search(r'BAW_TELEGRAM_TOKEN=([A-Za-z0-9]+)', content)
+            if m:
+                t.add_row("", f"[dim]bot{m.group(1)}...[/]", "")
+            sd = BAW_HOME / "sessions"
+            msg_count = 0
+            if sd.exists():
+                for f in sd.glob("*.jsonl"):
+                    msg_count += len(f.read_text().splitlines()) if f.exists() else 0
+            t.add_row("", f"[dim]Msgs: {msg_count} total[/]", "")
+        else:
+            t.add_row("●", "Telegram", "[red]No token[/]")
+    else:
+        t.add_row("○", "Telegram", "[red]Not configured[/]")
+
+    return Panel(t, title="[bold yellow]📡 Connectors[/]", border_style="magenta",
+                 subtitle="[dim]Platform status[/]")
+
+
+def _panel_sessions() -> Panel:
+    sd = BAW_HOME / "sessions"
+    t = Table(box=None, padding=(0, 1), expand=True, show_header=True)
+    t.add_column("Session", style="magenta", width=14)
+    t.add_column("Msgs", style="white", justify="right", width=5)
+    t.add_column("Last", style="dim")
+
+    if sd.exists():
+        files = sorted(sd.glob("*.jsonl"), key=os.path.getmtime, reverse=True)[:8]
+        for f in files:
+            lines = f.read_text().splitlines()
+            sid = f.stem[:16]
+            mtime = _relative_time(os.path.getmtime(f))
+            t.add_row(sid, str(len(lines)), mtime)
+        if not files:
+            t.add_row("[dim]No sessions yet[/]", "", "")
+
+    return Panel(t, title="[bold yellow]📂 Sessions[/]", border_style="magenta",
+                 subtitle="[dim]Recent transcripts[/]")
+
+
+def _panel_memory() -> Panel:
+    mem_dir = BAW_HOME / "memory"
+    t = Table(show_header=False, box=None, padding=(0, 1), expand=True)
+    t.add_column(style="bold magenta", width=12)
+    t.add_column(style="white")
+
+    if mem_dir.exists():
+        store = mem_dir / "store.jsonl"
+        memories = _load_jsonl(store) if store.exists() else []
+        total = len(memories)
+        size = sum(f.stat().st_size for f in mem_dir.rglob("*") if f.is_file())
+        scores = [m.get("score", 0) for m in memories if "score" in m]
+        avg_score = sum(scores) / len(scores) if scores else 0
+        high = sum(1 for s in scores if s > 0.7)
+        med = sum(1 for s in scores if 0.3 <= s <= 0.7)
+        low = sum(1 for s in scores if s < 0.3)
+
+        t.add_row("Entries", str(total))
+        t.add_row("Size", _human_size(size))
+        t.add_row("Avg Score", f"{avg_score:.2f}")
+        t.add_row("High (>0.7)", f"[green]{high}[/]")
+        t.add_row("Med  (0.3-0.7)", f"[yellow]{med}[/]")
+        t.add_row("Low  (<0.3)", f"[red]{low}[/]")
+    else:
+        t.add_row("Status", "[dim]No memory store[/]")
+
+    return Panel(t, title="[bold yellow]🧠 Memory[/]", border_style="magenta",
+                 subtitle="[dim]Store stats[/]")
+
+
+def _panel_activity() -> Panel:
+    lines = []
+    logs_dir = BAW_HOME / "logs"
+    if logs_dir.exists():
+        log_files = sorted(logs_dir.glob("*.log"), key=os.path.getmtime, reverse=True)
+        for lf in log_files[:1]:
+            content = lf.read_text().splitlines()
+            for line in content[-12:]:
+                lines.append(f"[dim]{line[:100]}[/]")
+    if not lines:
+        lines = ["[dim]No log entries yet[/]"]
+
+    return Panel("\n".join(lines), title="[bold yellow]📜 Activity[/]",
+                 border_style="magenta", subtitle="[dim]Recent log[/]")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# App — responsive grid layout
+# ═══════════════════════════════════════════════════════════════════════
 
 class BAWDashboard(App):
-    """Responsive multi-panel TUI for BAW."""
+    """Live multi-panel TUI for BAW Agent Platform."""
 
     CSS = """
-    Screen { background: #0d0d12; }
-    Header { background: #131320; color: magenta; }
-    Footer { background: #131320; color: #666; }
-    
-    #main {
-        layout: vertical;
-        height: 1fr;
-        margin: 0 1;
+    Screen {
+        background: #0d0d12;
+        layout: grid;
+        grid-size: 1;
+        grid-gutter: 0;
     }
-    
-    #top-row, #bot-row {
-        height: 1fr;
+    Header {
+        background: #131320;
+        color: magenta;
     }
-    
-    #top-row { margin-bottom: 1; }
-    
-    #topleft, #topcenter, #topright,
-    #botleft, #botcenter, #botright {
-        width: 1fr;
+    Footer {
+        background: #131320;
+        color: #666;
+    }
+    #grid {
+        layout: grid;
+        grid-size: 3 2;
+        grid-gutter: 1 1;
+        grid-columns: 1fr 1fr 1fr;
+        grid-rows: 1fr 1fr;
+        margin: 1;
+        min-height: 24;
+    }
+    #topleft, #topcenter, #topright, #botleft, #botcenter, #botright {
         border: solid #2a1535;
         background: #131320;
         padding: 0 1;
         overflow: auto;
-        margin: 0 1;
     }
-    
-    #topleft { margin-left: 0; }
-    #topright, #botright { margin-right: 0; }
-    
     RichLog {
         background: #131320;
-        min-height: 4;
     }
     """
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("r", "refresh", "Refresh"),
+        Binding("r", "refresh_data", "Refresh"),
     ]
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        with VerticalScroll(id="main"):
-            with Horizontal(id="top-row"):
-                yield RichLog(id="topleft", highlight=True, markup=True)
-                yield RichLog(id="topcenter", highlight=True, markup=True)
-                yield RichLog(id="topright", highlight=True, markup=True)
-            with Horizontal(id="bot-row"):
-                yield RichLog(id="botleft", highlight=True, markup=True)
-                yield RichLog(id="botcenter", highlight=True, markup=True)
-                yield RichLog(id="botright", highlight=True, markup=True)
+        with Grid(id="grid"):
+            yield RichLog(id="topleft", highlight=True, markup=True, wrap=True)
+            yield RichLog(id="topcenter", highlight=True, markup=True, wrap=True)
+            yield RichLog(id="topright", highlight=True, markup=True, wrap=True)
+            yield RichLog(id="botleft", highlight=True, markup=True, wrap=True)
+            yield RichLog(id="botcenter", highlight=True, markup=True, wrap=True)
+            yield RichLog(id="botright", highlight=True, markup=True, wrap=True)
         yield Footer()
 
     def on_mount(self) -> None:
         self.title = "🖤 BAW Dashboard"
         self.sub_title = "Black And White"
-        self._refresh()
-        self.set_interval(5, self._refresh)
+        self.refresh_all()
+        self.set_interval(5, self.refresh_all)
 
-    def action_refresh(self) -> None:
-        self._refresh()
+    def action_refresh_data(self) -> None:
+        self.refresh_all()
 
-    def _refresh(self) -> None:
-        self._panel_system(self.query_one("#topleft", RichLog))
-        self._panel_models(self.query_one("#topcenter", RichLog))
-        self._panel_connectors(self.query_one("#topright", RichLog))
-        self._panel_sessions(self.query_one("#botleft", RichLog))
-        self._panel_memory(self.query_one("#botcenter", RichLog))
-        self._panel_activity(self.query_one("#botright", RichLog))
+    def refresh_all(self) -> None:
+        self._render_panel("topleft", _panel_system())
+        self._render_panel("topcenter", _panel_models())
+        self._render_panel("topright", _panel_connectors())
+        self._render_panel("botleft", _panel_sessions())
+        self._render_panel("botcenter", _panel_memory())
+        self._render_panel("botright", _panel_activity())
 
-    # ── Panel: System ────────────────────────────────────────────────
-    def _panel_system(self, log: RichLog):
-        uptime = "—"
-        try:
-            with open("/proc/uptime") as f:
-                sec = int(float(f.read().split()[0]))
-            d, h = divmod(sec, 86400)
-            h, m = divmod(sec // 3600, 60)
-            if d:   uptime = f"{d}d {h}h"
-            elif h: uptime = f"{h}h {m}m"
-            else:   uptime = f"{m}m"
-        except: pass
-
-        t = Table(show_header=False, box=None, padding=(0, 1), expand=True)
-        t.add_column(style="bold magenta", width=12)
-        t.add_column(style="white")
-        t.add_row("🖥 Host", os.uname().nodename)
-        t.add_row("🔄 Uptime", uptime)
-        t.add_row("🐍 Python", "BAW · Docker")
-        t.add_row("🕐 Updated", datetime.now().strftime("%H:%M:%S"))
+    def _render_panel(self, wid: str, panel: Panel):
+        log = self.query_one(f"#{wid}", RichLog)
         log.clear()
-        log.write(Panel(t, title="[bold yellow]⚙  System[/]",
-                        border_style="magenta",
-                        subtitle="[dim]Host health & uptime[/]"))
-
-    # ── Panel: Models + Angel/Devil ──────────────────────────────────
-    def _panel_models(self, log: RichLog):
-        cfg = _yaml(BAW_HOME / "config.yaml")
-        providers = cfg.get("providers", {})
-        caps = cfg.get("capabilities", {})
-        default = cfg.get("model", {}).get("default", "—")
-        adv = cfg.get("adversarial", {})
-        adv_enabled = adv.get("enabled", False)
-        devil = adv.get("devil_model", default)
-
-        t = Table(box=None, padding=(0, 1), expand=True, show_header=True)
-        t.add_column("Model", style="white")
-        t.add_column("Ctx", style="dim", justify="right", width=5)
-        t.add_column("", style="yellow", width=3)
-
-        for pname, pinfo in providers.items():
-            for m in pinfo.get("models", []):
-                mid = m.get("id", "?")
-                ctx = m.get("context_window", 0)
-                ctx_str = f"{ctx//1000}K" if ctx >= 1000 else str(ctx)
-                star = "★" if mid == default else ""
-                t.add_row(f"[dim]{pname}/[/]{mid}", ctx_str, star)
-
-        # Angel / Devil
-        if adv_enabled:
-            t.add_row("", "", "")
-            t.add_row(f"[green]😇 Angel[/]  [white]{default}[/]", "", "")
-            t.add_row(f"[red]👿 Devil[/]  [white]{devil}[/]", "", "")
-
-        # Routes
-        routes = []
-        for cap in ("chat", "vision", "tts", "image_generation"):
-            cap_cfg = caps.get(cap, {})
-            m = cap_cfg.get("model", "") if isinstance(cap_cfg, dict) else ""
-            if m: routes.append(f"[dim]{cap}→[/][white]{m}[/]")
-
-        log.clear()
-        log.write(Panel(t, title="[bold yellow]🤖  Models[/]",
-                        border_style="magenta",
-                        subtitle="  ".join(routes) if routes else None))
-
-    # ── Panel: Connectors ────────────────────────────────────────────
-    def _panel_connectors(self, log: RichLog):
-        te = BAW_HOME / "telegram.env"
-        t = Table(show_header=False, box=None, padding=(0, 2), expand=True)
-        t.add_column(style="bold", width=3)
-        t.add_column(style="yellow")
-        t.add_column(style="dim")
-
-        if te.exists():
-            content = te.read_text()
-            if "BAW_TELEGRAM_TOKEN" in content:
-                t.add_row("●", "Telegram", "[green]Connected[/]")
-                m = re.search(r'BAW_TELEGRAM_TOKEN=(\d+):', content)
-                if m: t.add_row("", f"[dim]@{m.group(1)}[/]", "")
-                sd = BAW_HOME / "sessions"
-                msg_count = 0
-                if sd.exists():
-                    for f in sd.glob("*.jsonl"):
-                        msg_count += len(f.read_text().splitlines())
-                t.add_row("", f"[dim]Messages: {msg_count}[/]", "")
-            else:
-                t.add_row("●", "Telegram", "[red]No token[/]")
-        else:
-            t.add_row("○", "Telegram", "[red]Not configured[/]")
-
-        log.clear()
-        log.write(Panel(t, title="[bold yellow]📡  Connectors[/]",
-                        border_style="magenta",
-                        subtitle="[dim]Telegram bot status[/]"))
-
-    # ── Panel: Sessions ──────────────────────────────────────────────
-    def _panel_sessions(self, log: RichLog):
-        sd = BAW_HOME / "sessions"
-        t = Table(box=None, padding=(0, 1), expand=True, show_header=True)
-        t.add_column("Session", style="magenta", width=14)
-        t.add_column("Msgs", style="white", justify="right", width=5)
-        t.add_column("Last", style="dim")
-
-        if sd.exists():
-            files = sorted(sd.glob("*.jsonl"), key=os.path.getmtime, reverse=True)[:8]
-            for f in files:
-                lines = f.read_text().splitlines()
-                t.add_row(f.stem[:16], str(len(lines)), _relative_time(os.path.getmtime(f)))
-            if not files:
-                t.add_row("[dim]No sessions yet[/]", "", "")
-        else:
-            t.add_row("[dim]No sessions yet[/]", "", "")
-
-        log.clear()
-        log.write(Panel(t, title="[bold yellow]📂  Sessions[/]",
-                        border_style="magenta",
-                        subtitle="[dim]Recent chat sessions[/]"))
-
-    # ── Panel: Memory ─────────────────────────────────────────────────
-    def _panel_memory(self, log: RichLog):
-        md = BAW_HOME / "memory"
-        t = Table(show_header=False, box=None, padding=(0, 1), expand=True)
-        t.add_column(style="bold magenta", width=14)
-        t.add_column(style="white")
-
-        if md.exists():
-            store = md / "store.jsonl"
-            memories = _load_jsonl(store) if store.exists() else []
-            total = len(memories)
-            size = sum(f.stat().st_size for f in md.rglob("*") if f.is_file())
-            scores = [m.get("score", 0) for m in memories if "score" in m]
-            avg_score = sum(scores) / len(scores) if scores else 0
-            high = sum(1 for s in scores if s > 0.7)
-            med = sum(1 for s in scores if 0.3 <= s <= 0.7)
-            low = sum(1 for s in scores if s < 0.3)
-
-            t.add_row("Total", str(total))
-            t.add_row("Size", _human_size(size))
-            t.add_row("Avg Score", f"{avg_score:.2f}")
-            t.add_row("High (>0.7)", f"[green]{high}[/]")
-            t.add_row("Med  (0.3-0.7)", f"[yellow]{med}[/]")
-            t.add_row("Low  (<0.3)", f"[red]{low}[/]")
-        else:
-            t.add_row("Status", "[dim]No memory store[/]")
-
-        log.clear()
-        log.write(Panel(t, title="[bold yellow]🧠  Memory[/]",
-                        border_style="magenta",
-                        subtitle="[dim]Store stats & scores[/]"))
-
-    # ── Panel: Activity ──────────────────────────────────────────────
-    def _panel_activity(self, log: RichLog):
-        ld = BAW_HOME / "logs"
-        lines = []
-        if ld.exists():
-            lf = sorted(ld.glob("*.log"), key=os.path.getmtime, reverse=True)
-            for f in lf[:1]:
-                for line in f.read_text().splitlines()[-12:]:
-                    lines.append(f"[dim]{line[:100]}[/]")
-        if not lines:
-            lines = ["[dim]No log entries yet[/]"]
-
-        log.clear()
-        log.write(Panel("\n".join(lines),
-                        title="[bold yellow]📜  Activity[/]",
-                        border_style="magenta",
-                        subtitle="[dim]Recent logs[/]"))
+        log.write(panel)
 
 
 def cmd_dashboard():

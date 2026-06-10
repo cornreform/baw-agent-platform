@@ -2,7 +2,7 @@
 Streaming replies via DeepSeek API. Supports slash commands (/help /model /soul etc).
 """
 from __future__ import annotations
-import json, os, readline, shutil, sys, uuid
+import json, os, sys, uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -171,16 +171,14 @@ def _welcome(cfg):
     fc_color = fc_colors.get(fc_mode, "white")
     info.add_row("fact-check", f"[{fc_color}]{fc_mode}[/]")
 
-    # Angel / Devil (Adversarial)
+    # Angel / Devil (always show)
     adv_enabled = adv.get("enabled", False)
     devil_model = adv.get("devil_model", model)
     angel_model = model  # Angel uses default model
-    adv_status = "[green]enabled[/]" if adv_enabled else "[baw.muted]disabled[/]"
-    if adv_enabled:
-        info.add_row("😇 Angel", f"[green]{angel_model}[/]")
-        info.add_row("👿 Devil", f"[red]{devil_model}[/]")
-    else:
-        info.add_row("adversarial", adv_status)
+    info.add_row("😇 Angel", f"[green]{angel_model}[/]")
+    info.add_row("👿 Devil", f"[red]{devil_model}[/]")
+    if not adv_enabled:
+        info.add_row("adversarial", "[baw.muted]disabled[/]")
 
     plain_console.print(info)
     plain_console.print()
@@ -376,7 +374,6 @@ Style:
 
     while True:
         try:
-            # Use readline for proper line editing (handles non-TTY better than plain input)
             if is_tty:
                 inp = input("\033[35m⚡ \033[0m")
             else:
@@ -392,23 +389,29 @@ Style:
         if not inp:
             continue
 
-        if inp.startswith("/"):
-            r = _slash(inp, cfg, msgs)
-            if r == "EXIT":
-                _save(sid, msgs)
-                plain_console.print("[baw.muted]👋 bye[/]")
-                break
-            if r == "CLEAR":
-                msgs = [sysprompt]
-                plain_console.print("[baw.muted]🧹 Cleared[/]")
-                continue
-            if r:
-                continue
+        try:
+            if inp.startswith("/"):
+                r = _slash(inp, cfg, msgs)
+                if r == "EXIT":
+                    _save(sid, msgs)
+                    plain_console.print("[baw.muted]👋 bye[/]")
+                    break
+                if r == "CLEAR":
+                    msgs = [sysprompt]
+                    plain_console.print("[baw.muted]🧹 Cleared[/]")
+                    continue
+                if r:
+                    continue
 
-        msgs.append({"role": "user", "content": inp})
-        resp = _stream(client, mid, msgs)
-        if resp:
-            msgs.append({"role": "assistant", "content": resp})
+            msgs.append({"role": "user", "content": inp})
+            resp = _stream(client, mid, msgs)
+            if resp:
+                msgs.append({"role": "assistant", "content": resp})
+            else:
+                plain_console.print("[baw.warning]⚠ No response received. Try again or /exit.[/]")
+        except Exception as e:
+            plain_console.print(f"[baw.error]✗ Error: {e}[/]")
+            plain_console.print("[baw.dim]Type /help for commands, /exit to quit.[/]")
 
 
 def _save(sid, msgs):
