@@ -4,6 +4,16 @@ Uses Rich named colors for universal terminal compatibility (no hex fallback to 
 from rich.console import Console
 from rich.theme import Theme
 
+BAW_LOGO = """[baw.brand]
+    ██████╗  █████╗ ██╗    ██╗
+    ██╔══██╗██╔══██╗██║    ██║
+    ██████╔╝███████║██║ █╗ ██║
+    ██╔══██╗██╔══██╗██║███╗██║
+    ██████╔╝██║  ██║╚███╔███╔╝
+    ╚═════╝ ╚═╝  ╚═╝ ╚══╝╚══╝[/baw.brand]
+[gold]    Black And White — Agent Platform[/gold]
+"""
+
 BAW_THEME = Theme({
     # Primary: purple/magenta (works on ALL terminals — 16/256/true color)
     "baw.brand":    "bold magenta",
@@ -24,6 +34,9 @@ BAW_THEME = Theme({
     "baw.subtitle": "italic yellow",
     "baw.prompt":   "bold magenta",
     "baw.ai":       "#b0b8c0",
+    "baw.value":    "white",
+    "baw.highlight": "bold yellow",
+    "baw.border":   "dark_magenta",
     # Panel/table borders (dimmed purple)
     "panel.border": "dark_magenta",
     "table.border": "dark_magenta",
