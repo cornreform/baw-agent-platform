@@ -183,21 +183,17 @@ class AdversarialCourt:
         self.angel = AngelVoice(angel_model or model, system_prompt, config)
 
     def hold_court(
-        self, user_input: str, memory_context: str = ""
+        self, user_input: str, memory_context: str = "",
+        merged: bool = True,
     ) -> dict:
-        """Run independent dual-voice analysis.
+        """Run dual-voice analysis.
 
-        Both Devil and Angel analyze the SAME input independently.
-        Returns:
-            {
-                "devil": {...},
-                "angel": {...},
-                "devil_score": float,
-                "angel_score": float,
-                "agreement_level": "aligned" | "split" | "conflict",
-                "score_gap": float,
-            }
+        merged=True (default): single LLM call for both voices — 2x faster.
+        merged=False: sequential calls (original behavior).
         """
+        if merged:
+            return self._hold_court_merged(user_input, memory_context)
+
         adv_cfg = self.config.get("adversarial", {})
         warn_gap = adv_cfg.get("warn_threshold", 2)
 
@@ -220,6 +216,87 @@ class AdversarialCourt:
         return {
             "devil": devil_result,
             "angel": angel_result,
+            "devil_score": devil_score,
+            "angel_score": angel_score,
+            "agreement_level": agreement,
+            "score_gap": score_gap,
+        }
+
+    def _hold_court_merged(self, user_input: str, memory_context: str = "") -> dict:
+        """Single LLM call — both voices + neutral synthesis in one response.
+        
+        Format expected:
+        [DEVIL: X/10] ... devil analysis ...
+        [ANGEL: X/10] ... angel analysis ...
+        [GAP: X] ... agreement level ...
+        """
+        from .llm import call_llm_with_fallback, calculate_cost
+
+        prompt = (
+            f"Analyze this request from TWO independent perspectives in ONE response:\n\n"
+            f"User request: {user_input}\n"
+        )
+        if memory_context:
+            prompt += f"\nRelevant context: {memory_context}\n"
+
+        prompt += (
+            f"\n\nRespond in this EXACT format:\n\n"
+            f"[DEVIL: X/10]\n"
+            f"(1-3 sentences — critique, risks, what could go wrong)\n\n"
+            f"[ANGEL: X/10]\n"
+            f"(1-3 sentences — benefits, feasibility, opportunities)\n\n"
+            f"[GAP: X] — ALIGNED/SPLIT/CONFLICT\n"
+            f"(1 sentence synthesis)\n\n"
+            f"Rules:\n"
+            f"- Devil score: 0=safe, 10=extreme risk\n"
+            f"- Angel score: 0=not worth it, 10=highly recommended\n"
+            f"- Gap: abs(Devil - Angel). ≤2=ALIGNED, ≤4=SPLIT, >4=CONFLICT\n"
+            f"- Be BOLD and HONEST. Don't be balanced for balance's sake."
+        )
+
+        fb = call_llm_with_fallback(
+            self.config,
+            [{"role": "user", "content": prompt}],
+            tools=None,
+            temperature=0.7,
+        )
+        resp = fb.response
+        text = resp.content or ""
+
+        # Parse Devil score
+        import re
+        d_match = re.search(r"\[DEVIL:\s*(\d+(?:\.\d+)?)\s*/\s*10\]", text)
+        devil_score = float(d_match.group(1)) if d_match else 5.0
+
+        # Parse Angel score
+        a_match = re.search(r"\[ANGEL:\s*(\d+(?:\.\d+)?)\s*/\s*10\]", text)
+        angel_score = float(a_match.group(1)) if a_match else 5.0
+
+        score_gap = abs(devil_score - angel_score)
+        if score_gap <= 2:
+            agreement = "aligned"
+        elif score_gap <= 4:
+            agreement = "split"
+        else:
+            agreement = "conflict"
+
+        cost = calculate_cost(self.model, resp.input_tokens, resp.output_tokens)
+
+        return {
+            "devil": {
+                "content": text,
+                "score": devil_score,
+                "tokens_in": resp.input_tokens,
+                "tokens_out": resp.output_tokens,
+                "cost": cost,
+            },
+            "angel": {
+                "content": text,
+                "score": angel_score,
+                "tokens_in": resp.input_tokens,
+                "tokens_out": resp.output_tokens,
+                "cost": cost,
+            },
             "devil_score": devil_score,
             "angel_score": angel_score,
             "agreement_level": agreement,

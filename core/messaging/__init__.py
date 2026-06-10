@@ -1237,7 +1237,9 @@ class BaseConnector(ABC):
                                 break
 
                     _usage_pct = (_estimated_tokens / _cw) * 100
-                    if _usage_pct > 70:
+                    # Lazy summarization: only at 85% AND when next message would exceed
+                    _next_estimate = _estimated_tokens + (len(prompt) * 0.25) if prompt else 0
+                    if _usage_pct > 85 or (_next_estimate / _cw) > 0.92:
                         logger.info(f"[Context] {_usage_pct:.0f}% full — auto-summarizing...")
                         # Generate summary via direct LLM call (bypass run_agent to avoid recursion)
                         _summary = "[Conversation auto-compressed]"
@@ -1284,39 +1286,29 @@ class BaseConnector(ABC):
             else:
                 conv_history = None
 
-            # ── Intent Shift Detection ──
+            # ── Intent Shift Detection (keyword heuristic, ~50ms vs ~1.5s LLM) ──
             if conv_history and chat_id:
                 _last_user_msgs = [
                     m.get("content", "") for m in conv_history
                     if m.get("role") == "user"
                 ]
                 if len(_last_user_msgs) >= 2:
-                    _prev_topic = _last_user_msgs[-2][:300]  # 2nd-to-last user message
-                    _intent_prompt = (
-                        f"Previous topic: {_prev_topic}\n"
-                        f"New message: {prompt[:300]}\n\n"
-                        f"Is this the SAME topic? Answer YES or NO only."
-                    )
-                    try:
-                        from ..llm import call_llm_with_fallback as _icf
-                        _intent_fb = _icf(
-                            config,
-                            [{"role": "user", "content": _intent_prompt}],
-                            temperature=0,
-                        )
-                        _intent_text = (_intent_fb.response.content or "").strip().upper()
-                        if _intent_text.startswith("NO"):
+                    _prev_topic = _last_user_msgs[-2][:300]
+                    # Keyword overlap heuristic
+                    _prev_words = set((_prev_topic or "").lower().split())
+                    _curr_words = set((prompt or "")[:300].lower().split())
+                    if _prev_words and _curr_words:
+                        _overlap = len(_prev_words & _curr_words) / max(len(_prev_words | _curr_words), 1)
+                        if _overlap < 0.25:  # <25% keyword overlap → topic shift
                             logger.info(
-                                f"[Intent] Shift detected: '{_prev_topic[:60]}' → '{prompt[:60]}'"
+                                f"[Intent] Shift detected (overlap={_overlap:.2f}): "
+                                f"'{_prev_topic[:60]}' → '{prompt[:60]}'"
                             )
-                            conv_history = None  # Reset context — fresh start
-                            # Add brief context note so BAW knows there was a shift
+                            conv_history = None
                             prompt = (
                                 f"[Topic shift — previous conversation was about: "
                                 f"{_prev_topic[:100]}]\n\n{prompt}"
                             )
-                    except Exception:
-                        pass  # Non-critical — skip detection if LLM call fails
 
             # ── Progress tracking + real-time Telegram updates (inline edit) ──
             _last_progress = time.time()
