@@ -120,7 +120,7 @@ Examples:
 
     # Auto-load .env for API keys (Hermes profile first, then BAW's own)
     for env_path in [
-        Path.home() / ".hermes" / "profiles" / "sticky" / ".env",
+
         Path.home() / ".baw" / ".env",
     ]:
         if env_path.exists():
