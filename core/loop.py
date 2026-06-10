@@ -39,44 +39,82 @@ from . import render as html
 import threading
 
 
+def _human_tokens(n: int) -> str:
+    """Format token count as human-readable string."""
+    if n >= 1_000_000:
+        return f"{n/1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n/1_000:.1f}K"
+    return str(n)
+
+
+# ═══════════════════════════════════════════════════════════════
+# ── Context window tracker (session-scoped) ──
+# ═══════════════════════════════════════════════════════════════
+
+_CONTEXT_TRACKER: dict = {"model_id": "", "ctx_window": 0, "current_pct": 0.0}
+
+
+def set_context_window(model_id: str, ctx_window: int, current_pct: float = 0.0):
+    """Update context window tracking for display. Called by _run_baw() each message."""
+    _CONTEXT_TRACKER["model_id"] = model_id
+    _CONTEXT_TRACKER["ctx_window"] = ctx_window
+    _CONTEXT_TRACKER["current_pct"] = round(current_pct, 1)
+
+
+def context_window_summary() -> str:
+    """Return one-line context window status."""
+    ctx = _CONTEXT_TRACKER
+    if not ctx["model_id"] or not ctx["ctx_window"]:
+        return ""
+    cw = _human_tokens(ctx["ctx_window"])
+    pct = ctx["current_pct"]
+    bar = _ctx_bar(pct)
+    return f"🧠 {ctx['model_id']} {bar} {pct:.0f}% ({cw})"
+
+
+def _ctx_bar(pct: float) -> str:
+    """5-block context bar."""
+    filled = int(pct / 20)
+    blocks = "".join("█" if i < filled else "░" for i in range(5))
+    return f"[{blocks}]"
+
+
 class CostTracker:
-    """Thread-safe cost accumulator. One instance per session."""
+    """Thread-safe token accumulator. One instance per session."""
 
     def __init__(self):
         self._lock = threading.Lock()
-        self.total = 0.0
+        self.total_tokens_in = 0
+        self.total_tokens_out = 0
         self.calls: list[dict] = []
 
     def record(self, model_name: str, tokens_in: int, tokens_out: int, cost: float):
         with self._lock:
             self.calls.append({
                 "model": model_name, "tokens_in": tokens_in,
-                "tokens_out": tokens_out, "cost": round(cost, 6),
+                "tokens_out": tokens_out,
             })
-            self.total += cost
+            self.total_tokens_in += tokens_in
+            self.total_tokens_out += tokens_out
 
     def summary(self) -> str:
         with self._lock:
             if not self.calls:
                 return ""
-            calls_info = " | ".join(
-                f"{c['tokens_in']}↑{c['tokens_out']}↓${c['cost']:.4f}"
-                for c in self.calls
-            )
-            return f"📊 [{len(self.calls)} LLM calls] {calls_info} | **total: ${self.total:.4f}**"
+            ti = self.total_tokens_in
+            to = self.total_tokens_out
+            total = ti + to
+            return f"📊 [{len(self.calls)} LLM calls] {_human_tokens(ti)}↑{_human_tokens(to)}↓ | total: {_human_tokens(total)} tokens"
 
     def html_summary(self) -> str:
         with self._lock:
             if not self.calls:
                 return ""
-            calls_info = " | ".join(
-                f"{c['tokens_in']}↑{c['tokens_out']}↓<code>${c['cost']:.4f}</code>"
-                for c in self.calls
-            )
-            return (
-                f"📊 <b>[{len(self.calls)} LLM calls]</b> {calls_info} | "
-                f"<b>total: ${self.total:.4f}</b>"
-            )
+            ti = self.total_tokens_in
+            to = self.total_tokens_out
+            total = ti + to
+            return f"📊 <b>[{len(self.calls)} LLM calls]</b> {_human_tokens(ti)}↑{_human_tokens(to)}↓ | <b>total: {_human_tokens(total)} tokens</b>"
 
     def reset(self):
         with self._lock:
@@ -1139,6 +1177,10 @@ def run_agent(
             pass
 
         findings += f"\n\n{html_cost_summary()}"
+        # Add context window bar
+        ctx_bar = context_window_summary()
+        if ctx_bar:
+            findings += f"\n{ctx_bar}"
 
     # Auto-save
     last_commit = None
