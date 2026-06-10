@@ -753,8 +753,8 @@ def run_agent(
     
     for _line in plan_text.split("\n"):
         _line = _line.strip()
-        # Check for group header: ## Group A — Name
-        _gm = _re.match(r'##\s*Group\s+([A-Z])\s*[—\-]\s*(.*)', _line)
+        # Check for group header: ## Group A — Name  OR  ## Group A (N steps)
+        _gm = _re.match(r'##\s*Group\s+([A-Z])\s*(?:[—\-]\s*(.*?))?(?:\s*\(\d+\s*steps?\))?\s*$', _line)
         if _gm:
             _current_group = _gm.group(1)
             _current_group_name = _gm.group(2).strip()
@@ -886,6 +886,13 @@ def run_agent(
 
     def _is_inline_candidate(goal: str) -> bool:
         """Check if a step goal describes a trivial read/check that doesn't need sub-agent spawn."""
+        # Reject obvious non-commands (plan headers, markdown, emoji-only lines)
+        _stripped = goal.strip()
+        if not _stripped or _stripped.startswith(('#', '##', '```', '✅', '❌', '▶', '⏭', '⚠', '📋', '🔄')):
+            return False
+        # Reject markdown-contaminated text (would break shell)
+        if '**' in goal or '`' in goal:
+            return False
         for _pat in _INLINE_PATTERNS_C:
             if _pat.search(goal):
                 return True
@@ -939,7 +946,7 @@ def run_agent(
             _rg_counts: dict[str, int] = {}
             for _line in (_plan_resp.content or "").split("\n"):
                 _line = _line.strip()
-                _gmr = _re.match(r'##\s*Group\s+([A-Z])\s*[—\-]\s*(.*)', _line)
+                _gmr = _re.match(r'##\s*Group\s+([A-Z])\s*(?:[—\-]\s*(.*?))?(?:\s*\(\d+\s*steps?\))?\s*$', _line)
                 if _gmr:
                     _rg_current = _gmr.group(1)
                     _rg_counts.setdefault(_rg_current, 0)
@@ -1042,8 +1049,13 @@ def run_agent(
                         print(f"  ⚡ Inline gate: running step directly (no sub-agent spawn)")
                     try:
                         import subprocess as _sp2
+                        # Strip markdown formatting before passing to shell
+                        _clean_cmd = _step_goal
+                        _clean_cmd = _re2.sub(r'\*\*(.*?)\*\*', r'\1', _clean_cmd)  # bold
+                        _clean_cmd = _re2.sub(r'`(.*?)`', r'\1', _clean_cmd)          # inline code
+                        _clean_cmd = _clean_cmd.replace('```bash', '').replace('```', '')
                         _inline_result = _sp2.run(
-                            _step_goal, shell=True, capture_output=True, text=True, timeout=30,
+                            _clean_cmd, shell=True, capture_output=True, text=True, timeout=30,
                             cwd=str(Path.home()),
                         )
                         _result = _inline_result.stdout.strip() or _inline_result.stderr.strip()
@@ -1170,7 +1182,7 @@ def run_agent(
                 for _line in (_replan_resp.content or "").split("\n"):
                     _line = _line.strip()
                     # Group header
-                    _gm2 = _re.match(r'##\s*Group\s+([A-Z])\s*[—\-]\s*(.*)', _line)
+                    _gm2 = _re.match(r'##\s*Group\s+([A-Z])\s*(?:[—\-]\s*(.*?))?(?:\s*\(\d+\s*steps?\))?\s*$', _line)
                     if _gm2:
                         _rc_group = _gm2.group(1)
                         _rc_step = 0
