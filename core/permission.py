@@ -21,6 +21,14 @@ class PermissionEngine:
         # Session-level overrides
         self._session_allows: set[str] = set()
         self._session_denies: set[str] = set()
+        # Low-risk paths — auto-approve, no prompt
+        self._auto_approve_paths = [
+            str(Path.home() / ".baw" / "*"),
+            "/tmp/baw_*",
+            str(Path.home() / ".baw" / "config.yaml"),
+            str(Path.home() / ".baw" / ".env"),
+            str(Path.home() / ".baw" / "telegram.env"),
+        ]
 
     def _match_rule(self, rule: dict, tool_name: str, params: dict) -> bool:
         """Check if a permission rule matches a tool call."""
@@ -53,6 +61,16 @@ class PermissionEngine:
             return {"decision": "deny", "reason": f"Session-denied: {tool_name}"}
         if key in self._session_allows:
             return {"decision": "allow", "reason": "Session-approved"}
+
+        # Auto-approve: low-risk paths (config, env, temp dirs)
+        if tool_name in ("read_file", "write_file", "bash"):
+            target = params.get("path", params.get("target", ""))
+            cmd = params.get("command", "")
+            for _pat in self._auto_approve_paths:
+                if target and fnmatch.fnmatch(target, _pat):
+                    return {"decision": "allow", "reason": f"Auto-approved: {target}"}
+                if cmd and _pat.replace(str(Path.home()), "~") in cmd:
+                    return {"decision": "allow", "reason": "Auto-approved (bash)"}
 
         # Check high risk
         for rule in self.high_rules:
