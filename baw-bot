@@ -34,18 +34,39 @@ logging.basicConfig(
 logger = logging.getLogger("baw-bot")
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override into base. Override wins on conflict."""
+    result = dict(base)
+    for k, v in override.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = _deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
+
 def load_config(config_path: Optional[Path] = None) -> dict:
-    """Load BAW config.yaml."""
+    """Load BAW config.yaml, merging project + user configs.
+
+    Priority (highest wins):
+      1. --config CLI argument
+      2. ~/.baw/config.yaml  (user secrets — token, keys)
+      3. baw/config.yaml      (project defaults — models, tools)
+    """
     import yaml
-    paths = [
-        config_path,
+    merged = {}
+    for p in [
         BAW_ROOT / "config.yaml",
         Path.home() / ".baw" / "config.yaml",
-    ]
-    for p in paths:
-        if p and p.exists():
-            return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    return {}
+    ]:
+        if p.exists():
+            cfg = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            merged = _deep_merge(merged, cfg)
+    # CLI --config overrides everything
+    if config_path and config_path.exists():
+        cli_cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        merged = _deep_merge(merged, cli_cfg)
+    return merged
 
 
 def main():
@@ -96,6 +117,19 @@ Examples:
         print()
         print("Configure each platform in config.yaml under its name.")
         return
+
+    # Auto-load .env for API keys (Hermes profile first, then BAW's own)
+    for env_path in [
+        Path.home() / ".hermes" / "profiles" / "sticky" / ".env",
+        Path.home() / ".baw" / ".env",
+    ]:
+        if env_path.exists():
+            for line in env_path.read_text().strip().split("\n"):
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    if key.strip() not in os.environ:
+                        os.environ[key.strip()] = val.strip()
 
     # Load config
     config = load_config(Path(args.config) if args.config else None)
