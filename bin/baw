@@ -1,112 +1,24 @@
 #!/usr/bin/env bash
-# BAW CLI — quick access to BAW config, logs, and container
-# Usage: baw <command> [args]
-set -euo pipefail
+# baw — BAW CLI wrapper (host-side)
+# Proxies commands into the Docker container.
+set -e
 
-BAW_DIR="${HOME}/baw"
-BAW_DATA="${HOME}/.baw"
 CONTAINER="baw-telegram"
 
-cmd_help() {
-    cat <<'EOF'
-🖥️  BAW CLI
+# Check if container is running
+if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
+    echo "❌ BAW container '${CONTAINER}' is not running."
+    echo "   Start it: cd ~/baw && docker compose up -d"
+    exit 1
+fi
 
-  baw config          Edit config.yaml
-  baw env             Edit .env (API keys)
-  baw soul            Edit SOUL.md
-  baw logs [-f]       View container logs
-  baw restart         Restart BAW container
-  baw status          Check if BAW is running
-  baw shell           Interactive shell inside container
-  baw exec <cmd>      Run command inside container
-  baw models          List configured models
-  baw memory          Show memory stats
-  baw update          Git pull + rebuild + restart
-EOF
-}
+# Detect if we have a real TTY
+TTY_FLAG=""
+if [ -t 0 ] && [ -t 1 ]; then
+    TTY_FLAG="-it"
+else
+    TTY_FLAG="-i"
+fi
 
-cmd_config()  { ${EDITOR:-nano} "${BAW_DATA}/config.yaml"; }
-cmd_env()     { ${EDITOR:-nano} "${BAW_DATA}/.env"; }
-cmd_soul()    { ${EDITOR:-nano} "${BAW_DATA}/SOUL.md"; }
-
-cmd_logs() {
-    if [[ "${1:-}" == "-f" ]]; then
-        docker logs -f "$CONTAINER"
-    else
-        docker logs --tail 50 "$CONTAINER"
-    fi
-}
-
-cmd_restart() {
-    echo "⏳ Restarting $CONTAINER..."
-    cd "$BAW_DIR" && docker compose down && docker compose up -d
-    echo "✅ Done — $(docker ps --filter name=$CONTAINER --format '{{.Status}}')"
-}
-
-cmd_status() {
-    if docker ps --filter "name=$CONTAINER" --format '{{.Names}}' | grep -q "$CONTAINER"; then
-        echo "✅ $CONTAINER is running ($(docker ps --filter name=$CONTAINER --format '{{.Status}}'))"
-    else
-        echo "❌ $CONTAINER is NOT running"
-    fi
-}
-
-cmd_shell() {
-    docker exec -it "$CONTAINER" /bin/bash 2>/dev/null || \
-    docker exec -it "$CONTAINER" /bin/sh
-}
-
-cmd_exec() {
-    docker exec "$CONTAINER" "$@"
-}
-
-cmd_models() {
-    python3 -c "
-import yaml
-cfg = yaml.safe_load(open('${BAW_DIR}/config.yaml'))
-print('Default:', cfg.get('model',{}).get('default','?'))
-print()
-for p, pc in cfg.get('providers',{}).items():
-    for m in pc.get('models',[]):
-        print(f'  {m[\"id\"]:30s} → {p}')
-" 2>/dev/null || echo "⚠️  Cannot parse config (install pyyaml)"
-}
-
-cmd_memory() {
-    if [[ -f "${BAW_DATA}/memory" ]]; then
-        echo "📁 Memory files: $(ls "${BAW_DATA}/memory/" | wc -l)"
-    fi
-    if [[ -f "${BAW_DATA}/sessions" ]]; then
-        echo "📁 Sessions: $(ls "${BAW_DATA}/sessions/" 2>/dev/null | wc -l)"
-    fi
-    if [[ -f "${BAW_DATA}/history" ]]; then
-        echo "📁 History: $(ls "${BAW_DATA}/history/" 2>/dev/null | wc -l)"
-    fi
-}
-
-cmd_update() {
-    echo "⏳ git pull..."
-    cd "$BAW_DIR" && git pull
-    echo "⏳ rebuild + restart..."
-    docker compose down
-    docker compose build --quiet
-    docker compose up -d
-    echo "✅ Updated — $(docker ps --filter name=$CONTAINER --format '{{.Status}}')"
-}
-
-# ── Dispatch ──
-case "${1:-help}" in
-    config)       cmd_config ;;
-    env)          cmd_env ;;
-    soul)         cmd_soul ;;
-    logs)         shift; cmd_logs "$@" ;;
-    restart)      cmd_restart ;;
-    status)       cmd_status ;;
-    shell)        cmd_shell ;;
-    exec)         shift; cmd_exec "$@" ;;
-    models)       cmd_models ;;
-    memory)       cmd_memory ;;
-    update)       cmd_update ;;
-    help|--help|-h) cmd_help ;;
-    *)            echo "Unknown: $1"; cmd_help; exit 1 ;;
-esac
+# Pass all args to the container's CLI
+exec docker exec ${TTY_FLAG} "$CONTAINER" python3 -m cli.main "$@"
