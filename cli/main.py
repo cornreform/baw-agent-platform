@@ -1,129 +1,258 @@
-"""BAW CLI — unified entry point.
-
-    baw                  → interactive chat (default)
-    baw chat             → explicit chat mode
-    baw status           → health overview
-    baw models           → model table
-    baw config [show]    → view config
-    baw logs             → tail Docker logs
-    baw soul             → view SOUL.md
-    baw dashboard        → Textual TUI dashboard
-    baw restart          → restart container
-    baw --help / -h      → this help
-"""
-
+"""baw CLI — Purple+Gold multi-layered terminal interface."""
 from __future__ import annotations
-import argparse
-import os
 import sys
 from pathlib import Path
 
-# ── resolve BAW root ──────────────────────────────────────────────
-BAW_ROOT = Path(__file__).resolve().parent.parent
-if str(BAW_ROOT) not in sys.path:
-    sys.path.insert(0, str(BAW_ROOT))
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+from rich import box
 
-# ── subcommand registry ────────────────────────────────────────────
-SUBCOMMANDS = {
-    "chat":        "cli.commands.chat:cmd_chat",
-    "status":      "cli.commands.status:cmd_status",
-    "models":      "cli.commands.models:cmd_models",
-    "config":      "cli.commands.config_cmd:cmd_config",
-    "logs":        "cli.commands.logs:cmd_logs",
-    "soul":        "cli.commands.soul:cmd_soul",
-    "dashboard":   "cli.commands.dashboard:cmd_dashboard",
-    "restart":     "cli.commands.restart:cmd_restart",
+from cli import console  # shared themed console
+
+BAW_HOME = Path.home() / ".baw"
+
+# ── ASCII Art Banner ──
+BANNER = """[baw.brand]
+    ██████╗  █████╗ ██╗    ██╗
+    ██╔══██╗██╔══██╗██║    ██║
+    ██████╔╝███████║██║ █╗ ██║
+    ██╔══██╗██╔══██╗██║███╗██║
+    ██████╔╝██║  ██║╚███╔███╔╝
+    ╚═════╝ ╚═╝  ╚═╝ ╚══╝╚══╝[/baw.brand]
+[baw.gold]    Black And White — Agent Platform[/baw.gold]
+"""
+
+CHAT_BANNER = """[baw.brand]
+ ██████╗  █████╗ ██╗    ██╗    ██████╗██╗  ██╗ █████╗ ████████╗
+ ██╔══██╗██╔══██╗██║    ██║   ██╔════╝██║  ██║██╔══██╗╚══██╔══╝
+ ██████╔╝███████║██║ █╗ ██║   ██║     ███████║███████║   ██║
+ ██╔══██╗██╔══██║██║███╗██║   ██║     ██╔══██║██╔══██║   ██║
+ ██████╔╝██║  ██║╚███╔███╔╝   ╚██████╗██║  ██║██║  ██║   ██║
+ ╚═════╝ ╚═╝  ╚═╝ ╚══╝╚══╝     ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝[/baw.brand]
+"""
+
+# ── Subcommand Registry ──
+# Each entry: (command, description, category, aliases)
+# Categories: interact, monitor, manage, system
+COMMANDS = {
+    "chat": {
+        "desc": "💬  Enter interactive chat mode (default when no args)",
+        "category": "interact",
+        "aliases": [],
+        "usage": "baw chat",
+    },
+    "status": {
+        "desc": "🩺  Live health overview — uptime, sessions, memory, connectors",
+        "category": "monitor",
+        "aliases": ["health", "st"],
+        "usage": "baw status",
+    },
+    "models": {
+        "desc": "🤖  Model table + capability routing matrix",
+        "category": "monitor",
+        "aliases": ["model"],
+        "usage": "baw models",
+    },
+    "config": {
+        "desc": "📄  View/edit config.yaml + .env (masked secrets)",
+        "category": "manage",
+        "aliases": ["cfg"],
+        "usage": "baw config [show|edit|get <key>|set <key> <val>]",
+        "subcommands": ["show", "edit", "get", "set"],
+    },
+    "soul": {
+        "desc": "🧠  Read/edit BAW's SOUL.md — core behavioral rules",
+        "category": "manage",
+        "aliases": ["personality"],
+        "usage": "baw soul [show|edit]",
+        "subcommands": ["show", "edit"],
+    },
+    "skill": {
+        "desc": "📦  List/install/manage BAW skills",
+        "category": "manage",
+        "aliases": ["skills"],
+        "usage": "baw skill [list|install <name>|remove <name>]",
+        "subcommands": ["list", "install", "remove"],
+    },
+    "memory": {
+        "desc": "🧩  Memory stats — size, entries, graph edges",
+        "category": "monitor",
+        "aliases": ["mem"],
+        "usage": "baw memory",
+    },
+    "sessions": {
+        "desc": "📋  Browse past session transcripts",
+        "category": "monitor",
+        "aliases": ["history", "sess"],
+        "usage": "baw sessions [list|view <id>]",
+        "subcommands": ["list", "view"],
+    },
+    "logs": {
+        "desc": "📜  Tail Docker logs in real-time (live streaming)",
+        "category": "monitor",
+        "aliases": ["log"],
+        "usage": "baw logs [--lines N]",
+    },
+    "dashboard": {
+        "desc": "📊  Launch interactive TUI dashboard (Textual)",
+        "category": "monitor",
+        "aliases": ["dash", "tui"],
+        "usage": "baw dashboard",
+    },
+    "restart": {
+        "desc": "🔄  Restart the BAW Docker container",
+        "category": "system",
+        "aliases": ["reboot"],
+        "usage": "baw restart",
+    },
+}
+
+CATEGORY_META = {
+    "interact": ("💬  Interact", "Chat with BAW"),
+    "monitor": ("⚡  Monitor", "Health, models, logs, sessions"),
+    "manage": ("🔧  Manage", "Config, soul, skills"),
+    "system": ("⚙️  System", "Docker lifecycle"),
 }
 
 
-def _load_command(name: str):
-    """Lazy-load a subcommand module."""
-    mod_path, func_name = SUBCOMMANDS[name].split(":")
-    import importlib
-    mod = importlib.import_module(mod_path)
-    return getattr(mod, func_name)
+def _show_help():
+    """Rich multi-section help display."""
+    console.print()
+    console.print(BANNER)
+    console.print()
+
+    # ── Section: Quick Start ──
+    qs = Panel(
+        "[baw.gold]baw[/baw.gold]       [baw.desc]→  Enter interactive chat[/baw.desc]\n"
+        "[baw.gold]baw chat[/baw.gold]   [baw.desc]→  Explicit chat mode[/baw.desc]\n"
+        "[baw.gold]baw --help[/baw.gold] [baw.desc]→  This help[/baw.desc]",
+        title="[baw.gold]🚀  Quick Start[/baw.gold]",
+        border_style="baw.accent",
+        box=box.HEAVY,
+        padding=(1, 3),
+    )
+    console.print(qs)
+    console.print()
+
+    # ── Categories ──
+    for cat_key in ["interact", "monitor", "manage", "system"]:
+        meta = CATEGORY_META[cat_key]
+        cmds_in_cat = [(k, v) for k, v in COMMANDS.items() if v["category"] == cat_key]
+
+        section_title = Text(f"  {meta[0]}  ", style="baw.section")
+        section_subtitle = Text(f"  {meta[1]}  ", style="baw.dim")
+
+        table = Table(
+            box=box.SIMPLE_HEAVY,
+            border_style="baw.accent",
+            show_header=False,
+            padding=(0, 2),
+            expand=True,
+            title=section_title,
+            caption=section_subtitle,
+            caption_justify="left",
+        )
+        table.add_column("CMD", style="baw.cmd", width=22, no_wrap=True)
+        table.add_column("DESC", style="baw.desc")
+
+        for cmd_name, cmd_info in cmds_in_cat:
+            usage = cmd_info["usage"]
+            desc = cmd_info["desc"]
+            table.add_row(f"  {usage}", f"  {desc}")
+
+        console.print(table)
+        console.print()
+
+    # ── Footer ──
+    footer = Panel(
+        "[baw.dim]In chat: type messages freely · /help for commands · /model to switch · /exit to quit[/baw.dim]\n"
+        "[baw.dim]Config: ~/.baw/config.yaml · Secrets: ~/.baw/.env · Soul: ~/.baw/SOUL.md[/baw.dim]",
+        border_style="baw.accent",
+        box=box.HEAVY,
+        padding=(0, 2),
+    )
+    console.print(footer)
+    console.print()
+
+
+def _resolve_cmd(raw: str) -> str | None:
+    """Resolve aliases to canonical command name."""
+    raw = raw.lower()
+    if raw in COMMANDS:
+        return raw
+    for cmd_name, cmd_info in COMMANDS.items():
+        if raw in cmd_info.get("aliases", []):
+            return cmd_name
+    return None
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        prog="baw",
-        description="BAW Agent Platform — CLI",
-        add_help=False,
-    )
-    parser.add_argument("subcommand", nargs="?", default="chat",
-                        choices=list(SUBCOMMANDS.keys()),
-                        help="What to do (default: chat)")
-    parser.add_argument("args", nargs=argparse.REMAINDER,
-                        help="Extra args passed to subcommand")
-    parser.add_argument("-h", "--help", action="store_true",
-                        help="Show help")
-    parser.add_argument("--version", action="store_true",
-                        help="Show version")
-
-    args = parser.parse_args()
-
-    if args.help:
-        _print_help()
-        return
-    if args.version:
-        from pathlib import Path
-        try:
-            v = (Path.home() / ".baw" / "VERSION").read_text().strip()
-        except Exception:
-            v = "dev"
-        print(f"baw v{v}")
+    # Handle --help / -h
+    if len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h"):
+        sys.argv.pop(1)
+        _show_help()
         return
 
-    # Dispatch
-    cmd = args.subcommand
-    func = _load_command(cmd)
-    sys.argv = [f"baw {cmd}"] + args.args
-    func()
+    # Parse subcommand
+    if len(sys.argv) < 2:
+        # Default: interactive chat
+        from cli.commands.chat import cmd_chat
+        cmd_chat()
+        return
 
+    cmd = sys.argv[1]
 
-def _print_help():
-    from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich import box
+    # Resolve aliases
+    canonical = _resolve_cmd(cmd)
+    if canonical is None:
+        console.print(f"[baw.error]Unknown command:[/baw.error] {cmd}")
+        console.print("[baw.dim]Run [baw.gold]baw --help[/baw.gold] to see available commands.[/baw.dim]")
+        return
 
-    c = Console()
-    # Brand header
-    c.print()
-    c.print(Panel.fit(
-        "[bold white on #6c3fc9]  🖤  BAW Agent Platform  [/bold white on #6c3fc9]",
-        border_style="#6c3fc9",
-        padding=(0, 3),
-    ))
-    c.print()
+    # Extract subcommand and remaining args
+    subcommand = sys.argv[2] if len(sys.argv) > 2 else None
+    args = sys.argv[3:] if len(sys.argv) > 3 else []
 
-    table = Table(box=box.ROUNDED, border_style="#6c3fc9", show_header=False,
-                  pad_edge=True, expand=False)
-    table.add_column("Command", style="bold #c4a0ff", width=18)
-    table.add_column("Description", style="#b0b8c0")
-
-    table.add_row("baw", "[dim]#[/dim] [white]Interactive chat[/white] [dim](default)[/dim]")
-    table.add_row("baw chat", "[dim]#[/dim] Explicit chat mode")
-    table.add_row("baw status", "[dim]#[/dim] 🩺  Health overview")
-    table.add_row("baw models", "[dim]#[/dim] 🤖  Model table + routing")
-    table.add_row("baw config", "[dim]#[/dim] 📄  View config.yaml")
-    table.add_row("baw logs", "[dim]#[/dim] 📜  Tail Docker logs (live)")
-    table.add_row("baw soul", "[dim]#[/dim] 🧠  View SOUL.md")
-    table.add_row("baw dashboard", "[dim]#[/dim] 📊  Live TUI dashboard")
-    table.add_row("baw restart", "[dim]#[/dim] 🔄  Restart container")
-
-    c.print(table)
-    c.print()
-    from rich.text import Text
-    hint = Text("💡 In chat mode: type freely · ")
-    hint.append("/model", style="bold #c4a0ff")
-    hint.append(" to switch · ")
-    hint.append("/clear", style="bold #c4a0ff")
-    hint.append(" reset · ")
-    hint.append("/exit", style="bold #c4a0ff")
-    hint.append(" quit", style="dim")
-    c.print(hint)
-    c.print()
+    # Route
+    try:
+        if canonical == "chat":
+            from cli.commands.chat import cmd_chat
+            cmd_chat()
+        elif canonical == "status":
+            from cli.commands.status import cmd_status
+            cmd_status()
+        elif canonical == "models":
+            from cli.commands.models import cmd_models
+            cmd_models(subcommand, args)
+        elif canonical == "config":
+            from cli.commands.config_cmd import cmd_config
+            cmd_config(subcommand, args)
+        elif canonical == "soul":
+            from cli.commands.soul import cmd_soul
+            cmd_soul(subcommand)
+        elif canonical == "logs":
+            from cli.commands.logs import cmd_logs
+            cmd_logs()
+        elif canonical == "dashboard":
+            from cli.commands.dashboard import cmd_dashboard
+            cmd_dashboard()
+        elif canonical == "restart":
+            from cli.commands.restart import cmd_restart
+            cmd_restart()
+        elif canonical == "skill":
+            from cli.commands.skill_cmd import cmd_skill
+            cmd_skill(subcommand, args)
+        elif canonical == "memory":
+            from cli.commands.memory_cmd import cmd_memory
+            cmd_memory()
+        elif canonical == "sessions":
+            from cli.commands.sessions_cmd import cmd_sessions
+            cmd_sessions(subcommand, args)
+    except KeyboardInterrupt:
+        console.print("\n[baw.dim]👋 Bye.[/baw.dim]")
+    except Exception as e:
+        console.print(f"[baw.error]Error:[/baw.error] {e}")
 
 
 if __name__ == "__main__":
