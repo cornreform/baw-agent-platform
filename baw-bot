@@ -1,4 +1,4 @@
-#!/home/radxa/.hermes/hermes-agent/venv/bin/python3
+#!/usr/bin/env python3
 """
 BAW Bot — Multi-Platform Messaging Daemon
 
