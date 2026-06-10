@@ -1356,7 +1356,13 @@ class BaseConnector(ABC):
                         else:
                             _progress_msg_id = self.send(chat_id, "\n".join(_lines))
                     elif step_type == "recalc":
+                        nonlocal _recalc_total
+                        _recalc_total += 1
                         meta = args or {}
+                        if _recalc_total > _MAX_RECALC_THRESHOLD:
+                            logger.warning(f"[Loop] {_recalc_total} recalculations — forcing stop")
+                            self._cancel_event.set()
+                            return
                         _progress_lines.append(f"↻ Recalculating... (step {meta.get('step','?')})")
                         if _progress_msg_id:
                             self.send(chat_id, "\n".join(_progress_lines[-8:]),
@@ -1367,9 +1373,11 @@ class BaseConnector(ABC):
             # Run BAW with a timeout via thread pool — multi-round loop
             # If goal not achieved, auto-feed output back as next prompt (max 3 rounds)
             _MAX_AUTO_ROUNDS = 3
+            _MAX_RECALC_THRESHOLD = 5  # Hard cap on recalculations per round
             output = ""
             info = {}
             all_plan_recaps = []
+            _recalc_total = 0
 
             # Send typing indicator
             if chat_id:
