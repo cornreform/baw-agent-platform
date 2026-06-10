@@ -128,6 +128,13 @@ class LLMResponse:
     reasoning_content: str | None = None
 
 
+def calculate_cost(model: ModelDef, input_tokens: int, output_tokens: int) -> float:
+    """Calculate cost in USD from token counts + model pricing (per 1M tokens)."""
+    in_cost = (input_tokens / 1_000_000) * model.cost_per_1m_input
+    out_cost = (output_tokens / 1_000_000) * model.cost_per_1m_output
+    return round(in_cost + out_cost, 6)
+
+
 def load_config(config_path: Optional[Path] = None) -> dict:
     """Load BAW config from yaml or dict, and auto-load .env for API keys."""
     import yaml
