@@ -280,7 +280,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
 MAX_STEP_RETRIES = 3
 MAX_CONSECUTIVE_FAILURES = 3
-MAX_STEP_SECONDS = 60  # individual step timeout — prevent silent hangs
+MAX_STEP_SECONDS = 30  # individual step timeout (was 60 — shorter timeout detects failures faster)
 
 
 def run_agent(
@@ -345,9 +345,28 @@ def run_agent(
     court_result = None
 
     # ── Resolve execution mode ──
-    _mode = (mode or config.get("mode", "tight")).lower()
-    if _mode not in ("quick", "hybrid", "tight"):
-        _mode = "tight"
+    # Smart default: quick for simple messages, tight for complex ones
+    _configured_mode = (mode or config.get("mode", "quick")).lower()
+    if _configured_mode not in ("quick", "hybrid", "tight"):
+        _configured_mode = "quick"
+    
+    # Auto-detect complexity: short non-code message → quick; long/code/tool message → tight
+    if _configured_mode == "quick":
+        _prompt_lower = (prompt or "").lower()
+        _complexity_keywords = [
+            "write", "create", "generate", "build", "deploy", "config",
+            "modify", "install", "code", "implement", "fix", "debug",
+            "curl", "api", "tts", "voice", "audio", "send file",
+            "幫我設定", "幫我整", "幫我改", "生成", "建立",
+        ]
+        _is_complex = (
+            len(prompt or "") > 80 or
+            any(kw in _prompt_lower for kw in _complexity_keywords) or
+            any(kw in (prompt or "") for kw in ["幫我設定", "幫我整", "生成", "建立", "部署"])
+        )
+        if _is_complex:
+            _configured_mode = "tight"
+    _mode = _configured_mode
 
     # ── Build system prompt ──
     _is_quick = (_mode == "quick")
@@ -715,6 +734,7 @@ def run_agent(
         output += "\n\n"
 
     # ── Phase 3a: Orchestrator writes execution plan ──
+    # Build plan messages early so we can parallelize with court
     total_llm_calls = 1
     _execution_plan: list[dict] = []
     _execution_progress: list[str] = []
@@ -916,8 +936,8 @@ def run_agent(
     # ── Phase 3b: Goal-pursuit loop ──
     # Route recalculation: wrong turn → silently recalculates new route from current position
     # No retries, no skipping — just instant re-route from where you are.
-    _GOAL_PURSUIT_MAX_ATTEMPTS = 3  # Max full from-scratch re-plans
-    _MAX_RECALCULATES = 3           # Max micro re-routes per pursuit (was 5 — stop wasting time)
+    _GOAL_PURSUIT_MAX_ATTEMPTS = 2  # Max full from-scratch re-plans (was 3)
+    _MAX_RECALCULATES = 2           # Max micro re-routes per pursuit (was 3)
     steps_completed = 0
     _delegation_results: list[str] = []
     _synthesis_results: list[str] = []  # Successful step results for final synthesis

@@ -1245,9 +1245,9 @@ class BaseConnector(ABC):
                         set_context_window(_model_id, _cw, _usage_pct)
                     except Exception:
                         pass
-                    # Lazy summarization: only at 85% AND when next message would exceed
+                    # Lazy summarization: trigger earlier at 50% to keep context lean
                     _next_estimate = _estimated_tokens + (len(prompt) * 0.25) if prompt else 0
-                    if _usage_pct > 85 or (_next_estimate / _cw) > 0.92:
+                    if _usage_pct > 50 or (_next_estimate / _cw) > 0.60:
                         logger.info(f"[Context] {_usage_pct:.0f}% full — auto-summarizing...")
                         # Generate summary via direct LLM call (bypass run_agent to avoid recursion)
                         _summary = "[Conversation auto-compressed]"
