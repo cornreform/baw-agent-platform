@@ -668,6 +668,8 @@ def run_agent(
         f"[ORCHESTRATOR] Goal: {prompt}\n\n"
         f"Write a step-by-step execution plan.\n"
         f"Each step must be SMALL (max 1-2 tool calls).\n"
+        f"MUST have at LEAST 2 steps — break complex tasks into sub-steps.\n"
+        f"If the task is trivial (1 tool call), mark it as [TRIVIAL].\n"
         f"Describe each step in human language — "
         f"NOT raw commands.\n"
         f"Format each step as:\n"

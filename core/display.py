@@ -47,7 +47,10 @@ def phase_plan(steps: list[dict]) -> str:
 
 def phase_step_done(current: int, total: int, desc: str, result: str = "") -> str:
     short = _shorten(desc, 50)
-    line = f"  ✅ Step {current}/{total}: {short}"
+    if total <= 1:
+        line = f"  ✅ {short}"
+    else:
+        line = f"  ✅ Step {current}/{total}: {short}"
     if result:
         line += f" — {result[:60]}"
     return line
