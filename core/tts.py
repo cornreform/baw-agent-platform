@@ -11,7 +11,7 @@ from typing import Optional
 logger = logging.getLogger("baw.tts")
 
 MINIMAX_T2A_URL = "https://api.minimax.io/v1/t2a_v2"
-DEFAULT_VOICE = "male-tone-1"
+DEFAULT_VOICE = "Cantonese_GentleLady"
 DEFAULT_MODEL = "speech-2.8-hd"
 
 # Map language_boost values for MiniMax TTS
