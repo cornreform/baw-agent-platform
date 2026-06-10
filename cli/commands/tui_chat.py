@@ -116,14 +116,25 @@ def _exec_read_file(path: str) -> str:
     except Exception as e:
         return json.dumps({"error": str(e)})
 
+def _exec_write_file(path: str, content: str) -> str:
+    try:
+        p = Path(path).expanduser().resolve()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+        return json.dumps({"ok": True, "path": str(p)})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
 TOOLS = [
     {"type": "function", "function": {"name": "web_search", "description": "Search the web", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
     {"type": "function", "function": {"name": "read_file", "description": "Read a file", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "write_file", "description": "Write content to a file", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}},
 ]
 
 TOOL_EXEC = {
     "web_search": lambda a: _exec_web_search(a.get("query", "")),
     "read_file": lambda a: _exec_read_file(a.get("path", "")),
+    "write_file": lambda a: _exec_write_file(a.get("path", ""), a.get("content", "")),
 }
 
 
@@ -328,6 +339,7 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
 
         for turn in range(MAX_TURNS):
             text = ""
+            reasoning = ""  # DeepSeek reasoning_content
             tool_calls = []
             usage = None
 
@@ -352,6 +364,9 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if delta is None:
                         continue
+                    # DeepSeek reasoning_content (not displayed, but must pass back)
+                    if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        reasoning += delta.reasoning_content
                     if delta.content:
                         text += delta.content
                     if delta.tool_calls:
@@ -377,10 +392,17 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
                     usage_total[k] = usage_total.get(k, 0) + usage.get(k, 0)
 
             if text and not tool_calls:
+                # Include reasoning_content for DeepSeek pass-back
+                assistant_msg = {"role": "assistant", "content": text.strip()}
+                if reasoning:
+                    assistant_msg["reasoning_content"] = reasoning
                 return text.strip(), usage_total
 
             if tool_calls:
-                self._messages.append({"role": "assistant", "content": text or None, "tool_calls": tool_calls})
+                assistant_msg = {"role": "assistant", "content": text or None, "tool_calls": tool_calls}
+                if reasoning:
+                    assistant_msg["reasoning_content"] = reasoning
+                self._messages.append(assistant_msg)
                 for tc in tool_calls:
                     fn = tc["function"]["name"]
                     try:
@@ -413,15 +435,34 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
 
         if v == "/help":
             t = Table(box=box.SIMPLE, border_style="magenta", show_header=False)
-            t.add_column("cmd", style="bold magenta", width=14)
+            t.add_column("cmd", style="bold magenta", width=18)
             t.add_column("desc", style="dim")
             for c, d in [
-                ("/help", "Show help"), ("/model NAME", "Switch model"),
-                ("/tone NAME", "Switch tone"), ("/clear", "Reset chat"),
+                ("/help", "Show all commands"),
+                ("/model <id>", "Switch model"),
+                ("/model", "List available models"),
+                ("/tone <name>", "Switch tone"),
+                ("/tone", "List tone profiles"),
+                ("/status", "Show session + token stats"),
+                ("/clear", "Reset chat"),
                 ("/exit", "Quit"),
             ]:
                 t.add_row(c, d)
             log.write(t)
+            return
+
+        if v == "/status":
+            tok = self._total_usage
+            pct = tok["total_tokens"] / self._ctx_max * 100 if self._ctx_max else 0
+            log.write(
+                f"[dim]Model:[/] [magenta]{self._model_id}[/] [dim]({self._pname})[/]\n"
+                f"[dim]Tokens:[/] [yellow]{_human_tokens(tok['prompt_tokens'])}↑/{_human_tokens(tok['completion_tokens'])}↓[/] "
+                f"({_human_tokens(tok['total_tokens'])}/{_human_tokens(self._ctx_max)}, {pct:.0f}%)\n"
+                f"[dim]Tone:[/] [yellow]{self._tone}[/]  "
+                f"[dim]fc:[/] [{self._fc_color()}]{self._fc}[/]  "
+                f"[dim]Tools:[/] {'[green]enabled[/]' if self._tools_supported else '[dim]disabled[/]'}\n"
+                f"[dim]Messages:[/] {len(self._messages)} in context"
+            )
             return
 
         if v == "/model" and len(parts) > 1:
