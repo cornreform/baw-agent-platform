@@ -178,7 +178,19 @@ COMMANDS: dict[str, dict] = {
         "example": "baw restart",
         "category": "system",
         "aliases": ["reboot"],
-        "usage": "baw restart",
+        "usage": "baw restart [--force]",
+    },
+    "rebuild": {
+        "short": "🔨  Fast rebuild + restart (cached layers)",
+        "long": (
+            "Rebuild BAW Docker image with layer caching and restart.\n"
+            "Add --no-cache to force full rebuild. ~7s normal, ~45s full.\n"
+            "Also available as host-side: baw-rebuild [--up]"
+        ),
+        "example": "baw rebuild",
+        "category": "system",
+        "aliases": ["rb"],
+        "usage": "baw rebuild [--no-cache] [--no-up]",
     },
 }
 
@@ -363,6 +375,11 @@ def main():
             from cli.commands.restart import cmd_restart
             force = "--force" in args if args else False
             cmd_restart(force=force)
+        elif canonical == "rebuild":
+            from cli.commands.rebuild import cmd_rebuild
+            no_cache = "--no-cache" in args if args else False
+            up = "--no-up" not in args if args else True
+            cmd_rebuild(no_cache=no_cache, up=up)
         elif canonical == "skill":
             from cli.commands.skill_cmd import cmd_skill
             cmd_skill(subcommand, args)
