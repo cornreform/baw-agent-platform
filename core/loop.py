@@ -747,6 +747,7 @@ def run_agent(
     _delegation_results: list[str] = []
     _synthesis_results: list[str] = []  # Successful step results for final synthesis
     _goal_achieved = False
+    _permanent_skip: set[int] = set()  # step positions that failed across pursuits → never retry
 
     for _pursuit in range(1, _GOAL_PURSUIT_MAX_ATTEMPTS + 1):
         if verbose:
@@ -799,6 +800,15 @@ def run_agent(
         _position_fails = {}    # {step_idx: count} — skip ANY step at this position after 3 fails
 
         while _step_idx < len(_execution_plan) and not _pursuit_failed:
+            # Cross-pursuit permanent skip
+            if _step_idx in _permanent_skip:
+                _step = _execution_plan[_step_idx]
+                if verbose:
+                    print(f"  ⏭️ Step {_step_idx+1} permanently skipped (failed in previous pursuit)")
+                _synthesis_results.append(f"[SKIPPED-PERM] {_step['desc'][:80]}")
+                _step_idx += 1
+                continue
+
             _step = _execution_plan[_step_idx]
             _step_goal = _step['desc']
 
@@ -880,10 +890,11 @@ def run_agent(
                 _same_step_fails[_same_key] = _same_step_fails.get(_same_key, 0) + 1
                 _position_fails[_step_idx] = _position_fails.get(_step_idx, 0) + 1
 
-                # Position-based: if position 0 (step 1) fails 3+ times → skip ANYTHING here
+                # Position-based: if position fails 3+ times → skip ANYTHING here + ban across pursuits
                 if _position_fails.get(_step_idx, 0) >= 3:
+                    _permanent_skip.add(_step_idx)  # ban this position for all future pursuits
                     if verbose:
-                        print(f"  ⏭️ Step {_step_idx+1} position stuck after {_position_fails[_step_idx]} attempts — skipping")
+                        print(f"  ⏭️ Step {_step_idx+1} position stuck after {_position_fails[_step_idx]} attempts — skipping permanently")
                     _synthesis_results.append(f"[SKIPPED-POS] {_step_desc_short}")
                     _dsp = f"  ⏭️ Skipped Step {_step_idx+1}: {_step_desc_short}"
                     _display_log.append(_dsp)
