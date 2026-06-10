@@ -2,6 +2,7 @@
 
 Shows: plan once upfront → step progress → errors if any.
 No full reasoning dump — each step is one short line.
+Hierarchical step labels: Step A ½, Step B ¼, etc.
 """
 
 from __future__ import annotations
@@ -11,18 +12,14 @@ from __future__ import annotations
 
 def _shorten(desc: str, max_len: int = 80) -> str:
     """Shorten a step description: strip tool/outcome, keep human language."""
-    # Strip detailed tool info after ' — '
     for sep in (" — ", "—", " - "):
         if sep in desc:
             desc = desc.split(sep)[0].strip()
-    # Cut at natural sentence boundary if still too long
     if len(desc) > max_len:
-        # Try cutting at last full stop before limit
         cutoff = desc[:max_len].rfind("。")
         if cutoff > max_len // 2:
             desc = desc[:cutoff+1]
         else:
-            # Or last comma
             cutoff = desc[:max_len].rfind("，")
             if cutoff > max_len // 2:
                 desc = desc[:cutoff+1]
@@ -31,61 +28,72 @@ def _shorten(desc: str, max_len: int = 80) -> str:
     return desc
 
 
-# ── Plan: show once at start, compact ──
+# ── Plan: show once at start, grouped with headers ──
 
 def phase_plan(steps: list[dict]) -> str:
-    """Compact plan: each step on its own line."""
+    """Compact plan: grouped by letter with headers and sub-step counts."""
     if not steps:
         return ""
     lines = ["  📋 Plan:"]
+    _last_group = ""
     for s in steps:
-        lines.append(f"    {s['num']}. {_shorten(s['desc'], 50)}")
+        _g = s.get("group", "A")
+        _gn = s.get("group_name", "")
+        _si = s.get("step_in_group", 0)
+        _gt = s.get("group_total", 0)
+        if _g != _last_group:
+            _last_group = _g
+            _header = f"  ## Group {_g}"
+            if _gn:
+                _header += f" — {_gn}"
+            _header += f" ({_gt} step{'s' if _gt != 1 else ''})"
+            lines.append(_header)
+        lines.append(f"    {_g}-{_si}: {_shorten(s['desc'], 50)}")
     return "\n".join(lines) + "\n"
 
 
-# ── Step progress: concise per-step line ──
+# ── Step progress: hierarchical labels ──
 
-def phase_step_done(current: int, total: int, desc: str, result: str = "") -> str:
+def _step_label(group: str, step_in_group: int, group_total: int) -> str:
+    """Format as 'A ½', 'B ¼', etc."""
+    return f"{group} {step_in_group}/{group_total}"
+
+
+def phase_step_done(group: str, step_in_group: int, group_total: int,
+                    desc: str, result: str = "") -> str:
     short = _shorten(desc, 50)
-    if total <= 1:
-        line = f"  ✅ {short}"
-    else:
-        line = f"  ✅ Step {current}/{total}: {short}"
+    label = _step_label(group, step_in_group, group_total)
+    line = f"  ✅ Step {label}: {short}"
     if result:
         line += f" — {result[:60]}"
     return line
 
 
-def phase_step_running(current: int, total: int, desc: str) -> str:
+def phase_step_running(group: str, step_in_group: int, group_total: int,
+                       desc: str) -> str:
     short = _shorten(desc, 50)
-    return f"  ▶️  Step {current}/{total}: {short}"
+    label = _step_label(group, step_in_group, group_total)
+    return f"  ▶️  Step {label}: {short}"
 
 
-def phase_step_skip(current: int, total: int, desc: str, reason: str = "") -> str:
+def phase_step_skip(group: str, step_in_group: int, group_total: int,
+                    desc: str, reason: str = "") -> str:
     short = _shorten(desc, 50)
-    line = f"  ⏭️  Step {current}/{total}: {short}"
+    label = _step_label(group, step_in_group, group_total)
+    line = f"  ⏭️  Step {label}: {short}"
     if reason:
         line += f" — {reason[:60]}"
     return line
 
 
-def phase_step_error(current: int, total: int, desc: str, resolution: str = "") -> str:
+def phase_step_error(group: str, step_in_group: int, group_total: int,
+                     desc: str, resolution: str = "") -> str:
     short = _shorten(desc, 50)
-    line = f"  ⚠️  Step {current}/{total}: {short}"
+    label = _step_label(group, step_in_group, group_total)
+    line = f"  ⚠️  Step {label}: {short}"
     if resolution:
         line += f"\n    → {resolution[:80]}"
     return line
-
-
-# ── Strategy recovery / error ──
-
-def strategy_recovery(strategies: list[str], resolution: str = "") -> str:
-    if not strategies:
-        return ""
-    lines = ["  🔄 Issue detected — trying next approach"]
-    if resolution:
-        lines.append(f"    → {resolution[:80]}")
-    return "\n".join(lines)
 
 
 # ── Done banner ──
