@@ -1345,7 +1345,10 @@ class BaseConnector(ABC):
                         s = meta.get("step", "")
                         t = meta.get("total", "")
                         g = meta.get("goal", "")[:50]  # keep short for inline
-                        _progress_lines.append(f"  ✅ Step {s}/{t}: {g}")
+                        if t and int(t) <= 1:
+                            _progress_lines.append(f"  ✅ {g}")
+                        else:
+                            _progress_lines.append(f"  ✅ Step {s}/{t}: {g}")
                         # Keep last 6 lines only for inline editing
                         _lines = _progress_lines[-6:]
                         if len(_progress_lines) > 6:
