@@ -154,7 +154,12 @@ class BAWDashboard(App):
         t.add_row("🕐 Updated", datetime.now().strftime("%H:%M:%S"))
 
         log.clear()
-        log.write(Panel(t, title="[bold yellow]⚙ System[/]", border_style="magenta"))
+        log.write(Panel(
+            t,
+            title="[bold yellow]⚙ System[/]",
+            border_style="magenta",
+            subtitle="[dim]Container runtime health — refreshes every 5s[/]"
+        ))
 
     # ── Panel: Models ────────────────────────────────────────────────
 
@@ -191,7 +196,7 @@ class BAWDashboard(App):
             t,
             title="[bold yellow]🤖 Models[/]",
             border_style="magenta",
-            subtitle="  ".join(routes) if routes else None,
+            subtitle="[dim]★ = default model · capability routing below[/]" if routes else "[dim]All configured AI models[/]",
         ))
 
     # ── Panel: Connectors ────────────────────────────────────────────
@@ -223,7 +228,12 @@ class BAWDashboard(App):
             t.add_row("○", "Telegram", "[red]Not configured[/]")
 
         log.clear()
-        log.write(Panel(t, title="[bold yellow]📡 Connectors[/]", border_style="magenta"))
+        log.write(Panel(
+            t,
+            title="[bold yellow]📡 Connectors[/]",
+            border_style="magenta",
+            subtitle="[dim]Messaging platform connections[/]"
+        ))
 
     # ── Panel: Sessions ──────────────────────────────────────────────
 
@@ -247,7 +257,12 @@ class BAWDashboard(App):
             t.add_row("[dim]No sessions[/]", "", "")
 
         log.clear()
-        log.write(Panel(t, title="[bold yellow]📂 Sessions[/]", border_style="magenta"))
+        log.write(Panel(
+            t,
+            title="[bold yellow]📂 Sessions[/]",
+            border_style="magenta",
+            subtitle="[dim]Recent chat sessions — newest first[/]"
+        ))
 
     # ── Panel: Memory ─────────────────────────────────────────────────
 
@@ -279,7 +294,12 @@ class BAWDashboard(App):
             t.add_row("Status", "[dim]No memory store[/]")
 
         log.clear()
-        log.write(Panel(t, title="[bold yellow]🧠 Memory[/]", border_style="magenta"))
+        log.write(Panel(
+            t,
+            title="[bold yellow]🧠 Memory[/]",
+            border_style="magenta",
+            subtitle="[dim]Persistent memory store · score distribution[/]"
+        ))
 
     # ── Panel: Activity ──────────────────────────────────────────────
 
@@ -300,6 +320,7 @@ class BAWDashboard(App):
             "\n".join(lines),
             title="[bold yellow]📜 Activity[/]",
             border_style="magenta",
+            subtitle="[dim]Last 12 log lines[/]",
         ))
 
 
