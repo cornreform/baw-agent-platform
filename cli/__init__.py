@@ -1,37 +1,27 @@
-"""
-BAW CLI — Beautiful terminal interface for BAW Agent Platform.
-Powered by Rich for gorgeous terminal output.
-"""
+"""baw CLI — shared console with BAW Purple+Gold theme."""
 from rich.console import Console
 from rich.theme import Theme
 
-# ── BAW Color Theme ──
 BAW_THEME = Theme({
-    "baw.primary": "cyan",
-    "baw.success": "green",
-    "baw.warning": "yellow",
-    "baw.error": "red bold",
-    "baw.muted": "dim",
-    "baw.accent": "magenta",
-    "baw.highlight": "bright_cyan",
-    "baw.logo": "bold cyan",
-    "baw.heading": "bold white",
-    "baw.border": "cyan",
-    "baw.key": "bright_blue",
-    "baw.value": "white",
-    "baw.number": "bright_green",
+    "baw.brand": "bold #c77dff",
+    "baw.gold": "bold #f0c040",
+    "baw.purple": "#9b5de5",
+    "baw.accent": "#7b2d8e",
+    "baw.muted": "#8b949e",
+    "baw.section": "bold #c77dff",
+    "baw.dim": "dim #6e7681",
+    "baw.success": "bold #3fb950",
+    "baw.warning": "bold #d29922",
+    "baw.error": "bold #f85149",
+    "baw.highlight": "bold #f0c040",
+    "baw.cmd": "bold #c77dff",
+    "baw.desc": "#e6edf3",
+    "baw.key": "bold #f0c040",
+    "baw.val": "#e6edf3",
+    "baw.header": "bold #c77dff on #1a1025",
+    "panel.border": "#7b2d8e",
+    "table.border": "#7b2d8e",
+    "table.header": "bold #f0c040",
 })
 
 console = Console(theme=BAW_THEME)
-
-BAW_LOGO = r"""
-[bold cyan]
- ██████╗  █████╗ ██╗    ██╗
- ██╔══██╗██╔══██╗██║    ██║
- ██████╔╝███████║██║ █╗ ██║
- ██╔══██╗██╔══██║██║███╗██║
- ██████╔╝██║  ██║╚███╔███╔╝
- ╚═════╝ ╚═╝  ╚═╝ ╚══╝╚══╝
-[/bold cyan]
-[dim]Black And White — Agent Platform[/dim]
-"""
