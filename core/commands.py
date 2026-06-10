@@ -137,6 +137,8 @@ _HELP_COMMANDS: list[dict] = [
     {"cat": "💬 Core", "cmd": "/rethink, /rt [prompt]", "desc": "Re-run last prompt, force alternative view"},
     {"cat": "💬 Core", "cmd": "/court, /ct", "desc": "Show last Angel/Devil court verdict"},
     {"cat": "💬 Core", "cmd": "/clear, /c", "desc": "Clear screen (CLI only)"},
+    {"cat": "💬 Core", "cmd": "/new", "desc": "Save current + start fresh session"},
+    {"cat": "💬 Core", "cmd": "/reset", "desc": "Hard reset — clear session without saving"},
 
     {"cat": "📋 Sessions", "cmd": "/task new [name]", "desc": "Save current + start fresh session"},
     {"cat": "📋 Sessions", "cmd": "/task list, /list", "desc": "List saved sessions"},
