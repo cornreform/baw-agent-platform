@@ -309,6 +309,16 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
 
         self.query_one("#msg-input", Input).focus()
 
+    def _clean_messages(self) -> list[dict]:
+        """Return messages array safe for the current provider.
+        Strips tool-related messages if provider doesn't support tools."""
+        msgs = self._messages
+        if not self._tools_supported:
+            # Strip assistant messages with tool_calls and all tool role messages
+            msgs = [m for m in msgs if m.get("role") != "tool"
+                    and not (m.get("role") == "assistant" and "tool_calls" in m)]
+        return msgs
+
     async def _run_agent(self, log: RichLog) -> tuple[str | None, dict | None]:
         """Agent loop with streaming + tool calling."""
         MAX_TURNS = 5
@@ -321,9 +331,10 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
             tool_calls = []
             usage = None
 
+            clean_msgs = self._clean_messages()
             kwargs = dict(
                 model=self._model_id,
-                messages=self._messages,
+                messages=clean_msgs,
                 stream=True,
                 stream_options={"include_usage": True},
             )
