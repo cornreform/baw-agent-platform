@@ -116,6 +116,8 @@ class TelegramConnector(BaseConnector):
             {"command": "board",   "description": "Generate HTML dashboard"},
             {"command": "task",    "description": "Session: new/list/resume/save/forget/info"},
             {"command": "list",    "description": "List saved sessions (alias for /task list)"},
+            {"command": "new",     "description": "Save current + start fresh session"},
+            {"command": "reset",   "description": "Hard reset — clear session without saving"},
             {"command": "resume",  "description": "Resume a saved session"},
             {"command": "summarize", "description": "LLM summary of current session"},
             {"command": "pickup",  "description": "Resume last interrupted session"},
