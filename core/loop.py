@@ -260,7 +260,17 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- The MEDIA: tag is stripped from text and the file is sent as a native Telegram attachment.\n"
             f"- Use this for TTS audio, generated images, screenshots, or any file the user asked to receive.\n"
             f"- Always include MEDIA: tags AFTER your text message, one per line.\n"
-            f"- NEVER say 'I can't send files' — you CAN, use MEDIA: tags."
+            f"- NEVER say 'I can't send files' — you CAN, use MEDIA: tags.\n"
+            f"\n## TTS / Voice generation\n"
+            f"- Use the `tts` tool for generating Cantonese text-to-speech audio.\n"
+            f"- Cantonese female voices available (use `tts_list_voices` or pick from this list):\n"
+            f"  female-shaonv, female-shaofan, female-guangdong, female-tone-1, female-tone-2,\n"
+            f"  female-cantonese-1, female-cantonese-2,\n"
+            f"  Chinese (Mandarin)_Sweet_Lady, Chinese (Mandarin)_Warm_Girl,\n"
+            f"  Chinese (Mandarin)_Soft_Girl, Chinese (Mandarin)_Crisp_Girl\n"
+            f"- To generate: tts(text=\"你好...\", voice=\"female-shaonv\")\n"
+            f"- ALWAYS include MEDIA: tag after generating audio to send it to the user.\n"
+            f"- For voice selection tasks: generate one sample per voice, send each via MEDIA."
         )
 
     return system_prompt
