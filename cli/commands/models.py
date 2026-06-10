@@ -8,7 +8,7 @@ from cli import console
 BAW_HOME = Path.home() / ".baw"
 
 
-def cmd_models(subcommand: str | None, args: list[str]):
+def cmd_models(subcommand: str | None = None, args: list[str] | None = None):
     if subcommand is None or subcommand == "list":
         _models_list()
     else:

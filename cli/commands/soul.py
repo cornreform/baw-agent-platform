@@ -10,7 +10,7 @@ BAW_HOME = Path.home() / ".baw"
 SOUL_PATH = BAW_HOME / "SOUL.md"
 
 
-def cmd_soul(subcommand: str | None):
+def cmd_soul(subcommand: str | None = None):
     if subcommand is None or subcommand == "show":
         _soul_show()
     elif subcommand == "edit":
