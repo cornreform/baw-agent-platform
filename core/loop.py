@@ -119,6 +119,9 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
     quick_mode=True: loads only core identity, skips heavy court/tool rules.
     fresh_start=True: returns a minimal prompt with no SOUL.md or memories.
+    
+    Structure (cache-aware): [STATIC SOUL CORE] + [DYNAMIC CONFIG]
+    Static prefix stays identical across turns → DeepSeek prefix cache hit.
     """
     if fresh_start:
         return (
@@ -133,8 +136,6 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     if soul_path.exists():
         soul_text = soul_path.read_text(encoding="utf-8")
         if quick_mode:
-            # Quick mode: only identity + core philosophy (first ~600 chars)
-            # Skip court rules, tool descriptions, permission rules
             lines = soul_text.splitlines()
             trimmed = []
             for line in lines:
@@ -165,19 +166,20 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "Never ask the user what to do — figure it out yourself."
         )
 
+    # ── Static core ends here — everything below is dynamic context ──
+    # DeepSeek prefix cache: first N tokens (SOUL.md) are cacheable across turns.
+
     if not quick_mode:
-        # ── Load ORCHESTRATOR.md if exists ──
         orch_path = base_path / "ORCHESTRATOR.md"
         if orch_path.exists():
             orch_text = orch_path.read_text(encoding="utf-8")
             system_prompt += f"\n\n{orch_text}"
 
-        # Dynamic context (only for full modes)
+        # Dynamic context (per-turn: models, tools, config may change)
         tone = config.get("tone", {}).get("default", "casual")
         fact_mode = config.get("fact_check", {}).get("mode", "normal")
         tools_list = ", ".join(t.name for t in list_tools())
 
-        # Build available models summary
         available_models = []
         for pname, pdata in config.get("providers", {}).items():
             for m in pdata.get("models", []):
@@ -198,7 +200,6 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"  NEVER fabricate model names. Only use models from this list.\n"
             f"  If you need a model not in the list, you must add it to config.yaml first.\n"
             f"\n## Tool self-configuration (CRITICAL)\n"
-            f"- You have FULL autonomy to discover, register, and use ANY system CLI tool.\n"
             f"- When told to use a new tool: 'which <tool>' or 'find / -name <tool>' to locate it.\n"
             f"- Test it via 'bash' first. If useful, create a permanent wrapper:\n"
             f"  1. Read ~/baw/tools/vision.py as template\n"
