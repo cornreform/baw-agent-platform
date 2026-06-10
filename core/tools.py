@@ -64,26 +64,38 @@ def get_openai_tools() -> list[dict]:
     return result
 
 
-def execute_tool(name: str, arguments: dict) -> str:
-    """Execute a tool by name with validated arguments."""
+def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
+    """Execute a tool by name with validated arguments + timeout guard (kimi B5)."""
     tool = get_tool(name)
     if not tool:
-        return f"Error: unknown tool '{name}'"
+        from .guards import bail
+        return bail("tool_unknown", tool=name)
     import time as _t
+    import concurrent.futures
+
     _start = _t.time()
     try:
-        result = tool.handler(**arguments)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(tool.handler, **arguments)
+            result = future.result(timeout=timeout)
         _dur = _t.time() - _start
-        # Layer 1: Track successful tool call
         try:
             from .evolve import track_tool_call
             track_tool_call(name, arguments, success=True, duration=_dur)
         except Exception:
             pass
         return str(result)
+    except concurrent.futures.TimeoutError:
+        _dur = _t.time() - _start
+        try:
+            from .evolve import track_tool_call
+            track_tool_call(name, arguments, success=False, duration=_dur, error="timeout")
+        except Exception:
+            pass
+        from .guards import bail
+        return bail("tool_timeout", tool=name, timeout=timeout)
     except Exception as e:
         _dur = _t.time() - _start
-        # Layer 1: Track failed tool call
         try:
             from .evolve import track_tool_call
             track_tool_call(name, arguments, success=False, duration=_dur, error=str(e))

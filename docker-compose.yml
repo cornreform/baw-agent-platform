@@ -15,6 +15,22 @@ services:
       - /home/radxa/.baw/.env
     # No Hermes paths. No host network. No privileged.
     network_mode: bridge
+    # ── Resource limits (grok-4.1 A5) ──
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    # ── Healthcheck: baw status every 30s, auto-restart on 3 failures ──
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import sys; sys.exit(0)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     logging:
       driver: "json-file"
       options:

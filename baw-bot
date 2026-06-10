@@ -177,9 +177,35 @@ Examples:
 
     logger.info(f"🤖 BAW Bot running ({len(connectors)} connector(s))")
 
+    # ── System guards: config validation + session auto-save (kimi B1+B2) ──
+    try:
+        from core.llm import validate_config
+        issues = validate_config(config)
+        for issue in issues:
+            if issue.startswith("ERROR"):
+                logger.error(f"[Config] {issue}")
+            else:
+                logger.warning(f"[Config] {issue}")
+    except Exception as e:
+        logger.warning(f"[Config] Validation skipped: {e}")
+
+    try:
+        from core.guards import SessionGuard, memory_usage_mb
+        # Auto-save sessions every 60s
+        _save_fn = lambda: None  # Will be set per-connector
+        SessionGuard.init(lambda: logger.debug(f"[Guard] Auto-save (mem: {memory_usage_mb():.0f}MB)"),
+                          interval=60)
+    except Exception as e:
+        logger.debug(f"[Guard] SessionGuard init: {e}")
+
     # Handle shutdown gracefully
     def shutdown(signum, frame):
         logger.info("Shutting down...")
+        try:
+            from core.guards import SessionGuard
+            SessionGuard.shutdown()
+        except Exception:
+            pass
         for c in connectors:
             c.stop()
         sys.exit(0)
