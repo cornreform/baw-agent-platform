@@ -1,6 +1,7 @@
 """baw status — bot health + connector info."""
 import os
 import time
+import re
 from pathlib import Path
 from rich.panel import Panel
 from rich.table import Table
@@ -61,6 +62,22 @@ def _config_summary() -> dict:
     return {"model": "N/A", "providers": 0, "tone": "N/A"}
 
 
+def _masked_token() -> str:
+    """Read Telegram token from telegram.env, return masked version."""
+    telegram_env = BAW_HOME / "telegram.env"
+    if not telegram_env.exists():
+        return None
+    content = telegram_env.read_text()
+    m = re.search(r'BAW_TELEGRAM_TOKEN=(bot\d+):([A-Za-z0-9\-_]+)', content)
+    if m:
+        bot_id = m.group(1)
+        token = m.group(2)
+        if len(token) > 8:
+            return f"{bot_id}:{token[:4]}...{token[-4:]}"
+        return f"{bot_id}:***"
+    return "***"
+
+
 def cmd_status():
     console.print(BAW_LOGO)
     console.print()
@@ -87,13 +104,12 @@ def cmd_status():
     conn_table.add_column("Status", style="baw.success")
     conn_table.add_column("Token", style="baw.muted")
 
-    # Check Telegram connector
-    telegram_env = BAW_HOME / "telegram.env"
-    has_token = telegram_env.exists() and "BAW_TELEGRAM_TOKEN" in telegram_env.read_text()
+    token_display = _masked_token()
+    has_token = token_display is not None
     conn_table.add_row(
         "Telegram",
         "[baw.success]✓ Connected[/baw.success]" if has_token else "[baw.error]✗ No token[/baw.error]",
-        "bot881955...npk" if has_token else "N/A",
+        token_display or "N/A",
     )
 
     console.print(Panel(conn_table, title="📡 Connectors", border_style="baw.border"))
