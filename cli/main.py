@@ -155,6 +155,20 @@ COMMANDS: dict[str, dict] = {
         "aliases": ["dash", "tui"],
         "usage": "baw dashboard",
     },
+    "tui-chat": {
+        "short": "💬 TUI chat with persistent status bar",
+        "long": (
+            "Full-screen Textual chat interface with persistent\n"
+            "status bar showing model, provider, token usage,\n"
+            "context window %, tone, and fact-check mode.\n"
+            "Like Hermes CLI but with BAW identity (purple+gold).\n"
+            "Supports web_search tool calling."
+        ),
+        "example": "baw tui-chat",
+        "category": "interact",
+        "aliases": ["tchat", "tc"],
+        "usage": "baw tui-chat",
+    },
     "restart": {
         "short": "🔄  Restart the BAW container",
         "long": (
@@ -328,6 +342,9 @@ def main():
         elif canonical == "dashboard":
             from cli.commands.dashboard import cmd_dashboard
             cmd_dashboard()
+        elif canonical == "tui-chat":
+            from cli.commands.tui_chat import cmd_tui_chat
+            cmd_tui_chat()
         elif canonical == "restart":
             from cli.commands.restart import cmd_restart
             cmd_restart()
