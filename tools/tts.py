@@ -23,26 +23,19 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-API_BASE = "https://api.minimaxi.com"
+API_BASE = "https://api.minimax.io"
 TTS_ENDPOINT = "/v1/t2a_v2"
 
-# Known Cantonese-compatible female voices (from MiniMax official docs)
+# Real Cantonese-compatible female voices (from MiniMax official system voice ID list)
+# Verified working with speech-2.8-hd as of 2026-06-11
 CANTONESE_FEMALE_VOICES = [
-    "female-shaonv",
-    "female-shaofan", 
-    "female-guangdong",
-    "female-tone-1",
-    "female-tone-2",
-    "female-cantonese-1",
-    "female-cantonese-2",
-    "Chinese (Mandarin)_Sweet_Lady",
-    "Chinese (Mandarin)_Warm_Girl",
-    "Chinese (Mandarin)_Soft_Girl",
-    "Chinese (Mandarin)_Crisp_Girl",
-    "Chinese (Mandarin)_IntellectualGirl",
-    "Chinese (Mandarin)_Cute_Spirit",
-    "Chinese (Mandarin)_BashfulGirl",
-    "Chinese (Mandarin)_Mature_Woman",
+    "Cantonese_GentleLady",
+    "Cantonese_CuteGirl",
+    "Cantonese_KindWoman",
+    "Arrogant_Miss",
+    "English_ConfidentWoman",
+    "English_CalmWoman",
+    "English_Soft-spokenGirl",
 ]
 
 
@@ -95,11 +88,14 @@ def tts_generate(text: str, voice: str = "female-shaonv", output_path: str = "",
         "voice_setting": {
             "voice_id": voice,
             "speed": float(speed),
+            "vol": 1.0,
+            "pitch": 0,
         },
         "audio_setting": {
             "format": "mp3",
             "sample_rate": 32000,
         },
+        "output_format": "url",
     }
 
     url = f"{API_BASE}{TTS_ENDPOINT}"
@@ -112,9 +108,16 @@ def tts_generate(text: str, voice: str = "female-shaonv", output_path: str = "",
 
     try:
         resp = urlopen(req, timeout=30)
-        audio_data = resp.read()
+        body = json.loads(resp.read().decode("utf-8"))
+        audio_url = body.get("data", {}).get("audio", "")
+        if not audio_url:
+            return f"ERROR: No audio URL in MiniMax response: {json.dumps(body, ensure_ascii=False)[:200]}"
+
+        # Download the actual audio file from the URL
+        dl = urlopen(audio_url, timeout=30)
+        audio_data = dl.read()
         if not audio_data:
-            return f"ERROR: Empty response from MiniMax TTS API (voice={voice})"
+            return f"ERROR: Empty audio download from {audio_url[:60]}..."
 
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -146,6 +149,10 @@ TOOL_DEF = {
         "Generate Cantonese text-to-speech audio using MiniMax TTS API. "
         "Use this to create audio samples for voice selection. "
         "Returns the path to the generated mp3 file. "
+        "Real Cantonese female voices: Cantonese_GentleLady (溫柔), "
+        "Cantonese_CuteGirl (可愛), Cantonese_KindWoman (親切), "
+        "Arrogant_Miss (傲嬌). English + language_boost: English_ConfidentWoman, "
+        "English_CalmWoman, English_Soft-spokenGirl. "
         "After generating, include MEDIA:/path/to/file.mp3 in your response to send it."
     ),
     "handler": tts_generate,
@@ -158,8 +165,8 @@ TOOL_DEF = {
             },
             "voice": {
                 "type": "string",
-                "description": "Voice ID. Use tts_list_voices to see available voices. Default: female-shaonv",
-                "default": "female-shaonv",
+                "description": "Voice ID. Use tts_list_voices to see available voices. Default: Cantonese_GentleLady",
+                "default": "Cantonese_GentleLady",
             },
             "output_path": {
                 "type": "string",
