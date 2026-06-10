@@ -364,6 +364,7 @@ def _run_agent(client, model_id, messages, cfg):
     for turn in range(MAX_TOOL_TURNS):
         spinner = Spinner("dots2", text=f"[baw.muted]{model_id} thinking…[/]", style="baw.muted")
         text_buffer = ""
+        reasoning_buffer = ""  # DeepSeek reasoning_content
         tool_calls_buffer: list[dict] = []
         current_tool_index = -1
         usage = None
@@ -388,6 +389,10 @@ def _run_agent(client, model_id, messages, cfg):
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if delta is None:
                         continue
+
+                    # DeepSeek reasoning_content (not displayed, but must pass back)
+                    if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        reasoning_buffer += delta.reasoning_content
 
                     # Text content
                     if delta.content:
@@ -431,18 +436,26 @@ def _run_agent(client, model_id, messages, cfg):
 
         # If text response (no tool calls) → done
         if text_buffer and not tool_calls_buffer:
+            # Append to messages with reasoning for DeepSeek pass-back
+            ass_msg = {"role": "assistant", "content": text_buffer.strip()}
+            if reasoning_buffer:
+                ass_msg["reasoning_content"] = reasoning_buffer
+            messages.append(ass_msg)
             return text_buffer.strip(), total_usage
 
         # If tool calls → execute and continue
         if tool_calls_buffer:
             tool_icons = {"web_search": "🔍", "read_file": "📄", "write_file": "✏️"}
 
-            # Add assistant message with tool calls
-            messages.append({
+            # Add assistant message with tool calls + reasoning
+            ass_msg = {
                 "role": "assistant",
                 "content": text_buffer or None,
                 "tool_calls": tool_calls_buffer,
-            })
+            }
+            if reasoning_buffer:
+                ass_msg["reasoning_content"] = reasoning_buffer
+            messages.append(ass_msg)
 
             for tc in tool_calls_buffer:
                 fn_name = tc["function"]["name"]
@@ -509,16 +522,16 @@ def _slash(cmd: str, cfg, msgs, mid_ref: list) -> str | bool | None:
 
     if v == "/help":
         t = Table(box=box.SIMPLE, border_style="baw.accent", show_header=False, pad_edge=False, expand=True)
-        t.add_column("cmd", style="baw.cmd", width=14, no_wrap=True)
+        t.add_column("cmd", style="baw.cmd", width=18, no_wrap=True)
         t.add_column("desc", style="baw.muted")
-        t.add_row("/help", "this help")
-        t.add_row("/model [name]", "switch model")
-        t.add_row("/tone [name]", "tone (casual/business/teaching/ot-rt/stepwise)")
-        t.add_row("/soul", "view SOUL.md")
-        t.add_row("/config", "view config")
-        t.add_row("/session", "session info")
-        t.add_row("/clear", "reset chat")
-        t.add_row("/exit", "quit")
+        t.add_row("/help", "This help")
+        t.add_row("/model [name]", "Switch model (/model alone lists)")
+        t.add_row("/tone [name]", "Switch tone (/tone alone lists)")
+        t.add_row("/soul", "View SOUL.md")
+        t.add_row("/config", "View config")
+        t.add_row("/session", "Session stats")
+        t.add_row("/clear", "Reset chat")
+        t.add_row("/exit", "Quit")
         plain_console.print(t)
         return True
 
@@ -660,7 +673,7 @@ Identity: BAW. Never say "Hermes" or "Sticky".
             msgs.append({"role": "user", "content": inp})
             resp, usage = _run_agent(client, mid_ref[0], msgs, cfg)
             if resp and resp.strip():
-                msgs.append({"role": "assistant", "content": resp})
+                # _run_agent already appended assistant message with reasoning
                 _print_status(cfg, mid_ref[0], usage)
             elif usage:
                 # Had usage but no text — tool calls were made, status still useful
