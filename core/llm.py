@@ -46,7 +46,7 @@ def load_config(config_path: Optional[Path] = None) -> dict:
     
     # Auto-load .env (try Hermes profile first, then BAW's own)
     for env_path in [
-        Path.home() / ".hermes" / "profiles" / "sticky" / ".env",
+
         Path.home() / ".baw" / ".env",
     ]:
         if env_path.exists():

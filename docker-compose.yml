@@ -1,0 +1,22 @@
+# BAW Bot — Docker Compose
+# Replaces systemd baw-telegram.service.
+# Fully isolated from Hermes — own Python, own env, own network namespace.
+services:
+  baw-telegram:
+    build: .
+    container_name: baw-telegram
+    restart: unless-stopped
+    # Mount BAW's persistent data (sessions, memory, vault, config)
+    volumes:
+      - /home/radxa/.baw:/home/baw/.baw
+    # Load Telegram token + API keys from BAW's own env files
+    env_file:
+      - /home/radxa/.baw/telegram.env
+      - /home/radxa/.baw/.env
+    # No Hermes paths. No host network. No privileged.
+    network_mode: bridge
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
