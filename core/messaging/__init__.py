@@ -122,8 +122,11 @@ class BaseConnector(ABC):
         # ── Process next queued message if any ──
         self._dequeue_next()
 
-    def _enqueue_message(self, chat_id: str, user_id: int, user_name: str, text: str, msg: dict) -> int:
-        """Enqueue a message for later processing. Returns queue position (1-indexed)."""
+    def _enqueue_message(self, chat_id: str, user_id: int, user_name: str, text: str, msg: dict, msg_type: str = "text") -> int:
+        """Enqueue a message for later processing. Returns queue position (1-indexed).
+
+        msg_type: 'text', 'photo', 'document', or 'voice' — determines which handler is called.
+        """
         with self._queue_lock:
             self._message_queue.append({
                 "chat_id": chat_id,
@@ -131,6 +134,7 @@ class BaseConnector(ABC):
                 "user_name": user_name,
                 "text": text,
                 "msg": msg,
+                "msg_type": msg_type,
             })
             return len(self._message_queue)
 
@@ -143,19 +147,37 @@ class BaseConnector(ABC):
 
         # Acquire the slot (should always succeed since we just released)
         if self._acquire_slot():
-            self.send(next_msg["chat_id"], "⚙️ Your queued message is now being processed...")
             self._cancel_event.clear()
             threading.Thread(
-                target=self._process_message,
-                args=(
-                    next_msg["chat_id"],
-                    next_msg["user_id"],
-                    next_msg["user_name"],
-                    next_msg["text"],
-                    next_msg["msg"],
-                ),
+                target=self._dispatch_queued,
+                args=(next_msg,),
                 daemon=True,
             ).start()
+
+    def _dispatch_queued(self, item: dict):
+        """Dispatch a queued message to the appropriate handler based on msg_type."""
+        msg_type = item.get("msg_type", "text")
+        chat_id = item["chat_id"]
+        if msg_type == "text":
+            self.send(chat_id, "⚙️ Your queued message is now being processed...")
+            self._process_message(
+                chat_id, item["user_id"], item["user_name"],
+                item["text"], item["msg"]
+            )
+        elif msg_type == "photo":
+            photo_data = max(item["msg"].get("photo", []), key=lambda p: p.get("file_size", 0))
+            self._process_image_file(chat_id, photo_data, item["msg"])
+        elif msg_type == "document":
+            self._process_document_file(chat_id, item["msg"].get("document"), item["msg"])
+        elif msg_type == "voice":
+            voice_data = item["msg"].get("audio") or item["msg"].get("voice")
+            self._process_voice_file(chat_id, voice_data, item["msg"])
+        else:
+            logger.warning(f"[Queue] Unknown msg_type '{msg_type}' — falling back to text")
+            self._process_message(
+                chat_id, item["user_id"], item["user_name"],
+                item["text"], item["msg"]
+            )
 
     def _record_batch_result(self, chat_id: str, summary: str, msg_type: str = "text"):
         """Record a concurrent task's result for batch synthesis."""

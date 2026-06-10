@@ -45,6 +45,10 @@ class TelegramConnector(BaseConnector):
         self._tts_voice = self.config.get("tts_voice", "male-tone-1")
         self._selector_msg_id: int | None = None
         self._selector_role: dict[str, str] = {}  # {chat_id: role} for 3-layer model selector
+        # ── Media group buffering ──
+        self._media_group_buffers: dict[str, dict[str, list]] = {}  # {chat_id: {group_id: [msgs]}}
+        self._media_group_timers: dict[str, threading.Timer] = {}
+        self._media_group_wait = 2.5  # seconds to wait for all media in a group
 
     def connect(self) -> bool:
         """Test connection by fetching bot info."""
@@ -455,6 +459,86 @@ class TelegramConnector(BaseConnector):
         # ── Unknown ──
         else:
             return f"[Unsupported file type: {ext}. Cannot extract content.]"
+
+    # ─────────────────────────────────────────────────────────────
+    #  Media group handling + non-text message queueing
+    # ─────────────────────────────────────────────────────────────
+
+    def _handle_media_msg(self, chat_id: str, user_id, user_name: str, msg: dict, msg_type: str):
+        """Single non-text message: acquire slot or queue (never drop)."""
+        if self._acquire_slot():
+            self._cancel_event.clear()
+            if msg_type == "photo":
+                photo_data = max(msg.get("photo", []), key=lambda p: p.get("file_size", 0))
+                threading.Thread(
+                    target=self._process_image_file,
+                    args=(chat_id, photo_data, msg),
+                    daemon=True,
+                ).start()
+            elif msg_type == "document":
+                threading.Thread(
+                    target=self._process_document_file,
+                    args=(chat_id, msg.get("document"), msg),
+                    daemon=True,
+                ).start()
+            elif msg_type == "voice":
+                voice_data = msg.get("audio") or msg.get("voice")
+                threading.Thread(
+                    target=self._process_voice_file,
+                    args=(chat_id, voice_data, msg),
+                    daemon=True,
+                ).start()
+        else:
+            pos = self._enqueue_message(chat_id, user_id, user_name, "", msg, msg_type=msg_type)
+            type_label = {"photo": "圖片", "document": "文件", "voice": "語音"}.get(msg_type, msg_type)
+            self.send(chat_id, f"⏳ {type_label}已排隊 #{pos} — 處理完當前任務後自動開始")
+
+    def _buffer_media_group(self, chat_id: str, group_id: str, msg: dict):
+        """Buffer a media group message. Start/reset a timer; when it fires, process all."""
+        if chat_id not in self._media_group_buffers:
+            self._media_group_buffers[chat_id] = {}
+        buf = self._media_group_buffers[chat_id]
+        buf.setdefault(group_id, []).append(msg)
+        count = len(buf[group_id])
+
+        # Cancel existing timer for this group, start a new one
+        timer_key = f"{chat_id}:{group_id}"
+        if timer_key in self._media_group_timers:
+            self._media_group_timers[timer_key].cancel()
+
+        timer = threading.Timer(self._media_group_wait, self._process_media_group, args=[chat_id, group_id])
+        timer.daemon = True
+        self._media_group_timers[timer_key] = timer
+        timer.start()
+
+        # Determine type label for the notification
+        is_photo = bool(msg.get("photo"))
+        label = "📸 圖片" if is_photo else "📎 檔案"
+        self.send(chat_id, f"{label} {count} 收到 — 等埋其他同組檔案...")
+
+    def _process_media_group(self, chat_id: str, group_id: str):
+        """Timer fired — all media in this group should have arrived. Queue them all."""
+        msgs = self._media_group_buffers.get(chat_id, {}).pop(group_id, [])
+        timer_key = f"{chat_id}:{group_id}"
+        self._media_group_timers.pop(timer_key, None)
+
+        if not msgs:
+            return
+
+        total = len(msgs)
+        is_photo = bool(msgs[0].get("photo"))
+        label = "📸 圖片" if is_photo else "📎 檔案"
+        self.send(chat_id, f"{label}組共 {total} 個 — 開始排隊處理...")
+
+        for msg in msgs:
+            user_id = str(msg["from"]["id"])
+            user_name = msg["from"].get("first_name", "User")
+            msg_type = "photo" if msg.get("photo") else "document"
+            self._handle_media_msg(chat_id, user_id, user_name, msg, msg_type)
+
+    # ─────────────────────────────────────────────────────────────
+    #  File processors
+    # ─────────────────────────────────────────────────────────────
 
     def _process_document_file(self, chat_id: str, doc: dict, msg: dict):
         """Download, extract, and analyze a document via BAW. Inline edit — one message."""
@@ -917,7 +1001,13 @@ class TelegramConnector(BaseConnector):
                 text = f"> {reply_from}: {reply_text[:200]}\n\n{text}"
 
         if not text:
-            # ── Non-text message — process file through BAW ──
+            # ── Non-text message — check media group FIRST ──
+            media_group_id = msg.get("media_group_id")
+            if media_group_id:
+                self._buffer_media_group(chat_id, media_group_id, msg)
+                return
+
+            # ── Single non-text message (no group) — queue if busy, else process ──
             doc = msg.get("document")
             photo = msg.get("photo")
             video = msg.get("video")
@@ -925,37 +1015,13 @@ class TelegramConnector(BaseConnector):
             voice = msg.get("voice")
 
             if doc:
-                if not self._acquire_slot():
-                    self.send(chat_id, f"⏳ 目前有 {self._max_concurrency} 個任務進行中，稍後再試。")
-                    return
-                threading.Thread(
-                    target=self._process_document_file,
-                    args=(chat_id, doc, msg),
-                    daemon=True,
-                ).start()
+                self._handle_media_msg(chat_id, user_id, user_name, msg, "document")
             elif photo:
-                if not self._acquire_slot():
-                    self.send(chat_id, f"⏳ 目前有 {self._max_concurrency} 個任務進行中，稍後再試。")
-                    return
-                # Get the largest photo size
-                photo_data = max(photo, key=lambda p: p.get("file_size", 0))
-                threading.Thread(
-                    target=self._process_image_file,
-                    args=(chat_id, photo_data, msg),
-                    daemon=True,
-                ).start()
+                self._handle_media_msg(chat_id, user_id, user_name, msg, "photo")
             elif video:
                 self.send(chat_id, "🎬 收到影片，但 BAW 暫時未支援影片處理。")
             elif audio or voice:
-                if not self._acquire_slot():
-                    self.send(chat_id, f"⏳ 目前有 {self._max_concurrency} 個任務進行中，稍後再試。")
-                    return
-                voice_data = audio or voice
-                threading.Thread(
-                    target=self._process_voice_file,
-                    args=(chat_id, voice_data, msg),
-                    daemon=True,
-                ).start()
+                self._handle_media_msg(chat_id, user_id, user_name, msg, "voice")
             # else: silent ignore for unknown types
             return
 
