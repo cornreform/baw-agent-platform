@@ -357,7 +357,7 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
                     if delta.tool_calls:
                         for tc in delta.tool_calls:
                             while len(tool_calls) <= tc.index:
-                                tool_calls.append({"id": "", "function": {"name": "", "arguments": ""}})
+                                tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
                             if tc.id:
                                 tool_calls[tc.index]["id"] = tc.id
                             if tc.function:
