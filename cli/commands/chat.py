@@ -1,5 +1,5 @@
-"""baw chat — interactive chat REPL with BAW identity.
-Purple+Gold theme. Rich live-streaming. Slash commands.
+"""baw chat — interactive chat REPL. Multi-layered welcome, BAW Purple+Gold identity.
+Streaming replies via DeepSeek API. Supports slash commands (/help /model /soul etc).
 """
 from __future__ import annotations
 import json, os, readline, shutil, sys, uuid
@@ -19,6 +19,8 @@ from rich.theme import Theme
 from rich.rule import Rule
 
 from cli import console, BAW_THEME
+# Secondary console for user input (avoids Rich markup collision)
+plain_console = Console(theme=BAW_THEME, highlight=False)
 
 BAW_HOME = Path.home() / ".baw"
 BAW_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -129,22 +131,21 @@ BAW_BANNER = r"""
 def _welcome(cfg):
     model = cfg.get("model", {}).get("default", "?")
     provider = cfg.get("model", {}).get("provider", "—")
-    tone = cfg.get("tone", {}).get("default", "casual")
-    fact_check = cfg.get("fact_check", {}).get("mode", "normal")
-    adversarial = cfg.get("adversarial", {}).get("enabled", False)
+    adv = cfg.get("adversarial", {})
+    tone_name = cfg.get("tone", {}).get("default", "casual")
+    tone_profiles = cfg.get("tone", {}).get("profiles", {})
+    tone_desc = tone_profiles.get(tone_name, {}).get("description", "—")
+    fc_mode = cfg.get("fact_check", {}).get("mode", "normal")
     caps = cfg.get("capabilities", {})
-    max_concurrency = cfg.get("max_concurrency", "—")
-    task_rules = cfg.get("model", {}).get("task_rules", [])
-    route_enabled = cfg.get("model", {}).get("route", {}).get("enabled", False)
 
     # 1. Banner
     for line in BAW_BANNER.splitlines():
         if line.strip():
-            console.print(Text(line, style="baw.brand", justify="center"))
-    console.print(Text("Black And White · Agent Platform", style="baw.subtitle", justify="center"))
-    console.print(Rule(style="baw.accent"))
+            plain_console.print(Text(line, style="baw.brand", justify="center"))
+    plain_console.print(Text("Black And White · Agent Platform", style="baw.subtitle", justify="center"))
+    plain_console.print(Rule(style="baw.accent"))
 
-    # 2. Mini stats bar
+    # 2. Status bar — models / sessions / memory
     stats = Table(show_header=False, box=None, padding=(0, 2), expand=True, show_edge=False)
     for _ in range(6):
         stats.add_column(width=3, justify="center")
@@ -154,108 +155,64 @@ def _welcome(cfg):
         "📂", f"[baw.gold]{_session_count()}[/]", "[baw.muted]sessions[/]",
         "🧠", f"[baw.gold]{_memory_size()}[/]", "[baw.muted]memory[/]",
     )
-    console.print(stats)
+    plain_console.print(stats)
 
-    # 3. Core info — model, provider, tone, fact-check, adversarial
+    # 3. Active model + tone + fact-check + adversarial
     info = Table(show_header=False, box=box.SIMPLE, border_style="baw.accent",
                  padding=(0, 2), expand=True)
     info.add_column(style="baw.key", width=14)
     info.add_column(style="baw.val")
-
-    # Model + provider
     info.add_row("model", f"[baw.gold]{model}[/]")
     info.add_row("provider", provider or "[baw.muted]auto[/]")
+    info.add_row("tone", f"[baw.purple]{tone_name}[/] [baw.muted]({tone_desc})[/]")
 
-    # Tone
-    tone_desc = {
-        "casual": "粵語口語，短句，emoji OK",
-        "business": "專業商業文件用詞",
-        "client-doc": "客戶面向 — 零 comment，直接 artifact",
-        "teaching": "教學文件 — 直接俾 .md",
-        "ot-rt": "快速執行 — 做完先報",
-        "stepwise": "逐步確認 — 每步報結果",
-    }.get(tone, tone)
-    info.add_row("tone", f"[baw.purple]{tone}[/] — [baw.dim]{tone_desc}[/]")
+    # Fact-check mode with color
+    fc_colors = {"strict": "red", "normal": "yellow", "relaxed": "green"}
+    fc_color = fc_colors.get(fc_mode, "white")
+    info.add_row("fact-check", f"[{fc_color}]{fc_mode}[/]")
 
-    # Fact check
-    fc_color = {"strict": "red", "normal": "yellow", "relaxed": "green"}.get(fact_check, "yellow")
-    fc_desc = {
-        "strict": "所有 factual claim 必須有 source 否則 block",
-        "normal": "盡量搵 source，冇就註明 unsourced",
-        "relaxed": "容許 common knowledge 唔使 source",
-    }.get(fact_check, fact_check)
-    info.add_row("fact-check", f"[{fc_color}]{fact_check}[/] — [baw.dim]{fc_desc}[/]")
-
-    # Adversarial
-    if adversarial:
-        adv_model = cfg.get("adversarial", {}).get("devil_model", "—")
-        info.add_row("adversarial", f"[baw.success]✓ enabled[/] — [baw.dim]devil: {adv_model}[/]")
+    # Angel / Devil (Adversarial)
+    adv_enabled = adv.get("enabled", False)
+    devil_model = adv.get("devil_model", model)
+    angel_model = model  # Angel uses default model
+    adv_status = "[green]enabled[/]" if adv_enabled else "[baw.muted]disabled[/]"
+    if adv_enabled:
+        info.add_row("😇 Angel", f"[green]{angel_model}[/]")
+        info.add_row("👿 Devil", f"[red]{devil_model}[/]")
     else:
-        info.add_row("adversarial", f"[baw.muted]✗ disabled[/]")
+        info.add_row("adversarial", adv_status)
 
-    # Concurrency
-    info.add_row("concurrency", f"[baw.purple]{max_concurrency}[/] [baw.dim]max parallel tasks[/]")
+    plain_console.print(info)
+    plain_console.print()
 
-    console.print(info)
-    console.print()
-
-    # 4. Capability routing matrix
-    route_table = Table(show_header=False, box=None, padding=(0, 1), expand=True, show_edge=False)
-    items = []
-    for cap in ("chat", "vision", "tts", "stt", "image_generation", "browser", "delegate_task"):
+    # 4. Capability routing
+    cap_table = Table(show_header=False, box=None, padding=(0, 1), expand=True, show_edge=False)
+    cap_table.add_column(style="baw.purple", width=16)
+    cap_table.add_column(style="baw.gold")
+    cap_table.add_column(style="baw.purple", width=16)
+    cap_table.add_column(style="baw.gold")
+    cap_items = []
+    for cap in ("chat", "vision", "tts", "stt", "image_generation", "browser"):
         cap_cfg = caps.get(cap, {})
         m = cap_cfg.get("model", "") if isinstance(cap_cfg, dict) else ""
         method = cap_cfg.get("method", "") if isinstance(cap_cfg, dict) else ""
-        target = m or method
-        if target:
-            items.append(f"[baw.key]{cap}[/] [baw.dim]→[/] [baw.val]{target}[/]")
+        label = m or method or "[baw.muted]—[/]"
+        if label:
+            cap_items.append((cap, label))
+    # Split into 2 columns
+    for i in range(0, len(cap_items), 2):
+        row = []
+        for j in range(2):
+            if i + j < len(cap_items):
+                row.append(cap_items[i + j][0])
+                row.append(cap_items[i + j][1])
+            else:
+                row += ["", ""]
+        cap_table.add_row(*row)
+    plain_console.print(Panel(cap_table, title="⚡ Capability Routing",
+                              border_style="baw.accent", title_align="left"))
 
-    # Layout in 3 columns
-    while len(items) % 3 != 0:
-        items.append("")
-    for i in range(0, len(items), 3):
-        cols = []
-        for j in range(3):
-            if i + j < len(items):
-                cols.append(items[i + j])
-        for _ in range(3 - len(cols)):
-            cols.append("")
-    # Use a simple table for capability matrix
-    cap_t = Table(show_header=False, box=None, padding=(0, 2), expand=True, show_edge=False)
-    cap_t.add_column(style="baw.purple", width=24)
-    cap_t.add_column(style="baw.muted", width=24)
-    cap_t.add_column(style="baw.purple", width=24)
-    for i in range(0, len(items), 3):
-        row = items[i:i+3]
-        while len(row) < 3:
-            row.append("")
-        cap_t.add_row(*row)
-
-    console.print(Panel(cap_t, title="⚡  Capability Routing", border_style="baw.accent", title_align="left"))
-
-    # 5. Task routing (if configured)
-    if task_rules or route_enabled:
-        route_info = []
-        if route_enabled:
-            rcfg = cfg.get("model", {}).get("route", {})
-            short_m = rcfg.get("short_model", "—")
-            long_m = rcfg.get("long_model", "—")
-            threshold = rcfg.get("threshold_tokens", "—")
-            route_info.append(f"[baw.key]auto-route[/] [baw.dim]→ short: {short_m}, long: {long_m} (>{threshold} tokens)[/]")
-        for rule in task_rules:
-            match = rule.get("match", "?")
-            m = rule.get("model", "?")
-            route_info.append(f"[baw.key]task[/] [baw.dim]'{match}' →[/] [baw.val]{m}[/]")
-        if route_info:
-            console.print()
-            console.print(Panel(
-                "\n".join(route_info),
-                title="🎯  Task Routing Rules",
-                border_style="baw.accent",
-                title_align="left",
-            ))
-
-    # 6. Slash commands
+    # 5. Slash commands
     cmds = Table(show_header=False, box=None, padding=(0, 1), expand=True, show_edge=False)
     cmds.add_column(style="baw.cmd", width=14, no_wrap=True)
     cmds.add_column(style="baw.muted")
@@ -263,24 +220,19 @@ def _welcome(cfg):
     cmds.add_column(style="baw.muted")
     cmds.add_column(style="baw.cmd", width=14, no_wrap=True)
     cmds.add_column(style="baw.muted")
-    cmds.add_row(
-        "/help", "show help", "/model", "switch model", "/soul", "view SOUL",
-    )
-    cmds.add_row(
-        "/config", "view config", "/session", "session info", "/clear", "reset chat",
-    )
-    cmds.add_row(
-        "/exit", "quit", "", "", "", "",
-    )
-    console.print(Panel(cmds, title="⌨  Commands", border_style="baw.accent", title_align="left"))
+    cmds.add_row("/help", "show help", "/model", "switch model", "/soul", "view SOUL")
+    cmds.add_row("/config", "view config", "/session", "session info", "/clear", "reset chat")
+    cmds.add_row("/exit", "quit", "", "", "", "")
+    plain_console.print(Panel(cmds, title="⌨  Commands", border_style="baw.accent", title_align="left"))
 
-    # 7. Recent sessions
+    # 6. Recent sessions
     rt = _recent_sessions_table(5)
     if rt:
-        console.print()
-        console.print(Panel(rt, title="📂 Recent Sessions", border_style="baw.accent", title_align="left"))
+        plain_console.print()
+        plain_console.print(Panel(rt, title="📂 Recent Sessions",
+                                  border_style="baw.accent", title_align="left"))
 
-    console.print(Rule(style="baw.accent"))
+    plain_console.print(Rule(style="baw.accent"))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -291,7 +243,7 @@ def _stream(client, model_id, messages):
     spinner = Spinner("dots2", text=f"[baw.muted]{model_id} thinking…[/]", style="baw.muted")
     full = ""
 
-    with Live(spinner, console=console, refresh_per_second=10, transient=True) as live:
+    with Live(spinner, console=plain_console, refresh_per_second=10, transient=True) as live:
         try:
             for chunk in client.chat.completions.create(
                 model=model_id, messages=messages, stream=True,
@@ -300,17 +252,17 @@ def _stream(client, model_id, messages):
                 if chunk.choices and chunk.choices[0].delta.content:
                     if live.is_started:
                         live.stop()
-                        console.print(Text("🖤  BAW", style="baw.gold"))
+                        plain_console.print(Text("🖤  BAW", style="baw.gold"))
                     c = chunk.choices[0].delta.content
                     full += c
-                    console.print(c, end="", style="white")
+                    plain_console.print(c, end="", style="white")
             if live.is_started:
                 live.stop()
-                console.print(Text("🖤  BAW", style="baw.gold"))
-            console.print()
+                plain_console.print(Text("🖤  BAW", style="baw.gold"))
+            plain_console.print()
         except Exception as e:
             live.stop()
-            console.print(f"\n[baw.error]✗ API error:[/] {e}")
+            plain_console.print(f"\n[baw.error]✗ API error:[/] {e}")
             return None
     return full
 
@@ -340,29 +292,29 @@ def _slash(cmd: str, cfg, msgs) -> str | bool | None:
         t.add_row("/session", "session info")
         t.add_row("/clear", "reset chat")
         t.add_row("/exit", "quit")
-        console.print(t)
+        plain_console.print(t)
         return True
 
     if v == "/model":
         if len(parts) > 1:
             cfg["model"]["default"] = parts[1]
-            console.print(f"[baw.success]✓ model → {parts[1]}[/]")
+            plain_console.print(f"[baw.success]✓ model → {parts[1]}[/]")
         else:
-            console.print(f"[baw.purple]current:[/] [baw.gold]{cfg.get('model',{}).get('default','?')}[/]")
-            console.print("[baw.muted]usage: /model <name>[/]")
+            plain_console.print(f"[baw.purple]current:[/] [baw.gold]{cfg.get('model',{}).get('default','?')}[/]")
+            plain_console.print("[baw.muted]usage: /model <name>[/]")
         return True
 
     if v in ("/soul", "/identity"):
         sp = BAW_HOME / "SOUL.md"
         content = sp.read_text() if sp.exists() else "[baw.muted]SOUL.md not found[/]"
-        console.print(Panel(content, title="🧠 SOUL.md", border_style="baw.accent",
-                            title_align="left"))
+        plain_console.print(Panel(content, title="🧠 SOUL.md", border_style="baw.accent",
+                                  title_align="left"))
         return True
 
     if v == "/session":
         sid = msgs[0].get("session_id", "N/A") if msgs else "N/A"
-        console.print(f"[baw.purple]session:[/] [baw.muted]{sid}[/]  "
-                      f"[baw.purple]msgs:[/] [baw.muted]{len(msgs)}[/]")
+        plain_console.print(f"[baw.purple]session:[/] [baw.muted]{sid}[/]  "
+                            f"[baw.purple]msgs:[/] [baw.muted]{len(msgs)}[/]")
         return True
 
     if v == "/config":
@@ -371,15 +323,15 @@ def _slash(cmd: str, cfg, msgs) -> str | bool | None:
         for pk, pv in safe.get("providers", {}).items():
             if "api_key_env" in pv:
                 pv["api_key_env"] = pv["api_key_env"] + "=***"
-        console.print(Panel(yaml.dump(safe, allow_unicode=True, default_flow_style=False),
-                            title="📄 config.yaml", border_style="baw.accent"))
+        plain_console.print(Panel(yaml.dump(safe, allow_unicode=True, default_flow_style=False),
+                                  title="📄 config.yaml", border_style="baw.accent"))
         return True
 
     return None
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Main
+# Main chat loop
 # ═══════════════════════════════════════════════════════════════════════
 
 def cmd_chat():
@@ -393,7 +345,7 @@ def cmd_chat():
     key = _key(cfg)
 
     if not key:
-        console.print("[baw.error]✗ No API key. Set it in ~/.baw/.env[/]")
+        plain_console.print("[baw.error]✗ No API key. Set it in ~/.baw/.env[/]")
         sys.exit(1)
 
     client = OpenAI(api_key=key, base_url=base)
@@ -416,11 +368,24 @@ Style:
 
     _welcome(cfg)
 
+    # Check TTY status
+    is_tty = sys.stdin.isatty()
+    if not is_tty:
+        plain_console.print("[baw.warning]⚠ stdin is not a TTY — chat may not work.[/]")
+        plain_console.print("[baw.dim]Run 'docker exec -it baw-telegram python3 -m cli.main' instead.[/]")
+
     while True:
         try:
-            inp = input("\033[35m⚡ \033[0m")
+            # Use readline for proper line editing (handles non-TTY better than plain input)
+            if is_tty:
+                inp = input("\033[35m⚡ \033[0m")
+            else:
+                sys.stdout.write("⚡ ")
+                sys.stdout.flush()
+                inp = sys.stdin.readline()
         except (EOFError, KeyboardInterrupt):
-            console.print("\n[baw.muted]👋 bye[/]")
+            plain_console.print("\n[baw.muted]👋 bye[/]")
+            _save(sid, msgs)
             break
 
         inp = inp.strip()
@@ -431,10 +396,11 @@ Style:
             r = _slash(inp, cfg, msgs)
             if r == "EXIT":
                 _save(sid, msgs)
+                plain_console.print("[baw.muted]👋 bye[/]")
                 break
             if r == "CLEAR":
                 msgs = [sysprompt]
-                console.print("[baw.muted]🧹 Cleared[/]")
+                plain_console.print("[baw.muted]🧹 Cleared[/]")
                 continue
             if r:
                 continue
@@ -443,7 +409,6 @@ Style:
         resp = _stream(client, mid, msgs)
         if resp:
             msgs.append({"role": "assistant", "content": resp})
-            console.print()
 
 
 def _save(sid, msgs):
