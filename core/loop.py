@@ -310,7 +310,8 @@ def run_agent(
                 ctx.add_user(_content)
                 _history_msg_count += 1
             elif _role == "assistant":
-                ctx.add_assistant(_content, _hmsg.get("tool_calls"))
+                ctx.add_assistant(_content, _hmsg.get("tool_calls"),
+                                  _hmsg.get("reasoning_content"))
                 _history_msg_count += 1
             elif _role == "tool":
                 ctx.add_tool_result(
@@ -380,7 +381,8 @@ def run_agent(
         q_cost = calculate_cost(model, quick_resp.input_tokens, quick_resp.output_tokens)
         session_cost += q_cost
         record_cost(f"{model.provider}/{model.id}", quick_resp.input_tokens, quick_resp.output_tokens, q_cost)
-        ctx.add_assistant(quick_resp.content, quick_resp.tool_calls)
+        ctx.add_assistant(quick_resp.content, quick_resp.tool_calls,
+                          getattr(quick_resp, 'reasoning_content', None))
 
         # Execute any tool calls
         while quick_resp.tool_calls:
@@ -420,7 +422,8 @@ def run_agent(
             q_cost = calculate_cost(model, quick_resp.input_tokens, quick_resp.output_tokens)
             session_cost += q_cost
             record_cost(f"{model.provider}/{model.id}", quick_resp.input_tokens, quick_resp.output_tokens, q_cost)
-            ctx.add_assistant(quick_resp.content, quick_resp.tool_calls)
+            ctx.add_assistant(quick_resp.content, quick_resp.tool_calls,
+                          getattr(quick_resp, 'reasoning_content', None))
 
         # Collect output
         output = ""
@@ -549,7 +552,8 @@ def run_agent(
     n_cost = calculate_cost(model, neutral_response.input_tokens, neutral_response.output_tokens)
     session_cost += n_cost
     record_cost(f"{model.provider}/{model.id}", neutral_response.input_tokens, neutral_response.output_tokens, n_cost)
-    ctx.add_assistant(neutral_response.content, neutral_response.tool_calls)
+    ctx.add_assistant(neutral_response.content, neutral_response.tool_calls,
+                      getattr(neutral_response, 'reasoning_content', None))
 
     # In non-interactive mode, strip dangling tool_calls from neutral response
     # (they won't be executed — Phase 3 uses plan+delegate instead)
@@ -593,7 +597,8 @@ def run_agent(
             n_cost = calculate_cost(model, _resp.input_tokens, _resp.output_tokens)
             session_cost += n_cost
             record_cost(f"{model.provider}/{model.id}", _resp.input_tokens, _resp.output_tokens, n_cost)
-            ctx.add_assistant(_resp.content, _resp.tool_calls)
+            ctx.add_assistant(_resp.content, _resp.tool_calls,
+                              getattr(_resp, 'reasoning_content', None))
 
         # Now return the final synthesized response
         output = ""
@@ -1016,7 +1021,8 @@ def run_agent(
         cost = calculate_cost(model, response.input_tokens, response.output_tokens)
         session_cost += cost
         record_cost(f"{model.provider}/{model.id}", response.input_tokens, response.output_tokens, cost)
-        ctx.add_assistant(response.content, response.tool_calls)
+        ctx.add_assistant(response.content, response.tool_calls,
+                          getattr(response, 'reasoning_content', None))
 
         if verbose:
             print(f"\n[LLM #{total_llm_calls}] {fb.model_used} | Synthesis complete")
