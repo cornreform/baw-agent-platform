@@ -403,7 +403,7 @@ def _run_agent(client, model_id, messages, cfg):
                         for tc in delta.tool_calls:
                             idx = tc.index
                             if idx >= len(tool_calls_buffer):
-                                tool_calls_buffer.append({"id": "", "function": {"name": "", "arguments": ""}})
+                                tool_calls_buffer.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
                             if tc.id:
                                 tool_calls_buffer[idx]["id"] = tc.id
                             if tc.function:
