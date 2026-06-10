@@ -710,9 +710,15 @@ def run_agent(
         f"If the task is trivial (1 tool call), mark it as [TRIVIAL].\n"
         f"Describe each step in human language — "
         f"NOT raw commands.\n"
-        f"Format each step as:\n"
-        f"  Step N: <description> — <tool> — <expected outcome>\n\n"
-        f"Reply with ONLY the plan, numbered 1..N."
+        f"GROUP steps into logical phases. Each phase gets a letter (A, B, C...).\n"
+        f"Format:\n"
+        f"  ## Group A — <phase name>\n"
+        f"  Step A-1: <description>\n"
+        f"  Step A-2: <description>\n"
+        f"  ## Group B — <phase name>\n"
+        f"  Step B-1: <description>\n\n"
+        f"Reply with ONLY the plan, using this grouped format.\n"
+        f"Max 5 groups. Each group: 1-5 steps."
     )
     _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": plan_prompt}]
     plan_fb = call_llm_with_fallback(
@@ -725,25 +731,79 @@ def run_agent(
     session_cost += cost
     record_cost(f"{model.provider}/{model.id}", plan_response.input_tokens, plan_response.output_tokens, cost)
 
-    # Parse plan into steps
+    # Parse plan into steps — supports grouped format (## Group A — Name, Step A-1: ...)
+    # Falls back to flat format (Step 1: ...) → auto-assign group "A"
     import re as _re
     plan_text = plan_response.content or ""
+    _current_group = "A"
+    _current_group_name = ""
+    _group_step_count: dict[str, int] = {}
+    _legacy_flat = False  # True if no group headers found → use A for all
+    
     for _line in plan_text.split("\n"):
-        _m = _re.match(r'\s*(?:Step\s*)?(\d+)[.:]\s*(.*)', _line.strip())
-        if _m:
-            _execution_plan.append({"num": int(_m.group(1)), "desc": _m.group(2)})
+        _line = _line.strip()
+        # Check for group header: ## Group A — Name
+        _gm = _re.match(r'##\s*Group\s+([A-Z])\s*[—\-]\s*(.*)', _line)
+        if _gm:
+            _current_group = _gm.group(1)
+            _current_group_name = _gm.group(2).strip()
+            _legacy_flat = False
+            _group_step_count.setdefault(_current_group, 0)
+            continue
+        # Check for grouped step: Step A-1: description
+        _sm = _re.match(r'(?:Step\s*)?([A-Z])-(\d+)[.:]\s*(.*)', _line)
+        if _sm:
+            _g = _sm.group(1)
+            _n = int(_sm.group(2))
+            _d = _sm.group(3).strip()
+            if not _legacy_flat:
+                _current_group = _g
+            _group_step_count[_current_group] = _group_step_count.get(_current_group, 0) + 1
+            _execution_plan.append({
+                "group": _current_group,
+                "step": _n,
+                "desc": _d,
+                "group_name": _current_group_name,
+            })
+            continue
+        # Fallback: flat Step N: description
+        _fm = _re.match(r'(?:Step\s*)?(\d+)[.:]\s*(.*)', _line)
+        if _fm:
+            _legacy_flat = True
+            _n = int(_fm.group(1))
+            _d = _fm.group(2).strip()
+            _group_step_count.setdefault("A", 0)
+            _group_step_count["A"] += 1
+            _execution_plan.append({
+                "group": "A",
+                "step": _n,
+                "desc": _d,
+                "group_name": "",
+            })
+    
     if not _execution_plan:
-        _execution_plan.append({"num": 1, "desc": plan_text[:200]})
+        _execution_plan.append({"group": "A", "step": 1, "desc": plan_text[:200], "group_name": ""})
+        _group_step_count["A"] = 1
+    
+    # Post-process: fill group_total, compute global_index
+    _group_sofar: dict[str, int] = {}
+    for _i, _s in enumerate(_execution_plan):
+        _g = _s["group"]
+        _s["group_total"] = _group_step_count.get(_g, 1)
+        _s["global_idx"] = _i
+        _group_sofar[_g] = _group_sofar.get(_g, 0) + 1
+        _s["step_in_group"] = _group_sofar[_g]  # ordinal: 1st, 2nd, 3rd in group
 
     if verbose:
-        print(f"\n  📋 Plan ({len(_execution_plan)} steps):")
+        print(f"\n  📋 Plan ({len(_execution_plan)} steps, {len(_group_step_count)} groups):")
         for _s in _execution_plan:
-            print(f"    {_s['num']}. {_s['desc'][:100]}")
+            _label = f"{_s['group']}-{_s['step_in_group']}/{_s['group_total']}"
+            print(f"    {_label}: {_s['desc'][:100]}")
 
     # Append plan to system prompt for context
     _plan_text_for_context = (
         "\n[Execution Plan]\n" +
-        "\n".join(f"  Step {s['num']}: {s['desc']}" for s in _execution_plan) +
+        "\n".join(f"  Step {s['group']}-{s['step_in_group']}/{s['group_total']}: {s['desc']}" for s in _execution_plan) +
         "\n\n[Progress: nothing completed yet]"
     )
     ctx.system_prompt += _plan_text_for_context
@@ -802,8 +862,9 @@ def run_agent(
                 f"Original goal: {prompt}\n\n"
                 f"Previous run failed. Here's what happened:\n{_failure_log}\n\n"
                 f"Analyse what went wrong. Write a COMPLETELY DIFFERENT plan.\n"
-                f"Format:\n"
-                f"  Step N: <description> — <tool>\n"
+                f"GROUP steps into logical phases:\n"
+                f"  ## Group A — <phase name>\n"
+                f"  Step A-1: <description>\n"
             )
             _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _plan_prompt}]
             _plan_fb = call_llm_with_fallback(config, _plan_msgs, temperature=None)
@@ -814,12 +875,38 @@ def run_agent(
             record_cost(f"{model.provider}/{model.id}", _plan_resp.input_tokens, _plan_resp.output_tokens, _cost2)
 
             _execution_plan = []
+            _rg_current = "A"
+            _rg_counts: dict[str, int] = {}
             for _line in (_plan_resp.content or "").split("\n"):
-                _m = re.match(r'\s*(?:Step\s*)?(\d+)[.:]\s*(.*)', _line.strip())
-                if _m:
-                    _execution_plan.append({"num": int(_m.group(1)), "desc": _m.group(2)})
+                _line = _line.strip()
+                _gmr = _re.match(r'##\s*Group\s+([A-Z])\s*[—\-]\s*(.*)', _line)
+                if _gmr:
+                    _rg_current = _gmr.group(1)
+                    _rg_counts.setdefault(_rg_current, 0)
+                    continue
+                _smr = _re.match(r'(?:Step\s*)?([A-Z])-(\d+)[.:]\s*(.*)', _line)
+                if _smr:
+                    _rg_current = _smr.group(1)
+                    _rg_counts[_rg_current] = _rg_counts.get(_rg_current, 0) + 1
+                    _execution_plan.append({"group": _rg_current, "step": int(_smr.group(2)),
+                                            "desc": _smr.group(3).strip(), "group_name": "",
+                                            "step_in_group": _rg_counts[_rg_current]})
+                    continue
+                _fmr = _re.match(r'(?:Step\s*)?(\d+)[.:]\s*(.*)', _line)
+                if _fmr:
+                    _rg_counts.setdefault("A", 0)
+                    _rg_counts["A"] += 1
+                    _execution_plan.append({"group": "A", "step": int(_fmr.group(1)),
+                                            "desc": _fmr.group(2).strip(), "group_name": "",
+                                            "step_in_group": _rg_counts["A"]})
             if not _execution_plan:
-                _execution_plan.append({"num": 1, "desc": (_plan_resp.content or "")[:200]})
+                _execution_plan.append({"group": "A", "step": 1, "desc": (_plan_resp.content or "")[:200],
+                                        "group_name": "", "step_in_group": 1})
+                _rg_counts["A"] = 1
+            # Post-process group_totals
+            for _s in _execution_plan:
+                _s["group_total"] = _rg_counts.get(_s["group"], 1)
+                _s["global_idx"] = 0
 
             _delegation_results = []
             _synthesis_results = []
@@ -841,18 +928,25 @@ def run_agent(
             # Cross-pursuit permanent skip
             if _step_idx in _permanent_skip:
                 _step = _execution_plan[_step_idx]
+                _g = _step.get("group", "A")
+                _si = _step.get("step_in_group", _step_idx + 1)
+                _gt = _step.get("group_total", len(_execution_plan))
                 if verbose:
-                    print(f"  ⏭️ Step {_step_idx+1} permanently skipped (failed in previous pursuit)")
+                    print(f"  ⏭️ Step {_g} {_si}/{_gt} permanently skipped (failed in previous pursuit)")
                 _synthesis_results.append(f"[SKIPPED-PERM] {_step['desc'][:80]}")
                 _step_idx += 1
                 continue
 
             _step = _execution_plan[_step_idx]
             _step_goal = _step['desc']
+            _g = _step.get("group", "A")
+            _si = _step.get("step_in_group", _step_idx + 1)
+            _gt = _step.get("group_total", len(_execution_plan))
 
             # Show step progress for all steps (including step 1)
             if progress_callback:
-                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal[:80]})
+                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal[:80],
+                                                   "group": _g, "step_in_group": _si, "group_total": _gt})
 
             _step_ctx = ""
             if _synthesis_results:
@@ -875,7 +969,7 @@ def run_agent(
 
             _step_desc_short = _step['desc'][:80]
             if verbose:
-                print(f"  🗺️ Step {_step_idx + 1}/{len(_execution_plan)}: {_step_desc_short}")
+                print(f"  🗺️ Step {_g} {_si}/{_gt}: {_step_desc_short}")
 
             try:
                 # ── Step timeout: prevent silent hangs from stuck sub-agents ──
@@ -910,7 +1004,7 @@ def run_agent(
                 _synthesis_results.append(_result)
                 steps_completed += 1
 
-                _dsp = dsp.phase_step_done(_step_idx + 1, len(_execution_plan), _step_desc_short)
+                _dsp = dsp.phase_step_done(_g, _si, _gt, _step_desc_short)
                 _display_log.append(_dsp)
                 if verbose:
                     print(_dsp)
@@ -932,9 +1026,9 @@ def run_agent(
                 if _position_fails.get(_step_idx, 0) >= 3:
                     _permanent_skip.add(_step_idx)  # ban this position for all future pursuits
                     if verbose:
-                        print(f"  ⏭️ Step {_step_idx+1} position stuck after {_position_fails[_step_idx]} attempts — skipping permanently")
+                        print(f"  ⏭️ Step {_g} {_si}/{_gt} position stuck after {_position_fails[_step_idx]} attempts — skipping permanently")
                     _synthesis_results.append(f"[SKIPPED-POS] {_step_desc_short}")
-                    _dsp = f"  ⏭️ Skipped Step {_step_idx+1}: {_step_desc_short}"
+                    _dsp = f"  ⏭️ Step {_g} {_si}/{_gt}: {_step_desc_short}"
                     _display_log.append(_dsp)
                     _step_idx += 1
                     _recalc_count = 0
@@ -944,14 +1038,14 @@ def run_agent(
                     if verbose:
                         print(f"  ⏭️ Skipping stuck step: {_step_desc_short} ({_same_step_fails[_same_key]} failures)")
                     _synthesis_results.append(f"[SKIPPED] {_step_desc_short}")
-                    _dsp = f"  ⏭️ Skipped Step {_step_idx+1}: {_step_desc_short}"
+                    _dsp = f"  ⏭️ Step {_g} {_si}/{_gt}: {_step_desc_short}"
                     _display_log.append(_dsp)
                     _step_idx += 1  # move on
                     _recalc_count = 0
                     continue  # next step
 
                 if verbose:
-                    print(f"  🚫 Step {_step_idx + 1} failed: {str(_e)[:100]}")
+                    print(f"  🚫 Step {_g} {_si}/{_gt} failed: {str(_e)[:100]}")
                     print(f"     ↻ Route recalculation...")
 
                 # ── Route recalculation: recalculate remaining route from here ──
@@ -976,8 +1070,9 @@ def run_agent(
                     f"Recalculate a NEW route from HERE to reach the destination.\n"
                     f"List ONLY the remaining steps needed (numbered from 1).\n"
                     f"Do NOT re-list already completed steps.\n"
-                    f"Format each step:\n"
-                    f"  Step N: <description> — <tool>"
+                    f"GROUP steps into logical phases:\n"
+                    f"  ## Group A — <phase name>\n"
+                    f"  Step A-1: <description>"
                 )
                 _replan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _replan_prompt}]
                 _replan_fb = call_llm_with_fallback(config, _replan_msgs, temperature=None)
@@ -988,10 +1083,39 @@ def run_agent(
                 record_cost(f"{model.provider}/{model.id}", _replan_resp.input_tokens, _replan_resp.output_tokens, _cost_r)
 
                 _new_steps = []
+                _rc_group = chr(ord('A') + len(_group_step_count))  # next unused group letter
+                _rc_step = 0
                 for _line in (_replan_resp.content or "").split("\n"):
-                    _m = re.match(r'\s*(?:Step\s*)?(\d+)[.:]\s*(.*)', _line.strip())
-                    if _m:
-                        _new_steps.append({"num": int(_m.group(1)), "desc": _m.group(2)})
+                    _line = _line.strip()
+                    # Group header
+                    _gm2 = _re.match(r'##\s*Group\s+([A-Z])\s*[—\-]\s*(.*)', _line)
+                    if _gm2:
+                        _rc_group = _gm2.group(1)
+                        _rc_step = 0
+                        continue
+                    # Grouped step
+                    _sm2 = _re.match(r'(?:Step\s*)?([A-Z])-(\d+)[.:]\s*(.*)', _line)
+                    if _sm2:
+                        _rc_group = _sm2.group(1)
+                        _rc_step += 1
+                        _new_steps.append({"group": _rc_group, "step": int(_sm2.group(2)),
+                                           "desc": _sm2.group(3).strip(), "group_name": "",
+                                           "step_in_group": _rc_step})
+                        continue
+                    # Flat fallback
+                    _fm2 = _re.match(r'(?:Step\s*)?(\d+)[.:]\s*(.*)', _line)
+                    if _fm2:
+                        _rc_step += 1
+                        _new_steps.append({"group": _rc_group, "step": int(_fm2.group(1)),
+                                           "desc": _fm2.group(2).strip(), "group_name": "",
+                                           "step_in_group": _rc_step})
+                # Post-process recalc steps: compute group_totals
+                _rc_totals: dict[str, int] = {}
+                for _ns in _new_steps:
+                    _rc_totals[_ns["group"]] = _rc_totals.get(_ns["group"], 0) + 1
+                for _ns in _new_steps:
+                    _ns["group_total"] = _rc_totals.get(_ns["group"], 1)
+                    _ns["global_idx"] = _step_idx + len(_new_steps)  # placeholder
 
                 if _new_steps:
                     # Replace remaining plan with new route (keep completed steps)
@@ -1003,7 +1127,7 @@ def run_agent(
                 else:
                     # Can't recalculate — entire pursuit iteration fails
                     _pursuit_failed = True
-                    _dsp = dsp.phase_step_error(_step_idx + 1, len(_execution_plan), _step_desc_short, str(_e)[:80])
+                    _dsp = dsp.phase_step_error(_g, _si, _gt, _step_desc_short, str(_e)[:80])
                     _display_log.append(_dsp)
                     if verbose:
                         print(f"     ❌ Can't recalculate route — re-planning from scratch")
