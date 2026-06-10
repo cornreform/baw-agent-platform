@@ -186,15 +186,23 @@ class BAWChat(App):
     context_used = reactive(0)
     context_max = reactive(65536)
 
+    def _resolve_provider(self, cfg, model_id: str):
+        """Find which provider has this model, return (pname, pinfo)."""
+        for pname, pinfo in cfg.get("providers", {}).items():
+            for m in pinfo.get("models", []):
+                if m.get("id") == model_id:
+                    return pname, pinfo
+        # fallback: first provider
+        pname = list(cfg.get("providers", {}))[:1]
+        pname = pname[0] if pname else "deepseek"
+        return pname, cfg.get("providers", {}).get(pname, {})
+
     def __init__(self):
         super().__init__()
         cfg = _cfg()
         self._cfg = cfg
         self._model_id = cfg.get("model", {}).get("default", "deepseek-v4-flash")
-        self._pname = cfg.get("model", {}).get("provider") or list(cfg.get("providers", {}))[:1]
-        if isinstance(self._pname, list):
-            self._pname = self._pname[0] if self._pname else "deepseek"
-        pinfo = cfg.get("providers", {}).get(self._pname, {})
+        self._pname, pinfo = self._resolve_provider(cfg, self._model_id)
         base = pinfo.get("base_url", "https://api.deepseek.com/v1")
         key = _key(cfg)
         self._client = OpenAI(api_key=key, base_url=base) if key else None
@@ -203,15 +211,18 @@ class BAWChat(App):
         self._ctx_max = _get_context_window(cfg, self._model_id)
         self._messages = [{"role": "system", "content": self._build_sysprompt()}]
         self._total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        # Detect if provider supports tool calling
+        self._tools_supported = self._pname.lower() not in ("minimax",)
 
     def _build_sysprompt(self) -> str:
         soul = _soul()
+        tools_note = "Tool access: web_search, read_file (max 5 tool turns per message)" if self._tools_supported else "Tool access: disabled (provider does not support function calling)"
         return f"""You are BAW — TUI chat mode on Dragon Q6A ARM64 Docker.
 
 {soul[:2000]}
 
 Current tone: {self._tone}
-Tool access: web_search, read_file (max 5 tool turns per message)
+{tools_note}
 Language: Traditional Chinese (繁體中文). Concise, action-oriented.
 Identity: BAW. Never say "Hermes" or "Sticky"."""
 
@@ -234,8 +245,9 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
         # Welcome
         log = self.query_one("#conversation", RichLog)
         log.write(Panel(
-            f"🖤  BAW ready — [magenta]{self._model_id}[/] · tone: [yellow]{self._tone}[/] · "
-            f"fc: [{self._fc_color()}] {self._fc}[/]\n"
+            f"🖤  BAW ready — [magenta]{self._model_id}[/] [dim]({self._pname})[/] · "
+            f"tone: [yellow]{self._tone}[/] · fc: [{self._fc_color()}] {self._fc}[/]\n"
+            f"Tools: {'[green]enabled[/]' if self._tools_supported else '[dim]disabled[/]'}\n"
             f"Type /help for commands, /exit to quit.",
             title="Welcome", border_style="magenta"
         ))
@@ -245,7 +257,7 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
 
     def _refresh_status(self) -> None:
         self.query_one("#status-model", Label).update(
-            f"[bold magenta]🖤  BAW[/]  [yellow]{self._model_id}[/]"
+            f"[bold magenta]🖤  BAW[/]  [yellow]{self._model_id}[/]  [dim]{self._pname}[/]"
         )
 
         tok = self._total_usage
@@ -302,19 +314,24 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
         MAX_TURNS = 5
         usage_total = {}
 
+        use_tools = self._tools_supported and TOOLS
+
         for turn in range(MAX_TURNS):
             text = ""
             tool_calls = []
             usage = None
 
+            kwargs = dict(
+                model=self._model_id,
+                messages=self._messages,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+            if use_tools:
+                kwargs["tools"] = TOOLS
+
             try:
-                for chunk in self._client.chat.completions.create(
-                    model=self._model_id,
-                    messages=self._messages,
-                    tools=TOOLS,
-                    stream=True,
-                    stream_options={"include_usage": True},
-                ):
+                for chunk in self._client.chat.completions.create(**kwargs):
                     if hasattr(chunk, "usage") and chunk.usage:
                         usage = {
                             "prompt_tokens": chunk.usage.prompt_tokens or 0,
@@ -399,8 +416,14 @@ Identity: BAW. Never say "Hermes" or "Sticky"."""
         if v == "/model" and len(parts) > 1:
             self._model_id = parts[1]
             self._cfg["model"]["default"] = parts[1]
+            self._pname, pinfo = self._resolve_provider(self._cfg, self._model_id)
             self._ctx_max = _get_context_window(self._cfg, self._model_id)
-            log.write(f"[green]✓ model → {parts[1]}[/]")
+            self._tools_supported = self._pname.lower() not in ("minimax",)
+            # Reconnect client if provider changed
+            key = _key(self._cfg)
+            base = pinfo.get("base_url", "https://api.deepseek.com/v1")
+            self._client = OpenAI(api_key=key, base_url=base) if key else None
+            log.write(f"[green]✓ model → {parts[1]} ({self._pname})[/]")
             self._refresh_status()
             return
 

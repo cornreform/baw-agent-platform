@@ -46,11 +46,23 @@ def _merge(a, b):
             r[k] = v
     return r
 
+def _resolve_provider(cfg, model_id: str):
+    """Find which provider has this model, return (pname, pinfo)."""
+    for pname, pinfo in cfg.get("providers", {}).items():
+        for m in pinfo.get("models", []):
+            if m.get("id") == model_id:
+                return pname, pinfo
+    # fallback: first provider
+    pname = list(cfg.get("providers", {}))[:1]
+    pname = pname[0] if pname else "deepseek"
+    return pname, cfg.get("providers", {}).get(pname, {})
+
 def _key(cfg):
-    pname = cfg.get("model", {}).get("provider") or list(cfg.get("providers", {}))[:1]
-    if isinstance(pname, list):
-        pname = pname[0] if pname else "deepseek"
-    pinfo = cfg.get("providers", {}).get(pname, {})
+    model_id = cfg.get("model", {}).get("default", "deepseek-v4-flash")
+    pname, pinfo = _resolve_provider(cfg, model_id)
+    return _key_for_provider(pinfo)
+
+def _key_for_provider(pinfo):
     env = pinfo.get("api_key_env", "")
     if env:
         val = os.environ.get(env)
@@ -253,7 +265,7 @@ BAW_BANNER = r"""
 
 def _welcome(cfg):
     model = cfg.get("model", {}).get("default", "?")
-    provider = cfg.get("model", {}).get("provider", "—")
+    provider, _ = _resolve_provider(cfg, model) if model != "?" else ("—", {})
     ctx = _get_context_window(cfg, model)
     adv = cfg.get("adversarial", {})
     tone_name = cfg.get("tone", {}).get("default", "casual")
@@ -578,10 +590,7 @@ def cmd_chat():
     cfg = _cfg()
     mid = cfg.get("model", {}).get("default", "deepseek-v4-flash")
     mid_ref = [mid]
-    pname = cfg.get("model", {}).get("provider") or list(cfg.get("providers", {}))[:1]
-    if isinstance(pname, list):
-        pname = pname[0] if pname else "deepseek"
-    pinfo = cfg.get("providers", {}).get(pname, {})
+    pname, pinfo = _resolve_provider(cfg, mid)
     base = pinfo.get("base_url", "https://api.deepseek.com/v1")
     key = _key(cfg)
 
