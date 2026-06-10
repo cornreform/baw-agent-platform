@@ -1314,7 +1314,7 @@ def run_agent(
         _synthesis_prompt = (
             f"[ORCHESTRATOR] Goal: {prompt[:200]}\n\n"
             f"All {_step_count} steps completed. Below are their results:\n\n"
-            + "\n---\n".join(f"Step {i+1}:\n{r[:800]}" for i, r in enumerate(_delegation_results))
+            + "\n---\n".join(f"Step {i+1}:\n{r[:2000]}" for i, r in enumerate(_delegation_results))
             + "\n\n---\n\n"
             "SYNTHESISE the results into a CONCISE CONCLUSION:\n"
             "1. Key findings from each step (1 sentence each)\n"
@@ -1325,7 +1325,8 @@ def run_agent(
             "- This is a CONCLUSION, not a verification. Don't say 'goal achieved' or 'score'. Just deliver the answer.\n"
             "- If results are thin or incomplete, say what's known honestly — don't fabricate.\n"
             "- NEVER end with a question. NEVER ask for permission. NEVER promise future action.\n"
-            "- Output format: no markdown headers, just plain paragraphs. Lead with the answer."
+            "- Output format: no markdown headers, just plain paragraphs. Lead with the answer.\n"
+            "- PRESERVE any MEDIA: or MEDIA:/path lines from sub-agent results verbatim — do not strip or summarise them."
         )
         ctx.add_user(_synthesis_prompt)
 
