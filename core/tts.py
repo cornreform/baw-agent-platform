@@ -60,6 +60,7 @@ def minimax_tts(text: str, api_key: str, voice: str = DEFAULT_VOICE,
         payload["language_boost"] = boost
 
     try:
+        import httpx
         with httpx.Client(timeout=60) as client:
             r = client.post(MINIMAX_T2A_URL, headers=headers, json=payload)
             if r.status_code != 200:
@@ -72,14 +73,16 @@ def minimax_tts(text: str, api_key: str, voice: str = DEFAULT_VOICE,
                 logger.error(f"[TTS] No audio URL in response: {data}")
                 return None
 
-            # Download the audio file
-            dl = client.get(audio_url, timeout=60)
-            if dl.status_code != 200:
-                logger.error(f"[TTS] Download failed: {dl.status_code}")
-                return None
+        # Download the audio file with urllib (more reliable for OSS chunks)
+        import urllib.request
+        dl = urllib.request.urlopen(audio_url, timeout=60)
+        content = dl.read()
+        if not content:
+            logger.error(f"[TTS] Download returned empty content")
+            return None
 
-            logger.info(f"[TTS] Success: {len(dl.content)} bytes from {model}")
-            return dl.content
+        logger.info(f"[TTS] Success: {len(content)} bytes from {model}")
+        return content
 
     except Exception as e:
         logger.error(f"[TTS] Error: {e}")
