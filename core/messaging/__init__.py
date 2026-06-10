@@ -158,8 +158,11 @@ class BaseConnector(ABC):
         """Dispatch a queued message to the appropriate handler based on msg_type."""
         msg_type = item.get("msg_type", "text")
         chat_id = item["chat_id"]
+        # Better queue UX: show position and ETA
+        queue_pos = len(self._message_queue) + 1
+        eta = queue_pos * 8  # rough 8s per task (conservative for mobile)
+        self.send(chat_id, f"⏳ Queued (#{queue_pos}, ~{eta}s)...")
         if msg_type == "text":
-            self.send(chat_id, "⚙️ Your queued message is now being processed...")
             self._process_message(
                 chat_id, item["user_id"], item["user_name"],
                 item["text"], item["msg"]
@@ -305,13 +308,19 @@ class BaseConnector(ABC):
                 continue
         self._session_index = sidx
 
-    def _get_or_create_session(self, chat_id: str) -> dict:
-        """Get (or create) the active in-memory session for this chat."""
+    def _get_or_create_session(self, chat_id: str, first_message: str = "") -> dict:
+        """Get (or create) the active in-memory session for this chat.
+        If creating new, auto-name from first_message (first 40 chars, stripped)."""
         if chat_id not in self._sessions:
             sid = f"ses-{uuid.uuid4().hex[:12]}"
+            # Auto-name from first message
+            name = "untitled"
+            if first_message.strip():
+                clean = first_message.strip().replace("\n", " ")[:40]
+                name = clean if len(clean) >= 3 else "untitled"
             self._sessions[chat_id] = {
                 "id": sid,
-                "name": "untitled",
+                "name": name,
                 "messages": [],
                 "created": time.time(),
                 "updated": time.time(),
@@ -567,7 +576,15 @@ class BaseConnector(ABC):
             track_user_feedback(text, session_id=msg.chat_id or "")
         except Exception:
             pass
-        return self._run_baw(text, chat_id=msg.chat_id)
+        try:
+            return self._run_baw(text, chat_id=msg.chat_id)
+        except Exception as e:
+            logger.error(f"[route] BAW error: {e}")
+            try:
+                from core.guards import bail
+                return bail("api_error", status="internal", message=str(e)[:200])
+            except Exception:
+                return f"❌ BAW error — please try again.\n({str(e)[:100]})"
 
     # ── Session / Task command handler ───────────────────────────
     def _handle_task_command(self, chat_id: str, action: str, arg: str) -> str:
@@ -1198,7 +1215,7 @@ class BaseConnector(ABC):
             # ── Session management ──
             session = None
             if chat_id:
-                session = self._get_or_create_session(chat_id)
+                session = self._get_or_create_session(chat_id, first_message=prompt or "")
                 conv_history = session["messages"][-self._MAX_SESSION_MSGS:] if session["messages"] else None
 
                 # ── Context Window Monitoring ──
