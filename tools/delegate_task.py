@@ -42,6 +42,7 @@ def _import_baw():
     _reg(**_ld("write_file"))
     _reg(**_ld("web_search"))
     _reg(**_ld("vision"))
+    _reg(**_ld("tts"))
     return True  # tools registered
 
 def _resolve_executor_model(cfg: dict, goal: str = "") -> str:

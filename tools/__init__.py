@@ -1,6 +1,6 @@
 """BAW built-in: register all built-in tools"""
 
-from . import bash, read_file, write_file, web_search, image_generate
+from . import bash, read_file, write_file, web_search, image_generate, tts
 from ..core.tools import register
 
 
@@ -10,3 +10,4 @@ def register_all():
     register(**write_file.TOOL_DEF)
     register(**web_search.TOOL_DEF)
     register(**image_generate.TOOL_DEF)
+    register(**tts.TOOL_DEF)
