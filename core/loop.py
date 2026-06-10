@@ -188,11 +188,12 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             system_prompt += (
                 "\n\n## Quick mode\n"
                 "- Respond in Traditional Chinese (Cantonese)\n"
-                "- Lead with result, 1 paragraph max\n"
+                "- Lead with result, 1 paragraph max. 3 sentences total max.\n"
                 "- ALWAYS report what actually happened after tool execution\n"
                 "- CRITICAL: You MUST use tools (bash, read_file, etc.) when the user asks for data\n"
                 "  Do NOT fabricate system info — always call the relevant tool to get real data\n"
-                "- 🔴 Do NOT ask 'should I continue?' or 'what next?'. Execute the ENTIRE plan silently."
+                "- 🔴 Do NOT ask 'should I continue?' or 'what next?'. Execute the ENTIRE plan silently.\n"
+                "- 🔴 NO Plan/Step output in response. Just do it and report the result."
             )
         else:
             system_prompt = soul_text
@@ -1326,7 +1327,8 @@ def run_agent(
             "- If results are thin or incomplete, say what's known honestly — don't fabricate.\n"
             "- NEVER end with a question. NEVER ask for permission. NEVER promise future action.\n"
             "- Output format: no markdown headers, just plain paragraphs. Lead with the answer.\n"
-            "- PRESERVE any MEDIA: or MEDIA:/path lines from sub-agent results verbatim — do not strip or summarise them."
+            "- PRESERVE any MEDIA: or MEDIA:/path lines from sub-agent results verbatim — do not strip or summarise them.\n"
+            "- BE VERY CONCISE — user complained responses are too long. Just state what was done + the key result. 3 sentences max. No step-by-step. No Plan output."
         )
         ctx.add_user(_synthesis_prompt)
 
