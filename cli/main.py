@@ -127,7 +127,7 @@ COMMANDS: dict[str, dict] = {
         ),
         "example": "baw sessions list",
         "category": "monitor",
-        "aliases": ["history", "sess"],
+        "aliases": ["history", "sess", "list", "task"],
         "usage": "baw sessions [list|view <id>]",
         "subcommands": ["list", "view"],
     },
@@ -273,14 +273,16 @@ def _show_help():
 
     # ── Slash commands (in-chat) ──
     slash = Table(box=None, show_header=False, padding=(0, 2), expand=True)
-    slash.add_column(style="baw.cmd", width=14, no_wrap=True)
-    slash.add_column(style="baw.dim", width=30)
-    slash.add_column(style="baw.cmd", width=14, no_wrap=True)
-    slash.add_column(style="baw.dim", width=30)
-    slash.add_row("/help", "Show in-chat help", "/model", "Switch active model")
-    slash.add_row("/soul", "View SOUL.md", "/config", "View config")
-    slash.add_row("/session", "Session info", "/clear", "Reset chat")
-    slash.add_row("/exit", "Quit chat", "", "")
+    slash.add_column(style="baw.cmd", width=16, no_wrap=True)
+    slash.add_column(style="baw.dim", width=28)
+    slash.add_column(style="baw.cmd", width=16, no_wrap=True)
+    slash.add_column(style="baw.dim", width=28)
+    slash.add_row("/help", "Show all commands", "/model", "Switch active model")
+    slash.add_row("/status", "System health", "/mode", "Switch execution mode")
+    slash.add_row("/task list", "Saved sessions", "/task new", "Start fresh session")
+    slash.add_row("/btw <text>", "Quick reply", "/search <q>", "Search memories")
+    slash.add_row("/clear", "Reset chat", "/exit", "Quit chat")
+    slash.add_row("/stop", "Cancel request", "/restart", "Restart engine")
 
     console.print()
     console.print(Panel(

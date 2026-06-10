@@ -124,32 +124,69 @@ def handle_slash(command: str, args: list[str],
     return None
 
 
-# ── Command handlers ───────────────────────────────────────────
+# ── Command registry (auto-generates /help) ───────────────────
+
+_HELP_COMMANDS: list[dict] = [
+    # (category, cmd_string, description)
+    # Categories: 💬 Core, 📋 Sessions, ⚙️ Config, 🧠 Memory, 🛠 Tools, 🔧 System
+    {"cat": "💬 Core", "cmd": "/help, /h, /?", "desc": "Show this help"},
+    {"cat": "💬 Core", "cmd": "/version, /v", "desc": "BAW version + last commit"},
+    {"cat": "💬 Core", "cmd": "/status, /s", "desc": "Model, memory, tools, session health"},
+    {"cat": "💬 Core", "cmd": "/btw <text>", "desc": "Quick answer — no court, no plan"},
+    {"cat": "💬 Core", "cmd": "/fresh, /fr /raw <prompt>", "desc": "Raw model — no soul, no memories"},
+    {"cat": "💬 Core", "cmd": "/rethink, /rt [prompt]", "desc": "Re-run last prompt, force alternative view"},
+    {"cat": "💬 Core", "cmd": "/court, /ct", "desc": "Show last Angel/Devil court verdict"},
+    {"cat": "💬 Core", "cmd": "/clear, /c", "desc": "Clear screen (CLI only)"},
+
+    {"cat": "📋 Sessions", "cmd": "/task new [name]", "desc": "Save current + start fresh session"},
+    {"cat": "📋 Sessions", "cmd": "/task list, /list", "desc": "List saved sessions"},
+    {"cat": "📋 Sessions", "cmd": "/task resume <id>, /resume <id>", "desc": "Resume a saved session"},
+    {"cat": "📋 Sessions", "cmd": "/task save [name]", "desc": "Save/name current session"},
+    {"cat": "📋 Sessions", "cmd": "/task forget <id>", "desc": "Delete a saved session"},
+    {"cat": "📋 Sessions", "cmd": "/task info", "desc": "Show current session details"},
+    {"cat": "📋 Sessions", "cmd": "/summarize", "desc": "LLM summary of current session"},
+    {"cat": "📋 Sessions", "cmd": "/pickup", "desc": "Resume last interrupted session"},
+    {"cat": "📋 Sessions", "cmd": "/stop", "desc": "Cancel running request"},
+    {"cat": "📋 Sessions", "cmd": "/restart", "desc": "Restart BAW engine"},
+
+    {"cat": "⚙️ Config", "cmd": "/model, /m [id]", "desc": "Switch model (per-chat or global via /set)"},
+    {"cat": "⚙️ Config", "cmd": "/mode [quick|hybrid|tight]", "desc": "Switch execution mode"},
+    {"cat": "⚙️ Config", "cmd": "/tone [casual|business|...]", "desc": "Switch tone profile"},
+    {"cat": "⚙️ Config", "cmd": "/set <key> <value>", "desc": "Persist config to config.yaml"},
+    {"cat": "⚙️ Config", "cmd": "/reload", "desc": "Hot-reload tools & config (no restart)"},
+    {"cat": "⚙️ Config", "cmd": "/capability <cmd>", "desc": "Manage capabilities (tts, stt, etc.)"},
+
+    {"cat": "🧠 Memory", "cmd": "/remember, /r <text>", "desc": "Store a memory entry"},
+    {"cat": "🧠 Memory", "cmd": "/search, /q <query>", "desc": "Search stored memories"},
+    {"cat": "🧠 Memory", "cmd": "/dream, /d", "desc": "Run weekly self-curation"},
+    {"cat": "🧠 Memory", "cmd": "/evolve, /ev", "desc": "Self-evolution stats & patterns"},
+
+    {"cat": "🛠 Tools", "cmd": "/tools", "desc": "List available tools"},
+    {"cat": "🛠 Tools", "cmd": "/provider, /sp list|api|test", "desc": "Search provider management"},
+    {"cat": "🛠 Tools", "cmd": "/board", "desc": "Generate HTML dashboard"},
+    {"cat": "🛠 Tools", "cmd": "/docs, /dc <path>", "desc": "Show docs chain for a file"},
+
+    {"cat": "🔧 System", "cmd": "/update, /up", "desc": "Git pull + changelog + restart"},
+    {"cat": "🔧 System", "cmd": "/tts on|off|status", "desc": "Toggle text-to-speech"},
+]
 
 def _cmd_help() -> str:
-    lines = [
-        "BAW Slash Commands:",
-        "",
-        "  /help, /h, /?         Show this help",
-        "  /version, /v          Show BAW version + last commit",
-        "  /status, /s           Show BAW status (model, memory, tools)",
-        "  /remember, /r         Store a memory entry",
-        "  /search, /q           Search memory",
-        "  /model, /m            Switch model (check config.yaml)",
-        "  /tone, /t             Switch tone profile",
-        "  /dream, /d            Run weekly self-curation",
-        "  /tools                List available tools",
-        "  /provider, /sp        Search provider: list | api <name> | test <name> <query>",
-        "  /clear, /c            Clear screen",
-        "",
-        "  [P1] /rethink, /rt    Re-run last prompt, force alternative analysis",
-        "  [P1] /court, /ct      Show last Angel/Devil court verdict",
-        "  [P1] /fresh, /fr, /raw  Fresh start: no soul, no memories, raw model",
-        "",
-        "  Ctrl+D                Exit interactive mode",
-        "",
-        "Anything else is sent to the BAW agent as a prompt.",
-    ]
+    """Auto-generated from _HELP_COMMANDS registry."""
+    from collections import defaultdict
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for entry in _HELP_COMMANDS:
+        grouped[entry["cat"]].append(entry)
+
+    lines = ["⚡ **BAW Commands**", ""]
+    for cat in ["💬 Core", "📋 Sessions", "⚙️ Config", "🧠 Memory", "🛠 Tools", "🔧 System"]:
+        cmds = grouped.get(cat, [])
+        if not cmds:
+            continue
+        lines.append(f"*{cat}*")
+        for c in cmds:
+            lines.append(f"  `{c['cmd']}` — {c['desc']}")
+        lines.append("")
+    lines.append("_Anything else → sent to BAW as a prompt._")
     return "\n".join(lines)
 
 
@@ -182,16 +219,25 @@ def _cmd_status(config: dict, data_dir: Path) -> str:
     fact_mode = config.get("fact_check", {}).get("mode", "normal")
 
     lines = [
-        "BAW Status",
+        "⚡ BAW Status",
+        f"  Model: {model_cfg.get('default', '?')} (fallback: {model_cfg.get('fallback', 'none')})",
+        f"  Tone: {tone}",
+        f"  Fact check: {fact_mode}",
         f"  Memory: {stats['total']} entries",
     ]
     if stats['total'] > 0:
         lines.append(f"  Avg score: {stats['avg_score']:.2f}")
-    model_default = model_cfg.get("default", "?")
-    model_fallback = model_cfg.get("fallback", "none")
-    lines.append(f"  Model: {model_default} (fallback: {model_fallback})")
-    lines.append(f"  Tone: {tone}")
-    lines.append(f"  Fact check: {fact_mode}")
+
+    # ── Session health ──
+    try:
+        sdir = data_dir / "sessions"
+        if sdir.exists():
+            session_files = list(sdir.glob("*.json"))
+            active = sum(1 for f in session_files if (_time.time() - f.stat().st_mtime) < 3600)
+            lines.append(f"  Sessions: {len(session_files)} saved ({active} active <1h)")
+    except Exception:
+        pass
+
     tools = [t.name for t in list_tools()]
     lines.append(f"  Tools ({len(tools)}): {', '.join(tools)}")
 
