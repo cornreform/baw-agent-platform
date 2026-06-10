@@ -5,10 +5,30 @@ set -e
 
 CONTAINER="baw-telegram"
 
+# Show help before checking container
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "🖤  BAW CLI — Black And White Agent Platform"
+    echo ""
+    echo "  All commands run inside the Docker container ($CONTAINER)."
+    echo "  Pass --help to see full command reference."
+    echo ""
+    echo "  Quick start:"
+    echo "    baw              # Interactive chat"
+    echo "    baw tui-chat     # Full-screen TUI chat"
+    echo "    baw dashboard    # Live dashboard"
+    echo "    baw status       # Health overview"
+    echo "    baw --help       # Full command reference (inside container)"
+    echo ""
+    echo "  Advanced: pass --help to the container for in-depth docs"
+    echo "    docker exec -it $CONTAINER python3 -m cli.main --help"
+    exit 0
+fi
+
 # Check if container is running
 if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
     echo "❌ BAW container '${CONTAINER}' is not running."
     echo "   Start it: cd ~/baw && docker compose up -d"
+    echo "   Or build:  cd ~/baw && docker compose build && docker compose up -d"
     exit 1
 fi
 
@@ -18,6 +38,16 @@ if [ -t 0 ] && [ -t 1 ]; then
     TTY_FLAG="-it"
 else
     TTY_FLAG="-i"
+fi
+
+# For --version, handle locally
+if [ "$1" = "--version" ] || [ "$1" = "-V" ]; then
+    exec docker exec ${TTY_FLAG} "$CONTAINER" python3 -m cli.main --version
+fi
+
+# For --help inside container, pass through
+if [ "$1" = "--full-help" ]; then
+    exec docker exec ${TTY_FLAG} "$CONTAINER" python3 -m cli.main --help
 fi
 
 # Pass all args to the container's CLI

@@ -1,7 +1,7 @@
 """baw status — bot health + connector info."""
 import os
-import time
 import re
+import subprocess
 from pathlib import Path
 from rich.panel import Panel
 from rich.table import Table
@@ -12,10 +12,38 @@ BAW_HOME = Path.home() / ".baw"
 
 
 def _uptime() -> str:
-    """Read process uptime from /proc."""
+    """Get container uptime via docker inspect."""
     try:
-        pid = int(os.popen("cat /tmp/baw.pid 2>/dev/null || echo 0").read().strip())
-        if pid:
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.StartedAt}}", "baw-telegram"],
+            capture_output=True, text=True, timeout=5,
+        )
+        started = result.stdout.strip()
+        if started:
+            import datetime
+            # Docker returns ISO 8601 format
+            started_dt = datetime.datetime.fromisoformat(started.replace("Z", "+00:00"))
+            now = datetime.datetime.now(datetime.timezone.utc)
+            delta = now - started_dt
+            total_sec = int(delta.total_seconds())
+            d, h = divmod(total_sec, 86400)
+            h, m = divmod(h, 3600)
+            m, s = divmod(m, 60)
+            if d:
+                return f"{d}d {h}h {m}m"
+            elif h:
+                return f"{h}h {m}m"
+            return f"{m}m {s}s"
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Fallback: try PID file
+    try:
+        pid = int(subprocess.run(
+            ["cat", "/tmp/baw.pid"], capture_output=True, text=True, timeout=2
+        ).stdout.strip() or "0")
+        if pid and Path(f"/proc/{pid}/stat").exists():
+            import time
             stat = Path(f"/proc/{pid}/stat").read_text().split()
             start_ticks = int(stat[21])
             uptime_sec = time.time() - (start_ticks / os.sysconf(os.sysconf_names['SC_CLK_TCK']))
@@ -58,23 +86,36 @@ def _config_summary() -> dict:
             "model": cfg.get("model", {}).get("default", "N/A"),
             "providers": len(cfg.get("providers", {})),
             "tone": cfg.get("tone", {}).get("default", "N/A"),
+            "mode": cfg.get("mode", "N/A"),
+            "version": _get_version(),
         }
-    return {"model": "N/A", "providers": 0, "tone": "N/A"}
+    return {"model": "N/A", "providers": 0, "tone": "N/A", "mode": "N/A", "version": "?"}
 
 
-def _masked_token() -> str:
+def _get_version() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--always", "--dirty"],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(Path(__file__).resolve().parent.parent.parent),
+        )
+        return result.stdout.strip() or "?"
+    except Exception:
+        return "?"
+
+
+def _masked_token() -> str | None:
     """Read Telegram token from telegram.env, return masked version."""
     telegram_env = BAW_HOME / "telegram.env"
     if not telegram_env.exists():
         return None
     content = telegram_env.read_text()
-    m = re.search(r'BAW_TELEGRAM_TOKEN=(bot\d+):([A-Za-z0-9\-_]+)', content)
+    m = re.search(r'BAW_TELEGRAM_TOKEN=(\S+)', content)
     if m:
-        bot_id = m.group(1)
-        token = m.group(2)
+        token = m.group(1)
         if len(token) > 8:
-            return f"{bot_id}:{token[:4]}...{token[-4:]}"
-        return f"{bot_id}:***"
+            return f"{token[:4]}...{token[-4:]}"
+        return "***"
     return "***"
 
 
@@ -82,15 +123,16 @@ def cmd_status():
     console.print(BAW_LOGO)
     console.print()
 
-    # ── Health panel ──
     cfg = _config_summary()
     health_table = Table(box=box.ROUNDED, border_style="baw.border", show_header=False)
     health_table.add_column("Key", style="baw.key", width=18)
     health_table.add_column("Value", style="baw.value")
 
+    health_table.add_row("Version", f"[baw.accent]{cfg['version']}[/baw.accent]")
     health_table.add_row("Status", "[baw.success]● Online[/baw.success]")
     health_table.add_row("Uptime", _uptime())
     health_table.add_row("Default Model", cfg["model"])
+    health_table.add_row("Mode", cfg["mode"])
     health_table.add_row("Providers", str(cfg["providers"]))
     health_table.add_row("Active Tone", cfg["tone"])
     health_table.add_row("Sessions", str(_session_count()))
@@ -114,6 +156,5 @@ def cmd_status():
 
     console.print(Panel(conn_table, title="📡 Connectors", border_style="baw.border"))
 
-    # ── Quick tip ──
     console.print()
     console.print("[baw.muted]🔧 Run[/baw.muted] [baw.highlight]baw --help[/baw.highlight] [baw.muted]to see all commands[/baw.muted]")
