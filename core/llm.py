@@ -38,6 +38,7 @@ class LLMResponse:
     model: str
     provider: str
     protocol: str = "openai-chat"
+    reasoning_content: str | None = None
 
 
 def load_config(config_path: Optional[Path] = None) -> dict:
@@ -155,8 +156,10 @@ def _call_openai_chat(
 
     # Handle models that return content in reasoning_content (e.g. Kimi thinking mode)
     content = msg.get("content", "") or ""
-    if not content and msg.get("reasoning_content"):
-        content = msg["reasoning_content"]
+    reasoning = msg.get("reasoning_content")
+    if not content and reasoning:
+        content = reasoning
+        reasoning = None
 
     return LLMResponse(
         content=content,
@@ -166,6 +169,7 @@ def _call_openai_chat(
         model=data.get("model", model.id),
         provider=model.provider,
         protocol="openai-chat",
+        reasoning_content=reasoning,
     )
 
 

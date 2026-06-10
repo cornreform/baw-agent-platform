@@ -15,6 +15,7 @@ class Message:
     tool_calls: list[dict] | None = None
     tool_call_id: str | None = None
     name: str | None = None
+    reasoning_content: str | None = None  # DeepSeek thinking mode
 
 
 @dataclass
@@ -27,8 +28,12 @@ class Context:
     def add_user(self, content: str):
         self.messages.append(Message(role="user", content=content))
 
-    def add_assistant(self, content: str, tool_calls: list[dict] | None = None):
-        self.messages.append(Message(role="assistant", content=content, tool_calls=tool_calls))
+    def add_assistant(self, content: str, tool_calls: list[dict] | None = None,
+                      reasoning_content: str | None = None):
+        self.messages.append(Message(
+            role="assistant", content=content, tool_calls=tool_calls,
+            reasoning_content=reasoning_content,
+        ))
 
     def add_tool_result(self, tool_call_id: str, name: str, content: str):
         self.messages.append(Message(
@@ -46,7 +51,7 @@ class Context:
                     "content": msg.content,
                 })
             elif msg.role == "assistant" and msg.tool_calls:
-                result.append({
+                entry = {
                     "role": "assistant",
                     "content": msg.content or "",
                     "tool_calls": [
@@ -60,9 +65,15 @@ class Context:
                         }
                         for tc in msg.tool_calls
                     ],
-                })
+                }
+                if msg.reasoning_content:
+                    entry["reasoning_content"] = msg.reasoning_content
+                result.append(entry)
             else:
-                result.append({"role": msg.role, "content": msg.content})
+                entry = {"role": msg.role, "content": msg.content}
+                if msg.reasoning_content:
+                    entry["reasoning_content"] = msg.reasoning_content
+                result.append(entry)
         return result
 
     def count_tokens_approx(self) -> int:
