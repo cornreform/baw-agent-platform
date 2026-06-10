@@ -12,7 +12,7 @@ def _load_config_model():
     """Load vision model from config.yaml capabilities section."""
     config_paths = [
         Path(__file__).parent / "config.yaml",
-        Path.home / "baw" / "config.yaml",
+        Path.home() / "baw" / "config.yaml",
     ]
     for p in config_paths:
         if p.exists():
