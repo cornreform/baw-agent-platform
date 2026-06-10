@@ -55,7 +55,17 @@ def phase_plan(steps: list[dict]) -> str:
 # ── Step progress: hierarchical labels ──
 
 def _step_label(group: str, step_in_group: int, group_total: int) -> str:
-    """Format as 'A ½', 'B ¼', etc."""
+    """Format as 'A ½', 'B ¼', etc. Uses Unicode fractions for common denominators."""
+    _FRACTIONS = {
+        (1, 2): "½", (1, 3): "⅓", (2, 3): "⅔",
+        (1, 4): "¼", (3, 4): "¾", (2, 4): "2/4",
+        (1, 5): "⅕", (2, 5): "⅖", (3, 5): "⅗", (4, 5): "⅘",
+        (1, 6): "⅙", (5, 6): "⅚",
+        (1, 8): "⅛", (3, 8): "⅜", (5, 8): "⅝", (7, 8): "⅞",
+    }
+    frac = _FRACTIONS.get((step_in_group, group_total))
+    if frac:
+        return f"{group} {frac}"
     return f"{group} {step_in_group}/{group_total}"
 
 

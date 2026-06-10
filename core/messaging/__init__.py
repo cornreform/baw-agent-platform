@@ -1363,7 +1363,10 @@ class BaseConnector(ABC):
                         if t and int(t) <= 1:
                             _progress_lines.append(f"  ✅ {g}")
                         else:
-                            _progress_lines.append(f"  ✅ Step {_grp} {_gsi}/{_ggt}: {g}")
+                            _frac_map = {(1,2):"½",(1,3):"⅓",(2,3):"⅔",(1,4):"¼",(3,4):"¾",(1,5):"⅕",(2,5):"⅖",(3,5):"⅗",(4,5):"⅘",(1,6):"⅙",(5,6):"⅚"}
+                            _f = _frac_map.get((int(_gsi) if str(_gsi).isdigit() else 0, int(_ggt) if str(_ggt).isdigit() else 0))
+                            _label = f"{_grp} {_f}" if _f else f"{_grp} {_gsi}/{_ggt}"
+                            _progress_lines.append(f"  ✅ Step {_label}: {g}")
                         # Keep last 6 lines only for inline editing
                         _lines = _progress_lines[-6:]
                         if len(_progress_lines) > 6:
