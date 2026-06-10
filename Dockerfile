@@ -1,26 +1,22 @@
 # BAW Bot — Docker image
-# Fully isolated from Hermes: self-contained Python, no Hermes venv dependency.
+# Optimized layer caching: FROM → apt → useradd → pip → COPY --chown
 FROM python:3.11-slim
 
-# System deps (if any tools need them — playwright, pdf, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Create baw user EARLY so it's cached (never changes, don't rebuild on code change)
-RUN useradd -m baw && mkdir -p /home/baw/.baw
+# useradd cached (never changes)
+RUN useradd -m baw && mkdir -p /home/baw/.baw && chown -R baw:baw /home/baw/.baw
 
 WORKDIR /app
 
-# Install Python deps first (layer caching — only rebuilds when requirements.txt changes)
+# pip layer cached (only rebuilds when requirements.txt changes)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy BAW source LAST (this is the only layer that changes on most commits)
-COPY . .
-
-# Fix ownership after code copy
-RUN chown -R baw:baw /app /home/baw/.baw
+# Code copy with inline chown (single layer, no trailing chown -R)
+COPY --chown=baw:baw . .
 
 USER baw
 ENV HOME=/home/baw
