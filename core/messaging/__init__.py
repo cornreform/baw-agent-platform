@@ -498,6 +498,18 @@ class BaseConnector(ABC):
             # ── Top-level session aliases ──
             if cmd == "new":
                 return self._handle_task_command(msg.chat_id, "new", arg)
+            if cmd == "reset":
+                # Hard reset — clear current session without saving
+                if msg.chat_id in self._sessions:
+                    old = self._sessions[msg.chat_id]
+                    # Delete saved session file too
+                    self._delete_session(old["id"])
+                new_sid = f"ses-{uuid.uuid4().hex[:12]}"
+                self._sessions[msg.chat_id] = {
+                    "id": new_sid, "name": "fresh",
+                    "messages": [], "created": time.time(), "updated": time.time(),
+                }
+                return "🔄 Session reset — starting fresh."
             if cmd == "list":
                 return self._handle_task_command(msg.chat_id, "list", "")
             if cmd == "resume" and arg:
