@@ -74,7 +74,7 @@ def main():
         description="BAW Agent Platform CLI",
         add_help=False,
     )
-    parser.add_argument("command", nargs="?", default="help")
+    parser.add_argument("command", nargs="?", default="chat")
     parser.add_argument("subcommand", nargs="?", default=None)
     parser.add_argument("args", nargs="*", default=[])
     parser.add_argument("--help", "-h", action="store_true")
@@ -120,6 +120,10 @@ def main():
     elif cmd == "restart":
         from cli.commands.restart import cmd_restart
         cmd_restart()
+
+    elif cmd == "chat":
+        from cli.commands.chat import cmd_chat
+        cmd_chat(args.subcommand)
 
     else:
         console.print(f"[baw.error]Unknown command:[/baw.error] {cmd}")
