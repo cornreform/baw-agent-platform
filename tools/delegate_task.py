@@ -158,7 +158,7 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
         system_prompt=(
             "You are an EXECUTOR. Do the task. Rules: 1) First response MUST call a tool. "
             "2) Read file -> write file -> verify. Do ALL steps. "
-            "3) For API calls: python3 -c 'import urllib.request...' (stdlib, always present). "
+            "3) curl NOT available. python3 -c 'import urllib.request...' (always works). "
             "4) NEVER describe what you will do — JUST DO IT. "
             "5) Only report after every tool call returned. "
             "6) If stuck, try a different approach, don't re-describe. "
