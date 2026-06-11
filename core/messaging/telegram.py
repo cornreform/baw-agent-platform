@@ -746,79 +746,107 @@ class TelegramConnector(BaseConnector):
                             self.send(chat_id, f"❌ OpenAI Whisper API 失敗: {e}。嘗試其他方法...")
                     else:
                         status_lines.append(f"   ⚠️ {api_key_env} 未設定")
-                elif stt_method == "stepfun-asr":
-                    api_key_env = stt_config.get("api_key_env", "STEPFUN_API_KEY")
+                elif stt_method in ("auto-asr", "model"):
+                    # Auto-detect ASR protocol: try multiple endpoint patterns
+                    api_key_env = stt_config.get("api_key_env", stt_config.get("api_key_env", ""))
+                    stt_model_id = stt_config.get("model", "").strip()
+                    base_url = stt_config.get("base_url", "")
                     api_key = os.environ.get(api_key_env, "")
-                    if not api_key:
-                        status_lines.append(f"   ⚠️ {api_key_env} 未設定")
-                    else:
-                        stepfun_model = stt_config.get("model", "stepaudio-2.5-asr")
-                        base_url = stt_config.get("base_url", "https://api.stepfun.ai/v1")
-                        self.send(chat_id, "🎙️ Stepfun ASR 辨識中...")
+                    if api_key and base_url:
+                        self.send(chat_id, f"🔍 ASR auto-detect（{base_url}）...")
                         try:
-                            import httpx
-                            import base64 as _b64
+                            import httpx, base64 as _b64, json as _json
                             with open(local_path, "rb") as f:
-                                audio_b64 = _b64.b64encode(f.read()).decode()
+                                audio_bytes = f.read()
+                                audio_b64 = _b64.b64encode(audio_bytes).decode()
                             audio_type = "ogg" if local_path.endswith(".ogg") else "mp3"
-                            payload = {
-                                "audio": {
-                                    "data": audio_b64,
-                                    "input": {
-                                        "transcription": {
-                                            "language": "zh",
-                                            "model": stepfun_model,
-                                            "enable_itn": True,
-                                            "enable_timestamp": False,
-                                        },
-                                        "format": {"type": audio_type},
-                                    },
-                                }
-                            }
-                            asr_url = f"{base_url.rstrip('/')}/audio/asr/sse"
-                            logger.info(f"[Telegram] Stepfun ASR: {asr_url}, model={stepfun_model}")
-                            full_text = ""
-                            with httpx.Client(timeout=60, verify=True) as client:
-                                resp = client.post(
-                                    asr_url,
-                                    json=payload,
-                                    headers={
-                                        "Authorization": f"Bearer {api_key}",
-                                        "Content-Type": "application/json",
-                                        "Accept": "text/event-stream",
-                                    },
-                                )
-                                resp.raise_for_status()
-                                for line in resp.iter_lines():
-                                    line = line.strip()
-                                    if not line:
-                                        continue
-                                    if line.startswith("data: "):
-                                        data_str = line[6:]
-                                        if data_str == "[DONE]":
-                                            break
-                                        try:
-                                            import json as _json
-                                            evt = _json.loads(data_str)
-                                            evt_type = evt.get("type", "")
-                                            if evt_type == "transcript.text.delta":
-                                                full_text += evt.get("delta", "")
-                                            elif evt_type == "transcript.text.done":
-                                                full_text = evt.get("text", full_text)
-                                                break
-                                            elif evt_type == "error":
-                                                err_msg = evt.get("message", evt.get("detail", str(evt)))
-                                                raise RuntimeError(f"Stepfun ASR error: {err_msg}")
-                                        except _json.JSONDecodeError:
-                                            continue
-                            text = full_text.strip()
+                            b_url = base_url.rstrip("/")
+
+                            # Strategy 1: OpenAI-compatible transcri ptions endpoint
+                            text = ""
+                            try:
+                                transcription_url = f"{b_url}/audio/transcriptions"
+                                logger.info(f"[Telegram] ASR probe: OpenAI @ {transcription_url}")
+                                with httpx.Client(timeout=30, verify=True) as cli:
+                                    files = {"file": (f"voice.{audio_type}", audio_bytes, f"audio/{audio_type}")}
+                                    data = {"model": stt_model_id or "whisper-1", "language": "zh"}
+                                    resp = cli.post(
+                                        transcription_url, files=files, data=data,
+                                        headers={"Authorization": f"Bearer {api_key}"},
+                                    )
+                                if resp.status_code == 200:
+                                    result = resp.json()
+                                    text = result.get("text", "")
+                                    if text:
+                                        used_method = "openai-whisper"
+                                        logger.info(f"[Telegram] ASR OK via OpenAI-compatible: {len(text)} chars")
+                            except Exception as e:
+                                logger.info(f"[Telegram] OpenAI-compatible ASR failed: {e}")
+
+                            # Strategy 2: Stepfun-style SSE ASR
+                            if not text:
+                                try:
+                                    sse_url = f"{b_url}/audio/asr/sse"
+                                    logger.info(f"[Telegram] ASR probe: SSE @ {sse_url}")
+                                    sse_payload = {
+                                        "audio": {
+                                            "data": audio_b64,
+                                            "input": {
+                                                "transcription": {
+                                                    "language": "zh",
+                                                    "model": stt_model_id or "stepaudio-2.5-asr",
+                                                    "enable_itn": True,
+                                                    "enable_timestamp": False,
+                                                },
+                                                "format": {"type": audio_type},
+                                            },
+                                        }
+                                    }
+                                    full_text = ""
+                                    with httpx.Client(timeout=60, verify=True) as cli:
+                                        resp = cli.post(
+                                            sse_url, json=sse_payload,
+                                            headers={
+                                                "Authorization": f"Bearer {api_key}",
+                                                "Content-Type": "application/json",
+                                                "Accept": "text/event-stream",
+                                            },
+                                        )
+                                        if resp.status_code in (200, 201):
+                                            for line in resp.iter_lines():
+                                                line = line.strip()
+                                                if not line:
+                                                    continue
+                                                if line.startswith("data: "):
+                                                    data_str = line[6:]
+                                                    if data_str == "[DONE]":
+                                                        break
+                                                    try:
+                                                        evt = _json.loads(data_str)
+                                                        t = evt.get("type", "")
+                                                        if t == "transcript.text.delta":
+                                                            full_text += evt.get("delta", "")
+                                                        elif t == "transcript.text.done":
+                                                            full_text = evt.get("text", full_text)
+                                                            break
+                                                        elif t == "error":
+                                                            raise RuntimeError(evt.get("message", str(evt)))
+                                                    except _json.JSONDecodeError:
+                                                        continue
+                                            if full_text.strip():
+                                                text = full_text.strip()
+                                                used_method = "auto-asr-sse"
+                                                logger.info(f"[Telegram] ASR OK via SSE: {len(text)} chars")
+                                except Exception as e2:
+                                    logger.info(f"[Telegram] SSE ASR failed: {e2}")
+
                             if text:
-                                used_method = "stepfun-asr"
+                                used_method = used_method or "auto-asr"
                             else:
-                                raise RuntimeError("空的辨識結果")
+                                self.send(chat_id, "❌ 所有 ASR 協議都失敗（OpenAI + SSE），check API key/endpoint。")
                         except Exception as e:
-                            logger.error(f"[Telegram] Stepfun ASR error: {e}")
-                            self.send(chat_id, f"❌ Stepfun ASR 失敗: {e}")
+                            logger.error(f"[Telegram] auto-asr error: {e}")
+                            self.send(chat_id, f"❌ ASR auto-detect 失敗: {e}")
                 elif stt_method == "google-speech":
                     status_lines.append("   ⚠️ Google Speech-to-Text 尚未實作")
                 else:
