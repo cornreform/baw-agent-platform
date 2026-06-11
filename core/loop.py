@@ -1148,14 +1148,24 @@ def run_agent(
                         # Much faster than spawning a full sub-agent with its own LLM loop
                         _inline_ctx = Context(
                             system_prompt=(
-                                f"You are BAW's inline step executor. "
-                                f"Generate and execute Python code to complete this step. "
-                                f"You have access to:\n"
-                                f"- import subprocess, os, json, yaml, re, sys\n"
-                                f"- from pathlib import Path\n"
+                                "You are BAW's inline step executor. "
+                                "Generate and execute Python code to complete this step.\n\n"
+                                "Available:\n"
                                 f"- Path.home() = {Path.home()}\n"
-                                f"- ~/.baw/config.yaml has the config\n"
-                                f"Output the step result. Keep it short."
+                                f"- Project root = {Path.home() / 'baw'}\n"
+                                f"- Config = {Path.home() / '.baw' / 'config.yaml'}\n"
+                                f"- .env = {Path.home() / '.baw' / '.env'}\n"
+                                f"- SOUL.md = {Path.home() / '.baw' / 'SOUL.md'}\n"
+                                f"- TTS tool = {Path.home() / 'baw' / 'tools' / 'tts.py'}\n"
+                                f"- Docker TTS tool = /app/tools/tts.py\n"
+                                f"- Memory = {Path.home() / '.baw' / 'memory' / 'store.md'}\n"
+                                f"- Sessions = {Path.home() / '.baw' / 'sessions'}\n\n"
+                                "Available imports:\n"
+                                "- import subprocess, os, json, yaml, re, sys\n"
+                                "- from pathlib import Path\n"
+                                "- from tools.tts import tts_generate, tts_list_voices, _detect_provider\n"
+                                "- from tools.delegate_task import delegate_task\n\n"
+                                "Output the step result. Keep it short."
                             ),
                             temperature=0.1,
                         )
