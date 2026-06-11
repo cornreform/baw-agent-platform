@@ -1412,6 +1412,8 @@ class BaseConnector(ABC):
             info = {}
             all_plan_recaps = []
             all_failure_reasons = []
+            all_checkpoint_results = []
+            all_uncertain_claims = []
             _recalc_total = 0
 
             # Send typing indicator
@@ -1427,10 +1429,24 @@ class BaseConnector(ABC):
                     _failure_summary = "\n".join(
                         f"  • {r[:200]}" for r in all_failure_reasons[-3:]
                     ) if all_failure_reasons else "Reason unclear"
+                    _checkpoint_summary = ""
+                    if all_checkpoint_results and _round > 1:
+                        _checkpoint_parts = []
+                        for _cr in all_checkpoint_results[-3:]:
+                            _cr_stripped = _cr.strip()
+                            # Skip uncertainty/failure markers — only inject real results
+                            if _cr_stripped and not _cr_stripped.startswith("[VERIFICATION"):
+                                _checkpoint_parts.append(f"  • {_cr_stripped[:200]}")
+                        if _checkpoint_parts:
+                            _checkpoint_summary = (
+                                f"\n\nCheckpoint — previous round's completed work (DO NOT redo):\n"
+                                + "\n".join(_checkpoint_parts[-3:])
+                            )
                     _current_prompt = (
                         f"[AUTO-RETRY ROUND {_round}/{_MAX_AUTO_ROUNDS}]\n\n"
                         f"Original goal: {prompt}\n\n"
-                        f"Previous round failed. Here's what went wrong:\n{_failure_summary}\n\n"
+                        f"Previous round failed. Here's what went wrong:\n{_failure_summary}"
+                        f"{_checkpoint_summary}\n\n"
                         f"CRITICAL: You MUST try a COMPLETELY DIFFERENT approach this round.\n"
                         f"- Different provider (e.g. Stepfun → MiniMax → edge-tts)\n"
                         f"- Different method (e.g. curl → Python SDK → subprocess)\n"
@@ -1497,6 +1513,17 @@ class BaseConnector(ABC):
                         if _fr not in all_failure_reasons:
                             all_failure_reasons.append(_fr)
 
+                # Collect checkpoint results + uncertainty flags (checkpoint recovery)
+                if info and info.get("successful_results"):
+                    for _sr in info["successful_results"]:
+                        _sr_key = _sr[:100]
+                        if _sr_key not in [r[:100] for r in all_checkpoint_results]:
+                            all_checkpoint_results.append(_sr)
+                if info and info.get("uncertain_claims"):
+                    for _uc in info["uncertain_claims"]:
+                        if _uc not in all_uncertain_claims:
+                            all_uncertain_claims.append(_uc)
+
                 # ── Auto-continue if goal NOT achieved ──
                 goal_achieved = info.get("goal_achieved", True) if info else True
                 if goal_achieved:
@@ -1512,6 +1539,7 @@ class BaseConnector(ABC):
                         f"Original goal: {prompt}\n\n"
                         f"Failure reasons collected across all rounds:\n"
                         + ("\n".join(f"  • {r[:300]}" for r in all_failure_reasons) if all_failure_reasons else "  (No structured failure data)")
+                        + ("\n\nUncertain claims flagged mid-stream:\n" + "\n".join(f"  • {u[:300]}" for u in all_uncertain_claims) if all_uncertain_claims else "")
                         + "\n\n"
                         f"Analyse the FAILURE PATTERNS above. Produce a DIAGNOSIS with:\n"
                         f"1. What was tried: summarise the {_round} different approaches briefly\n"

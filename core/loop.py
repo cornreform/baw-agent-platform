@@ -973,6 +973,7 @@ def run_agent(
     _synthesis_results: list[str] = []  # Successful step results for final synthesis
     _goal_achieved = False
     _permanent_skip: set[int] = set()  # step positions that failed across pursuits → never retry
+    _uncertain_claims: list[str] = []  # mid-stream verification warnings
 
     for _pursuit in range(1, _GOAL_PURSUIT_MAX_ATTEMPTS + 1):
         if verbose:
@@ -1162,6 +1163,45 @@ def run_agent(
                 _delegation_results[_step_idx] = _result
                 _synthesis_results.append(_result)
                 steps_completed += 1
+
+                # ── Mid-stream verification gate ──
+                # Check step result for hidden errors before marking 100% done
+                _has_hidden_error = False
+                _warn_reason = ""
+                if _result and len(_result) > 10:
+                    _r_lower = _result.lower()
+                    _error_kws = ["unreachable", "quota exceeded", "quota", "rate limit",
+                                   "429", "503", "502", "not installed", "no module",
+                                   "import error", "timeout", "permission denied",
+                                   "access denied", "no data returned", "empty result",
+                                   "failed to", "unable to", "could not", "exceeded",
+                                   "error:", "exception:", "traceback", "invalid key",
+                                   "bad request", "400", "401", "402", "403", "404",
+                                   "unknown host", "dns resolution", "connection refused",
+                                   "connection reset", "operation timed out"]
+                    _fix_kws = ["[fixed]", "[resolved]", "successfully recovered",
+                                 "retried and succeeded", "auto-installed", "installed"]
+                    _common_innocent = ["not applicable", "not required", "skipping", "no error"]
+                    # True positive: error keyword found AND no fix keyword AND not innocent context
+                    _has_error_kw = any(kw in _r_lower for kw in _error_kws)
+                    _has_fix_kw = any(kw in _r_lower for kw in _fix_kws)
+                    _is_innocent = any(kw in _r_lower for kw in _common_innocent)
+                    if _has_error_kw and not _has_fix_kw and not _is_innocent:
+                        _has_hidden_error = True
+                        # Find which keyword triggered
+                        for _kw in _error_kws:
+                            if _kw in _r_lower:
+                                _warn_reason = f"keyword '{_kw}'"
+                                break
+
+                if _has_hidden_error:
+                    _verification_warn = (
+                        f"[VERIFICATION WARN] Step {_g} {_si}/{_gt}: "
+                        f"result may contain hidden error ({_warn_reason})"
+                    )
+                    _uncertain_claims.append(_verification_warn)
+                    if verbose:
+                        print(f"  ⚠️ {_verification_warn}")
 
                 _dsp = dsp.phase_step_done(_g, _si, _gt, _step_desc_short)
                 _display_log.append(_dsp)
@@ -1393,6 +1433,7 @@ def run_agent(
             "CRITICAL RULES:\n"
             "- This is a CONCLUSION, not a verification. Don't say 'goal achieved' or 'score'. Just deliver the answer.\n"
             "- If results are thin or incomplete, say what's known honestly — don't fabricate.\n"
+            "- ⚠️ UNCERTAINTY FLAG: If any result contains error patterns, missing data, or unverifiable claims, flag them with ⚠️ in the response. Do NOT pretend uncertain results are certain.\n"
             "- NEVER end with a question. NEVER ask for permission. NEVER promise future action.\n"
             "- Output format: no markdown headers, just plain paragraphs. Lead with the answer.\n"
             "- PRESERVE any MEDIA: or MEDIA:/path lines from sub-agent results verbatim — do not strip or summarise them.\n"
@@ -1533,5 +1574,7 @@ def run_agent(
         "plan_recap": plan_recap.strip(),
         "goal_achieved": _goal_achieved or (steps_completed > 0 and steps_completed == len(_execution_plan)),
         "failure_reasons": _failure_reasons[:5] if _failure_reasons else [],
+        "uncertain_claims": _uncertain_claims[:5] if _uncertain_claims else [],
+        "successful_results": _synthesis_results[:5] if _synthesis_results else [],
     }
     return findings, info
