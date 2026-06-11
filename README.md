@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.14-blueviolet" alt="v0.14">
+  <img src="https://img.shields.io/badge/version-1.0.0-blueviolet" alt="v1.0.0">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -37,28 +37,26 @@
 # Install
 git clone https://github.com/cornreform/baw-agent-platform.git
 cd baw-agent-platform
-pip install pyyaml httpx duckduckgo-search croniter openpyxl python-docx python-pptx PyMuPDF pytesseract
-# Optional: faster-whisper for local voice STT
-# pip install faster-whisper
+pip install -r requirements.txt
 ln -sf $PWD/baw ~/.local/bin/baw
 
-# Set API Key (~/.baw/.env)
-echo "DEEPSEEK_API_KEY=*** >> ~/.baw/.env
+# Interactive setup wizard (英文)
+baw --setup
+
+# Or manually add an API key
+echo "STEPFUN_API_KEY=*** >> ~/.baw/.env
 
 # ✨ Go!
 baw "list files in current directory"
-baw --tone business "write a proposal"
-baw --btw "What time is it?"
-baw --setup           # Interactive setup wizard
-baw                   # Interactive Chat mode
+baw --doctor           # Health check
+baw --update           # Pull latest + rebuild Docker
+baw                    # Interactive Chat mode
 </pre>
 
 <blockquote>
 <strong>💡 First time?</strong><br>
-If <code>baw: command not found</code>, add <code>~/.local/bin</code> to your PATH:<br>
-<strong>Bash:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc</code><br>
-<strong>Zsh:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc</code><br>
-<strong>Fish:</strong> <code>fish_add_path "$HOME/.local/bin"</code>
+Run <code>baw --setup</code> — it walks through Telegram token, default model, API keys, auto-configures providers + STT + TTS + vision.<br>
+<strong>Plan selection:</strong> setup asks about your plan type (standard / step-plan / code-plan / etc.) — never hardcodes endpoints.
 </blockquote>
 
 <h3>🔧 Prerequisites</h3>
@@ -68,7 +66,8 @@ If <code>baw: command not found</code>, add <code>~/.local/bin</code> to your PA
   <tr><td>Python 3.11+</td><td><code>python3 --version</code> — if missing: <code>brew install python@3.12</code> (macOS) or <code>sudo apt install python3.12</code> (Linux)</td></tr>
   <tr><td>Git</td><td><code>git --version</code> — if missing: <code>brew install git</code> (macOS) or <code>sudo apt install git</code> (Linux)</td></tr>
   <tr><td>pip</td><td><code>python3 -m pip --version</code> — if missing: <code>python3 -m ensurepip --upgrade</code></td></tr>
-  <tr><td>~/.local/bin in PATH</td><td><code>echo $PATH</code> should include <code>~/.local/bin</code> — see above for Bash/Zsh/Fish setup</td></tr>
+  <tr><td>~/.local/bin in PATH</td><td><code>echo $PATH</code> should include <code>~/.local/bin</code></td></tr>
+  <tr><td>Docker (optional)</td><td><code>docker --version</code> — needed for Telegram bot</td></tr>
 </table>
 
 <h3>🤖 One-Command Install</h3>
@@ -77,47 +76,55 @@ If <code>baw: command not found</code>, add <code>~/.local/bin</code> to your PA
 curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
 </pre>
 
-<p>This will: detect your Python version → pip install dependencies → clone the repo → create the <code>baw</code> CLI wrapper → check/suggest PATH setup → print next steps.</p>
-
 <h3>🎯 Core Features</h3>
 
 <table>
   <tr><th>Feature</th><th>Description</th></tr>
   <tr><td>⚖️ Angel/Devil Court</td><td>Devil speaks first with ZERO execution power. Angel listens then acts. Devil score > Angel → STOP</td></tr>
-  <tr><td>🧠 Never Surrender</td><td>Fail → retry → replan → rollback. Exhausts 6 strategies before reporting — never asks user</td></tr>
+  <tr><td>🧠 Never Surrender</td><td>Fail → retry → replan → rollback. Exhausts 6 strategies before reporting</td></tr>
   <tr><td>🔌 Protocol-agnostic LLM</td><td>OpenAI / Anthropic / Google protocols. One-line config switch, built-in cost tracking</td></tr>
   <tr><td>⚙️ 3 Execution Modes</td><td>Quick (fastest) / Hybrid (balanced) / Tight (full court+plan+verify)</td></tr>
-  <tr><td>🗣️ 6 Tone Profiles</td><td>casual / business / teaching / client-doc / ot-rt / stepwise, switch anytime</td></tr>
-  <tr><td>📝 Self-Learning Skills</td><td><code>--learn-skill "description"</code> auto-analyzes and generates YAML skill</td></tr>
+  <tr><td>🗣️ 6 Tone Profiles</td><td>casual / business / teaching / client-doc / ot-rt / stepwise</td></tr>
+  <tr><td>📝 Self-Learning Skills</td><td><code>--learn-skill</code> auto-analyzes and generates YAML skill</td></tr>
   <tr><td>🔄 Cron Scheduler</td><td>Cron-expression scheduled tasks, 60s background daemon</td></tr>
-  <tr><td>📁 Async Background Tasks</td><td><code>--delegate</code> runs in background, main terminal freed instantly, max 3 concurrent</td></tr>
+  <tr><td>📁 Background Tasks</td><td><code>--delegate</code> runs in background, main terminal freed instantly</td></tr>
   <tr><td>🐙 GitHub Integration</td><td>issues / PRs / CI / repos directly from CLI</td></tr>
-  <tr><td>🔍 Open Search Provider</td><td>Built-in DuckDuckGo (free, no key), pluggable upgrade</td></tr>
-  <tr><td>💾 Unified Memory + Fact Check</td><td>JSONL append-only + edges.json graph + 2-hop associative spread + automatic decay</td></tr>
-  <tr><td>🧬 Self-Evolution (v0.11)</td><td>3-layer learning: tool behavior tracking → pattern detection → auto-optimize SOUL/config</td></tr>
-  <tr><td>🤖 Agent Delegation (v0.11)</td><td>Main brain (DeepSeek) decomposes tasks → MiniMax sub-agents execute each step → DeepSeek synthesises</td></tr>
-  <tr><td>🔄 Hot Reload (v0.11)</td><td><code>/reload</code> reloads tools/config/SOUL without restarting the bot process</td></tr>
-  <tr><td>🎙️ Voice STT (v0.11)</td><td>Telegram voice/audio auto-detected: checks model audio_input capability → configured STT method → faster-whisper local fallback. Presents setup options when none available</td></tr>
-  <tr><td>📊 Context Monitor (v0.12)</td><td>Auto-detects context usage per model's context_window. >70% → auto-summarize session + save to memory + compress to last 4 msgs. 50-70% → log monitor. Silent otherwise</td></tr>
-  <tr><td>🗂️ Session Management (v0.12)</td><td><code>/new</code>, <code>/list</code>, <code>/resume &lt;id&gt;</code>, <code>/summarize</code> — full session lifecycle without losing context. Help listing shows all top-level commands</td></tr>
-  <tr><td>🗺️ Route Plan Execution (v0.13)</td><td>Multi-step plan with real-time inline progress editing. 60s step timeout + same-step skip after 2 fails — never silently stops mid-route</td></tr>
-  <tr><td>🔧 Tool Self-Config (v0.13)</td><td>BAW discovers & registers its own CLI tools. No pre-config needed — finds <code>mmx</code>, writes wrapper, auto-registers</td></tr>
-  <tr><td>👁️ MiniMax Vision (v0.13)</td><td>Photo handling uses <code>mmx vision describe</code> (MiniMax M3). OCR only as fallback</td></tr>
-  <tr><td>🔄 Auto-Continue Loop (v0.13)</td><td>Goal not achieved? Auto-feed result back as next prompt (max 3 rounds). No more empty promises</td></tr>
-  <tr><td>🧰 Expanded Tools (v0.14)</td><td>15 built-in tools: patch, web_extract, search_files, memory, todo, vision, browser, image_generate, tts, execute_code</td></tr>
-  <tr><td>🎯 Per-Task Model Routing (v0.14)</td><td><code>model.task_rules</code> keyword matching routes sub-agents to optimal models. search→kimi, code→deepseek, vision→MiniMax</td></tr>
-  <tr><td>🏷️ In-Task Model Override (v0.14)</td><td><code>[model: X] [stt: Y]</code> tags in user prompts override capability routing. Tags stripped before LLM sees them. Per-task only</td></tr>
-  <tr><td>🧠 Orchestrator Rules (v0.14)</td><td>5 optimization rules loaded from ORCHESTRATOR.md: Inline Gate, Macro-Step Grouping, Context Injection, Sequential Default, Shared Scratchpad</td></tr>
-  <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block sudo/rm -rf) / Medium (warn) / Low (allow)</td></tr>
-  <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates a dark-themed system dashboard</td></tr>
-  <tr><td>💬 Interactive CLI Chat</td><td>Colored banner + Tab completion + 20 slash commands</td></tr>
-  <tr><td>⚙️ Setup Wizard + Config CLI</td><td><code>--setup</code> / <code>--cfg set/get/list</code> — real-time config</td></tr>
-  <tr><td>📁 File History + Auto Git</td><td>Every write logged with SHA256 + ISO timestamp + auto commit</td></tr>
+  <tr><td>🔍 Open Search Provider</td><td>Built-in DuckDuckGo (free), pluggable upgrade</td></tr>
+  <tr><td>💾 Unified Memory</td><td>JSONL append-only + edges.json graph + 2-hop associative spread</td></tr>
+  <tr><td>🧬 Self-Evolution</td><td>3-layer learning: behavior tracking → pattern detection → auto-optimize</td></tr>
+  <tr><td>🤖 Agent Delegation</td><td>Main brain decomposes tasks → sub-agents execute → synthesises</td></tr>
+  <tr><td>🔄 Hot Reload</td><td><code>/reload</code> reloads tools/config/SOUL without restarting</td></tr>
+  <tr><td>🎙️ Voice STT</td><td>Telegram voice auto-detected: auto-probes OpenAI / SSE protocols, local faster-whisper fallback</td></tr>
+  <tr><td>🔧 Tool Self-Config</td><td>BAW discovers & registers its own CLI tools</td></tr>
+  <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block) / Medium (warn) / Low (allow)</td></tr>
+  <tr><td>🗺️ Route Plan Execution</td><td>Multi-step plan with 60s timeout + anti-stuck skip</td></tr>
+  <tr><td>🎯 Per-Task Model Routing</td><td>keyword matching routes sub-agents to optimal models</td></tr>
+  <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates dark-themed system dashboard</td></tr>
+  <tr><td>📁 File History + Auto Git</td><td>Every write logged with SHA256 + auto commit</td></tr>
+  <tr><td>👨‍⚕️ Doctor Health Check</td><td><code>--doctor [--fix]</code> — validate config, deps, Docker, disk, API keys</td></tr>
+  <tr><td>🔄 Self-Update</td><td><code>--update</code> — git pull + rebuild Docker + restart</td></tr>
+  <tr><td>📦 Backup & Restore</td><td><code>--backup</code> / <code>--restore</code> — config, .env, memory, sessions</td></tr>
+  <tr><td>👤 Profile Management</td><td><code>--profile-*</code> — isolated instances with independent configs</td></tr>
+  <tr><td>🔬 Diagnostics</td><td><code>--diagnostics</code> — system debug info dump</td></tr>
+  <tr><td>🔐 Reset</td><td><code>--reset</code> — factory reset with confirmation</td></tr>
+  <tr><td>🐚 Shell Completion</td><td><code>--completion bash|zsh</code> — tab completion</td></tr>
+</table>
+
+<h3>Plan-Based Endpoint Selection</h3>
+
+<p>BAW asks about your plan type when adding API keys. Never hardcodes endpoints:</p>
+
+<table>
+  <tr><th>Provider</th><th>Plans</th><th>Base URL</th></tr>
+  <tr><td>Stepfun</td><td>Standard / Step Plan / China</td><td><code>api.stepfun.ai/v1</code> / <code>step_plan/v1</code> / <code>stepfun.com/v1</code></td></tr>
+  <tr><td>Kimi/Moonshot</td><td>Standard / Code Plan</td><td><code>api.moonshot.ai/v1</code></td></tr>
+  <tr><td>MiniMax</td><td>Standard / Subscription</td><td><code>api.minimax.io/v1</code></td></tr>
 </table>
 
 <h3>⚙️ Full Command Reference</h3>
 
 <pre>
+# Core Agent
 baw "prompt"                     # Run agent (single-shot)
 baw                              # Interactive Chat mode
 baw --mode quick/hybrid/tight    # Execution mode
@@ -126,24 +133,62 @@ baw --model &lt;id&gt;                # Model override
 baw --verbose                    # Verbose output + cost
 baw --dry-run                    # Dry run (no changes)
 baw --btw "question"             # Quick LLM question
+
+# Background Tasks
 baw --delegate "task"            # Background task
 baw --task-id &lt;id&gt;              # Check task status
 baw --tasks                      # List background tasks
 baw --task-cancel &lt;id&gt;          # Cancel background task
-baw --version                    # Show version
-baw --status                     # System status
+
+# Setup & Config
+baw --setup                      # Interactive setup wizard (英文)
+baw --cfg list                   # Show all settings
+baw --cfg get &lt;key&gt;             # Query a setting
+baw --cfg set &lt;key&gt; &lt;value&gt;     # Change immediately
+baw --cfg edit                   # Open in $EDITOR
+baw --cfg path                   # Show config path
+baw --cfg env-path               # Show .env path
+baw --cfg check                  # Validate required sections
+
+# Health & Maintenance
+baw --doctor                     # Health check
+baw --doctor --fix               # Health check + auto-repair
+baw --update                     # Pull latest + rebuild Docker
+baw --version                    # Version + build info
+baw --diagnostics                # System debug info
+baw --logs [N]                   # View Docker logs (N lines)
+baw --reset                      # Factory reset
+
+# Memory & Sessions
 baw --remember "text"            # Save memory
 baw --search "query"             # Search memory
+baw --memory-stats               # Memory store statistics
 baw --dream                      # Self-curation
-baw --setup                      # Setup wizard
-baw --cfg list|get|set|help      # Config CLI
-baw --board                      # HTML Dashboard
+
+# Profiles & Backups
+baw --profile-list               # List profiles
+baw --profile-create &lt;name&gt;     # Create profile
+baw --profile-use &lt;name&gt;        # Switch profile
+baw --profile-delete &lt;name&gt;     # Delete profile
+baw --backup                     # Backup all data
+baw --restore [path]             # Restore from backup
+
+# Skills
+baw --skill-list                 # List skills
+baw --skill-run &lt;name&gt;          # Run a skill
+baw --learn-skill "desc"         # Self-learn skill from description
+baw --learn-url &lt;url&gt;           # Learn skill from URL
+
+# Integrations
 baw --gh issues|prs|ci|repos     # GitHub operations
-baw --schedule-list|add|rm       # Schedule management
-baw --skill-list|run             # Skill management
-baw --learn-skill "desc"         # Self-learn skill
-baw --learn-url &lt;url&gt;           # Learn from URL
+baw --board                      # HTML Dashboard
 baw --search-provider list|test  # Search provider mgmt
+baw --schedule-list|add|rm       # Schedule management
+baw --completion bash|zsh        # Shell completion
+
+# Tools
+baw --tools-list                 # List registered tools
+baw --status                     # System status
 </pre>
 
 <h3>🏗️ Architecture</h3>
@@ -151,6 +196,7 @@ baw --search-provider list|test  # Search provider mgmt
 <pre>
 baw/                        ← Code repo
 ├── baw                     CLI entrypoint (Python)
+├── baw-bot                 Bot daemon entrypoint
 ├── core/                   Core modules
 │   ├── loop.py             Agent loop (plan → execute → report)
 │   ├── llm.py              Multi-protocol LLM abstraction
@@ -171,14 +217,19 @@ baw/                        ← Code repo
 │   ├── commands.py         Slash commands
 │   ├── display.py          Step display formatter
 │   ├── dream.py            Weekly self-curation + self-evolution
-│   ├── evolve.py           3-layer self-evolution engine (v0.11)
+│   ├── evolve.py           3-layer self-evolution engine
 │   ├── checkpoint.py       Checkpoint / rollback
 │   ├── degradation.py      Tool degradation chains
 │   ├── file_history.py     File SHA256 history
 │   ├── autosave.py         Auto git commit
 │   ├── render.py           HTML renderer
-│   └── verifier.py         Per-step LLM verification
-├── tools/                  Built-in tools (15 tools)
+│   ├── verifier.py         Per-step LLM verification
+│   ├── doctor.py           Health check (--doctor)
+│   ├── update.py           Self-update + version
+│   ├── backup.py           Backup & restore
+│   ├── profile.py          Profile management
+│   └── diagnostics.py      System diagnostics
+├── tools/                  Built-in tools
 │   ├── bash.py             Shell execution
 │   ├── read_file.py        File reading
 │   ├── write_file.py       File writing
@@ -188,52 +239,55 @@ baw/                        ← Code repo
 │   ├── patch.py            Targeted find-replace editing
 │   ├── memory.py           Memory read/write/search
 │   ├── todo.py             Task list management
-│   ├── delegate_task.py    Sub-agent delegation (v0.11)
+│   ├── delegate_task.py    Sub-agent delegation
 │   ├── vision.py           Image analysis (MiniMax)
-│   ├── browser.py          Web automation (stub, v0.14)
-│   ├── image_generate.py   AI image generation (stub, v0.14)
-│   ├── tts.py              Text-to-speech (stub, v0.14)
-│   └── execute_code.py     Python sandbox (stub, v0.14)
+│   ├── browser.py          Web automation (stub)
+│   ├── image_generate.py   AI image generation (stub)
+│   ├── tts.py              Text-to-speech (MiniMax)
+│   └── execute_code.py     Python sandbox (stub)
 ├── config.yaml             Default config
+├── SETUP.md                First-install quickstart
+├── SOUL.default.md         Template SOUL.md for new profiles
 └── docs/                   GitHub Pages documentation
 
 ~/.baw/                     ← User data directory
 ├── config.yaml             User config
 ├── SOUL.md                 Soul / behaviour rules
-├── ORCHESTRATOR.md         Sub-agent optimization rules (v0.14)
+├── ORCHESTRATOR.md         Sub-agent optimization rules
 ├── .env                    API keys
 ├── memory/store.jsonl      Memory storage
 ├── skills/*.yaml           Custom skills
-└── tasks/                  Background task output
+├── tasks/                  Background task output
+├── sessions/               Session transcripts
+├── backups/                Backup archives
+└── profiles/               Multi-profile directories
 </pre>
 
 <h3>🔧 Configuration</h3>
 
 <pre>
-# Interactive setup wizard
+# Interactive setup wizard (recommended for first time)
 baw --setup
 
 # Real-time Config CLI
 baw --cfg list                    # Show all settings
 baw --cfg get model.default       # Query a setting
-baw --cfg set mode hybrid         # Change immediately
-baw --cfg set tone.default business
-baw --cfg set adversarial.enabled false  # Disable court
-
-# Or edit YAML directly
-vim ~/.baw/config.yaml
+baw --cfg set capabilities.stt.method auto-asr
+baw --cfg set capabilities.tts.model stepaudio-2.5-tts
+baw --cfg edit                    # Open in $EDITOR
+baw --cfg check                   # Validate required sections
 </pre>
 
 <h3>📡 Multi-Platform Messaging</h3>
 
-<p>BAW can connect to multiple messaging platforms via the <code>baw-bot</code> daemon:</p>
+<p>BAW connects to messaging platforms via the <code>baw-bot</code> daemon:</p>
 
 <table>
   <tr><th>Platform</th><th>Status</th><th>Setup</th></tr>
-  <tr><td>📱 Telegram</td><td>✅ Full support (incl. voice STT)</td><td><code>@BotFather</code> → token → <code>baw-bot</code></td></tr>
-  <tr><td>💬 Discord</td><td>✅ Full support</td><td>Discord Developer Portal → token → <code>baw-bot</code></td></tr>
+  <tr><td>📱 Telegram</td><td>✅ Full (voice STT, TTS, images)</td><td><code>@BotFather</code> → token → <code>baw-bot</code></td></tr>
+  <tr><td>💬 Discord</td><td>✅ Full support</td><td>Discord Developer Portal → token</td></tr>
   <tr><td>🔊 Signal</td><td>⚙️ signal-cli required</td><td><code>signal-cli</code> daemon + config</td></tr>
-  <tr><td>💚 WhatsApp</td><td>⚙️ Cloud/Business API</td><td>Meta Developer account or self-hosted API</td></tr>
+  <tr><td>💚 WhatsApp</td><td>⚙️ Cloud/Business API</td><td>Meta Developer account</td></tr>
   <tr><td>🧩 Matrix</td><td>✅ Full support</td><td>Any Matrix account + homeserver</td></tr>
 </table>
 
@@ -257,7 +311,7 @@ baw-bot --token "***"</pre>
 
 <h3>BAW 係咩？</h3>
 
-<p><strong>BAW (Black And White)</strong> 係一套由零開始構建嘅 Agent Platform，唔依賴 LangChain、AutoGPT、或任何現有 framework。個名嚟自兩隻狗仔（黑白配），代表系統嘅核心哲學：<strong>🤍 Angel（執行者）</strong> vs <strong>🖤 Devil（反對派）</strong> 嘅法庭式對抗。</p>
+<p><strong>BAW (Black And White)</strong> 係一套由零開始構建嘅 Agent Platform，唔依賴 LangChain、AutoGPT、或任何現有 framework。系統嘅核心哲學：<strong>🤍 Angel（執行者）</strong> vs <strong>🖤 Devil（反對派）</strong> 嘅法庭式對抗。</p>
 
 <h3>🚀 Quick Start</h3>
 
@@ -265,28 +319,26 @@ baw-bot --token "***"</pre>
 # 安裝
 git clone https://github.com/cornreform/baw-agent-platform.git
 cd baw-agent-platform
-pip install pyyaml httpx duckduckgo-search croniter openpyxl python-docx python-pptx PyMuPDF pytesseract
-# Optional: faster-whisper for local voice STT
-# pip install faster-whisper
+pip install -r requirements.txt
 ln -sf $PWD/baw ~/.local/bin/baw
 
-# 設定 API Key（~/.baw/.env）
-echo "DEEPSEEK_API_KEY=*** >> ~/.baw/.env
+# 互動式設定精靈（英文界面）
+baw --setup
+
+# 或直接加 API Key
+echo "STEPFUN_API_KEY=*** >> ~/.baw/.env
 
 # ✨ 即刻用！
 baw "list files in current directory"
-baw --tone business "寫一份合作提案"
-baw --btw "而家幾點？"
-baw --setup           # 互動式設定精靈
-baw                   # 互動式 Chat 模式
+baw --doctor           # 健康檢查
+baw --update           # 更新 + 重建 Docker
+baw                    # 互動式 Chat 模式
 </pre>
 
 <blockquote>
 <strong>💡 第一次用？</strong><br>
-如果 <code>baw: command not found</code>，將 <code>~/.local/bin</code> 加入 PATH：<br>
-<strong>Bash:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc</code><br>
-<strong>Zsh:</strong> <code>echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc</code><br>
-<strong>Fish:</strong> <code>fish_add_path "$HOME/.local/bin"</code>
+執行 <code>baw --setup</code> — 設定精靈會逐步行：Telegram token、default model、API keys、自動配置 provider + STT + TTS + vision。<br>
+<strong>Plan 選擇：</strong> setup 會問你用緊邊個 plan（標準 / step-plan / code-plan 等），唔會 hardcode endpoint。
 </blockquote>
 
 <h3>🔧 系統要求</h3>
@@ -295,83 +347,99 @@ baw                   # 互動式 Chat 模式
   <tr><th>要求</th><th>檢查／安裝</th></tr>
   <tr><td>Python 3.11+</td><td><code>python3 --version</code> — macOS: <code>brew install python@3.12</code> / Linux: <code>sudo apt install python3.12</code></td></tr>
   <tr><td>Git</td><td><code>git --version</code> — macOS: <code>brew install git</code> / Linux: <code>sudo apt install git</code></td></tr>
-  <tr><td>pip</td><td><code>python3 -m pip --version</code> — 如果冇: <code>python3 -m ensurepip --upgrade</code></td></tr>
-  <tr><td>~/.local/bin in PATH</td><td><code>echo $PATH</code> 應該包含 <code>~/.local/bin</code> — 見上面 Bash/Zsh/Fish 設定</td></tr>
+  <tr><td>pip</td><td><code>python3 -m pip --version</code></td></tr>
+  <tr><td>~/.local/bin in PATH</td><td><code>echo $PATH</code> 應該包含 <code>~/.local/bin</code></td></tr>
+  <tr><td>Docker (optional)</td><td><code>docker --version</code> — Telegram bot 需要</td></tr>
 </table>
-
-<h3>🤖 一鍵安裝</h3>
-
-<pre>
-curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
-</pre>
-
-<p>會自動：檢測 Python → pip 安裝依賴 → clone repo → 建立 <code>baw</code> CLI wrapper → 檢查 PATH → 顯示下一步。</p>
 
 <h3>🎯 核心特色</h3>
 
 <table>
   <tr><th>特色</th><th>說明</th></tr>
   <tr><td>⚖️ Angel/Devil 法庭</td><td>Devil 永遠先發言，零執行權限；Angel 聽完再行。Devil 分數 > Angel → STOP</td></tr>
-  <tr><td>🧠 永不放棄哲學</td><td>失敗 → retry → replan → rollback。6 種策略用盡先上報，唔問用戶</td></tr>
-  <tr><td>🔌 協議無關 LLM</td><td>OpenAI / Anthropic / Google 協議通吃。一行 config 轉模型，內置 cost tracking</td></tr>
+  <tr><td>🧠 永不放棄哲學</td><td>失敗 → retry → replan → rollback。6 種策略用盡先上報</td></tr>
+  <tr><td>🔌 協議無關 LLM</td><td>OpenAI / Anthropic / Google 協議通吃。一行 config 轉模型</td></tr>
   <tr><td>⚙️ 三種執行模式</td><td>Quick（最快）/ Hybrid（平衡）/ Tight（完整 court+plan+verify）</td></tr>
-  <tr><td>🗣️ 6 種語氣 Profile</td><td>casual / business / teaching / client-doc / ot-rt / stepwise，隨時切換</td></tr>
-  <tr><td>📝 自我學習技能</td><td><code>--learn-skill "描述"</code> 自動分析拆解生成 YAML skill</td></tr>
+  <tr><td>🗣️ 6 種語氣 Profile</td><td>casual / business / teaching / client-doc / ot-rt / stepwise</td></tr>
+  <tr><td>📝 自我學習技能</td><td><code>--learn-skill</code> 自動分析拆解生成 YAML skill</td></tr>
   <tr><td>🔄 Scheduler 排程</td><td>Cron 表達式定時任務，60s 背景 daemon</td></tr>
-  <tr><td>📁 背景 Async Task</td><td><code>--delegate</code> 背景執行，主 terminal 即時 free，max 3 concurrent</td></tr>
+  <tr><td>📁 背景 Task</td><td><code>--delegate</code> 背景執行，主 terminal 即時 free</td></tr>
   <tr><td>🐙 GitHub 整合</td><td>issues / PRs / CI / repos 直接操作</td></tr>
   <tr><td>🔍 開放 Search Provider</td><td>內置 DuckDuckGo（免費），可 pluggable 升級</td></tr>
-  <tr><td>💾 統一記憶 + 事實查證</td><td>JSONL append‑only + edges.json 圖譜 + 2-hop 關聯 + 自動衰退</td></tr>
-  <tr><td>🧬 自我進化 (v0.11)</td><td>三層學習：行為追蹤 → 模式偵測 → 自動優化 SOUL/config</td></tr>
-  <tr><td>🤖 Agent Delegation (v0.11)</td><td>主腦（DeepSeek）拆任務 → MiniMax 子 agent 執行 → DeepSeek 綜合</td></tr>
-  <tr><td>🔄 Hot Reload (v0.11)</td><td><code>/reload</code> 熱重載 tools/config/SOUL，唔使 restart</td></tr>
-  <tr><td>🎙️ Voice STT (v0.11)</td><td>Telegram 語音自動檢測：檢查模型 audio_input 能力 → STT 設定 → faster-whisper 本地 fallback。冇可用方案時列出安裝選項</td></tr>
-  <tr><td>📊 Context Monitor (v0.12)</td><td>自動檢測 context 使用量。>70% → 自動 LLM 總結 + save 落記憶 + 壓縮 session（留最後 4 句 + summary header）</td></tr>
-  <tr><td>🗂️ Session 管理 (v0.12)</td><td><code>/new</code>、<code>/list</code>、<code>/resume &lt;id&gt;</code>、<code>/summarize</code> — 完整 session lifecycle，唔再怕 context 爆</td></tr>
-  <tr><td>🗺️ Route Plan 執行 (v0.13)</td><td>多步驟路線圖 + 即時 inline progress edit。60s step timeout + 連 fail 2 次 skip — 永遠唔會 silent stop</td></tr>
-  <tr><td>🔧 Tool Self-Config (v0.13)</td><td>BAW 自己發現 + 登記 CLI 工具。唔使預先設定 — 搵到 <code>mmx</code>、寫 wrapper、自動 register</td></tr>
-  <tr><td>👁️ MiniMax Vision (v0.13)</td><td>圖片處理用 <code>mmx vision describe</code> (MiniMax M3)。OCR 只做 fallback</td></tr>
-  <tr><td>🔄 Auto-Continue Loop (v0.13)</td><td>目標未達成？自動將結果傳返做下一個 prompt（max 3 rounds）。唔會再空口講白話</td></tr>
-  <tr><td>🧰 擴充工具集 (v0.14)</td><td>15 個內置工具：patch、web_extract、search_files、memory、todo、vision、browser、image_generate、tts、execute_code</td></tr>
-  <tr><td>🎯 按 Task 選 Model (v0.14)</td><td><code>model.task_rules</code> 關鍵字配對自動路由。search→kimi、code→deepseek、vision→MiniMax</td></tr>
-  <tr><td>🏷️ Task 內 Model Override (v0.14)</td><td><code>[model: X] [stt: Y]</code> tag 覆蓋功能路由。Tag 自動 strip，LLM 睇唔到。只對當前 task 有效</td></tr>
-  <tr><td>🧠 Orchestrator 規則 (v0.14)</td><td>5 條優化規則由 ORCHESTRATOR.md 載入：Inline Gate、Macro-Step Grouping、Context Injection、Sequential Default、Shared Scratchpad</td></tr>
-  <tr><td>🛡️ 三級權限引擎</td><td>High（禁止 sudo/rm -rf）/ Medium（提示）/ Low（允許）</td></tr>
-  <tr><td>📊 HTML Dashboard</td><td><code>--board</code> 一鍵生成深色主題系統儀錶板</td></tr>
-  <tr><td>💬 互動式 CLI Chat</td><td>彩色 banner + Tab 補全 slash commands + 20 個指令</td></tr>
-  <tr><td>⚙️ Setup Wizard + Config CLI</td><td><code>--setup</code> / <code>--cfg set/get/list</code> 即時設定</td></tr>
-  <tr><td>📁 檔案版本歷史 + Auto Git</td><td>每次寫入 SHA256 + ISO timestamp + 自動 commit</td></tr>
+  <tr><td>💾 統一記憶</td><td>JSONL append‑only + edges.json 圖譜 + 2-hop 關聯</td></tr>
+  <tr><td>🧬 自我進化</td><td>三層學習：行為追蹤 → 模式偵測 → 自動優化</td></tr>
+  <tr><td>🤖 Agent Delegation</td><td>主腦拆任務 → 子 agent 執行 → 綜合報告</td></tr>
+  <tr><td>🎙️ Voice STT</td><td>Telegram 語音自動檢測，auto-probe OpenAI/SSE 協議，本地 faster-whisper fallback</td></tr>
+  <tr><td>👨‍⚕️ 健康檢查</td><td><code>--doctor [--fix]</code> — config、依賴、Docker、Disk、API key 全面檢查</td></tr>
+  <tr><td>🔄 自更新</td><td><code>--update</code> — git pull + 重建 Docker + 重啟</td></tr>
+  <tr><td>📦 備份還原</td><td><code>--backup</code> / <code>--restore</code> — 全部資料一鍵打包</td></tr>
+  <tr><td>👤 Profile 管理</td><td><code>--profile-*</code> — 獨立設定、記憶、session 隔離</td></tr>
+  <tr><td>🔐 出廠重置</td><td><code>--reset</code> — 確認後 wipe 全部數據</td></tr>
+</table>
+
+<h3>Plan-Based Endpoint 選擇</h3>
+
+<p>Set up 時會問你用緊邊個 plan，唔會 hardcode endpoint：</p>
+
+<table>
+  <tr><th>Provider</th><th>Plans</th><th>Base URL</th></tr>
+  <tr><td>Stepfun</td><td>標準 / Step Plan / 內地版</td><td><code>api.stepfun.ai/v1</code> / <code>step_plan/v1</code> / <code>stepfun.com/v1</code></td></tr>
+  <tr><td>Kimi/Moonshot</td><td>標準 / Code Plan</td><td><code>api.moonshot.ai/v1</code></td></tr>
+  <tr><td>MiniMax</td><td>標準 / 付費計劃</td><td><code>api.minimax.io/v1</code></td></tr>
 </table>
 
 <h3>⚙️ 完整指令一覽</h3>
 
 <pre>
+# Agent 核心
 baw "prompt"                     # 執行 agent（單句模式）
 baw                              # 互動式 Chat 模式
 baw --mode quick/hybrid/tight    # 執行模式
 baw --tone &lt;profile&gt;             # 語氣 override
 baw --model &lt;id&gt;                # 模型 override
-baw --verbose                    # 詳細輸出 + 成本
-baw --dry-run                    # 試行（唔改 file）
-baw --btw "question"             # 快速 LLM 一問一答
-baw --delegate "task"            # 背景執行任務
-baw --task-id &lt;id&gt;              # 檢查背景任務
-baw --tasks                      # 列表背景任務
-baw --task-cancel &lt;id&gt;          # 取消背景任務
-baw --version                    # 版本
-baw --status                     # 系統狀態
+baw --btw "question"             # 快速一問一答
+
+# Set up & Config
+baw --setup                      # 互動設定精靈（英文）
+baw --cfg list                   # 顯示所有設定
+baw --cfg get &lt;key&gt;             # 查設定
+baw --cfg set &lt;key&gt; &lt;value&gt;     # 即時修改
+baw --cfg edit                   # 用編輯器改 config
+baw --cfg check                  # 驗證必要設定
+
+# 健康維護
+baw --doctor                     # 健康檢查
+baw --doctor --fix               # 檢查 + 自動修復
+baw --update                     # 更新 + 重建 Docker
+baw --diagnostics                # 系統除錯資訊
+baw --logs [N]                   # Docker logs
+baw --version                    # 版本資訊
+baw --reset                      # 出廠重置
+
+# 記憶與 Session
 baw --remember "text"            # 儲存記憶
 baw --search "query"             # 搜尋記憶
+baw --memory-stats               # 記憶統計
 baw --dream                      # 自我整理
-baw --setup                      # 互動設定精靈
-baw --cfg list|get|set|help      # Config CLI
-baw --board                      # HTML Dashboard
-baw --gh issues|prs|ci|repos     # GitHub 操作
-baw --schedule-list|add|rm       # 排程管理
-baw --skill-list|run             # Skills 管理
+
+# Profile 與備份
+baw --profile-list               # 列出 profiles
+baw --profile-create &lt;name&gt;     # 建立 profile
+baw --profile-use &lt;name&gt;        # 切換 profile
+baw --backup                     # 備份所有數據
+baw --restore [path]             # 從備份還原
+
+# Skills
+baw --skill-list                 # 列出 skills
 baw --learn-skill "desc"         # 自我學習技能
 baw --learn-url &lt;url&gt;           # 從 URL 學技能
-baw --search-provider list|test  # Search provider 管理
+
+# 整合功能
+baw --gh issues|prs|ci|repos     # GitHub 操作
+baw --board                      # HTML Dashboard
+baw --schedule-list|add|rm       # 排程管理
+baw --completion bash|zsh        # Shell 補全
+baw --tools-list                 # 列出 tools
 </pre>
 
 <h3>🏗️ 架構</h3>
@@ -379,6 +447,7 @@ baw --search-provider list|test  # Search provider 管理
 <pre>
 baw/                        ← Code repo
 ├── baw                     CLI entry point（Python）
+├── baw-bot                 Bot daemon entry point
 ├── core/                   核心模組
 │   ├── loop.py             Agent loop（plan → execute → report）
 │   ├── llm.py              多協議 LLM abstraction
@@ -395,144 +464,57 @@ baw/                        ← Code repo
 │   ├── task_manager.py     背景 Task 管理
 │   ├── github.py           GitHub 整合
 │   ├── search.py           開放 search provider
-│   ├── setup.py            互動式設定精靈 + Config CLI
+│   ├── setup.py            設定精靈 + Config CLI
+│   ├── doctor.py           健康檢查 (--doctor)
+│   ├── update.py           自更新 + 版本
+│   ├── backup.py           備份還原
+│   ├── profile.py          Profile 管理
+│   ├── diagnostics.py      系統除錯
 │   ├── commands.py         Slash commands
 │   ├── display.py          步驟顯示格式化
-│   ├── dream.py            每週自我整理 + 自我進化
-│   ├── evolve.py           三層自我進化引擎 (v0.11)
-│   ├── checkpoint.py       Checkpoint / rollback
-│   ├── degradation.py      Tool degradation chains
-│   ├── file_history.py     檔案版本 SHA256
-│   ├── autosave.py         自動 git commit
-│   ├── render.py           HTML renderer
-│   └── verifier.py         Per-step verify
-├── tools/                  內置工具 (15 tools)
+│   └── dream.py            每週自我整理
+├── tools/                  內置工具
 │   ├── bash.py             命令執行
 │   ├── read_file.py        讀檔案
 │   ├── write_file.py       寫檔案
 │   ├── web_search.py       Web 搜尋
-│   ├── web_extract.py      Web 內容提取
-│   ├── search_files.py     程式碼搜尋 (ripgrep)
 │   ├── patch.py            精準檔案編輯
-│   ├── memory.py           記憶讀寫
-│   ├── todo.py             任務管理
-│   ├── delegate_task.py    子代理委派 (v0.11)
-│   ├── vision.py           圖片分析 (MiniMax)
-│   ├── browser.py          Web 自動化 (stub, v0.14)
-│   ├── image_generate.py   AI 圖片生成 (stub, v0.14)
-│   ├── tts.py              語音合成 (stub, v0.14)
-│   └── execute_code.py     Python 沙盒 (stub, v0.14)
+│   └── ...（共 15 個 tools）
 ├── config.yaml             預設配置
+├── SETUP.md                首次安裝指南
+├── SOUL.default.md         Template SOUL.md
 └── docs/                   GitHub Pages 文檔
-
-~/.baw/                     ← 用戶設定目錄
-├── config.yaml             用戶配置
-├── SOUL.md                 Soul / 行為規則
-├── ORCHESTRATOR.md         子代理優化規則 (v0.14)
-├── .env                    API keys
-├── memory/store.jsonl      記憶儲存
-├── skills/*.yaml           自訂 skills
-└── tasks/                  背景任務輸出
 </pre>
-
-<h3>🔧 設定</h3>
-
-<pre>
-# 互動式設定精靈
-baw --setup
-
-# 即時 Config CLI
-baw --cfg list                    # 顯示所有設定
-baw --cfg get model.default       # 查某個設定
-baw --cfg set mode hybrid         # 即時修改
-baw --cfg set tone.default business
-baw --cfg set adversarial.enabled false  # 熄咗法庭
-
-# 直接編輯 YAML 都得
-vim ~/.baw/config.yaml
-</pre>
-
-<h3>📡 多平台即時通訊</h3>
-
-<p>BAW 透過 <code>baw-bot</code> daemon 連接各大通訊平台：</p>
-
-<table>
-  <tr><th>平台</th><th>狀態</th><th>設定方法</th></tr>
-  <tr><td>📱 Telegram</td><td>✅ 完整支援（含語音辨識）</td><td><code>@BotFather</code> 開 Bot → token → <code>baw-bot</code></td></tr>
-  <tr><td>💬 Discord</td><td>✅ 完整支援</td><td>Discord Developer Portal → token → <code>baw-bot</code></td></tr>
-  <tr><td>🔊 Signal</td><td>⚙️ 需 signal-cli</td><td>安裝 signal-cli daemon + 設定電話號碼</td></tr>
-  <tr><td>💚 WhatsApp</td><td>⚙️ Cloud/Business API</td><td>Meta 開發者帳號或 self-hosted API</td></tr>
-  <tr><td>🧩 Matrix</td><td>✅ 完整支援</td><td>任何 Matrix 帳號 + homeserver</td></tr>
-</table>
-
-<pre>
-# 啟動所有已設定嘅平台
-baw-bot
-
-# 只啟動 Telegram
-baw-bot --platform telegram
-
-# 列出可用平台
-baw-bot --list
-
-# 快速測試 Telegram
-baw-bot --token "***"</pre>
-
----
-
-<h2>🖥️ CLI Reference</h2>
-
-<p>BAW now ships with a <strong>12-command Purple+Gold CLI</strong>. Just type <code>baw</code> in your terminal.</p>
-
-<h3>🚀 Quick Start</h3>
-<pre>baw                  # → Direct interactive chat (default)
-baw chat             # → Explicit chat mode
-baw --help           # → Full help with examples</pre>
-
-<h3>⚡ Monitor</h3>
-
-<table>
-<tr><th>Command</th><th>Description</th></tr>
-<tr><td><code>baw status</code></td><td>🩺 Live health — uptime, sessions, memory, connectors</td></tr>
-<tr><td><code>baw models</code></td><td>🤖 All models table + capability routing matrix + Angel/Devil</td></tr>
-<tr><td><code>baw memory</code></td><td>🧩 Memory store stats — size, entries, scores</td></tr>
-<tr><td><code>baw sessions</code></td><td>📋 Browse past session transcripts</td></tr>
-<tr><td><code>baw logs</code></td><td>📜 Tail Docker logs in real-time</td></tr>
-<tr><td><code>baw dashboard</code></td><td>📊 Full-screen TUI dashboard (Textual) — 6 live panels, 5s refresh</td></tr>
-</table>
-
-<h3>🔧 Manage</h3>
-
-<table>
-<tr><th>Command</th><th>Description</th></tr>
-<tr><td><code>baw config show</code></td><td>📄 View config.yaml + .env (secrets masked)</td></tr>
-<tr><td><code>baw soul show</code></td><td>🧠 View/edit BAW's SOUL.md — core identity + rules</td></tr>
-<tr><td><code>baw skill list</code></td><td>📦 List installed BAW skills</td></tr>
-</table>
-
-<h3>💬 In-Chat Commands</h3>
-<pre>/help       Show help          /model NAME  Switch model
-/soul       View SOUL.md       /config      View current config
-/session    Session info       /clear       Reset conversation
-/exit       Quit chat</pre>
-
-<h3>📊 Dashboard Panels</h3>
-<table>
-<tr><th>Panel</th><th>Shows</th></tr>
-<tr><td>System</td><td>Host, uptime, Python version</td></tr>
-<tr><td>Models</td><td>All providers/models + capability routing + Angel/Devil</td></tr>
-<tr><td>Connectors</td><td>Telegram status + message count</td></tr>
-<tr><td>Sessions</td><td>Recent session transcripts</td></tr>
-<tr><td>Memory</td><td>Entry count, size, score distribution</td></tr>
-<tr><td>Activity</td><td>Recent log entries</td></tr>
-</table>
 
 <hr>
 
-<p align="center">
-  <a href="https://github.com/cornreform/baw-agent-platform">GitHub</a> •
-  <a href="https://cornreform.github.io/baw-agent-platform/">Documentation</a> •
-  <a href="BAW-PLAN.html">Design Doc</a>
-</p>
+<h2>🖥️ CLI Reference</h2>
 
-<p align="center"><sub>Built from scratch — no framework, no vendor lock-in, no surrender.</sub></p>
+<p>BAW ships with a full-featured CLI. Just type <code>baw</code> in your terminal.</p>
+
+<h3>🚀 Quick Start</h3>
+<pre>baw                  # → Direct interactive chat (default)
+baw --help           # → Full help with examples
+baw --doctor         # → Health check
+baw --setup          # → Guided setup wizard</pre>
+
+<h3>📋 All Commands</h3>
+
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code>baw --doctor [--fix]</code></td><td>🩺 Health check + auto-repair</td></tr>
+<tr><td><code>baw --setup</code></td><td>🎯 Interactive setup wizard</td></tr>
+<tr><td><code>baw --update</code></td><td>🔄 Pull latest + rebuild Docker</td></tr>
+<tr><td><code>baw --version</code></td><td>📌 Version, commit, branch, Docker SHA</td></tr>
+<tr><td><code>baw --backup</code></td><td>💾 Backup config, .env, memory, sessions</td></tr>
+<tr><td><code>baw --restore [path]</code></td><td>📂 Restore from backup</td></tr>
+<tr><td><code>baw --profile-list</code></td><td>👤 List profiles</td></tr>
+<tr><td><code>baw --profile-create &lt;name&gt;</code></td><td>👤 Create profile</td></tr>
+<tr><td><code>baw --diagnostics</code></td><td>🔬 System debug info</td></tr>
+<tr><td><code>baw --logs [N]</code></td><td>📜 Tail Docker logs</td></tr>
+<tr><td><code>baw --reset</code></td><td>🔐 Factory reset</td></tr>
+<tr><td><code>baw --cfg list</code></td><td>⚙️ Show all settings</td></tr>
+<tr><td><code>baw --cfg set &lt;k&gt; &lt;v&gt;</code></td><td>⚙️ Change setting</td></tr>
+<tr><td><code>baw --cfg edit</code></td><td>⚙️ Open in editor</td></tr>
+<tr><td><code>baw --cfg check</code></td><td>⚙️ Validate config</td></tr>
+</table>
