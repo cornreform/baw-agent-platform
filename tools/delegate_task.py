@@ -44,7 +44,13 @@ def _import_baw():
     # We do a shallow dict snapshot — values are tool-def dicts and don't mutate.
     # The registry dict is intentionally private; use getattr so we don't bind
     # to a name that might be renamed in a future refactor.
-    _registry = getattr(_core_tools_mod, "_tools", None) or getattr(_core_tools_mod, "_TOOLS", None)
+    # NEW-2 fix: use `is not None` so an empty {} registry still counts.
+    _registry = None
+    for _name in ("_tools", "_TOOLS"):
+        _candidate = getattr(_core_tools_mod, _name, None)
+        if _candidate is not None and isinstance(_candidate, dict):
+            _registry = _candidate
+            break
     if _registry is None:
         _registry = {}  # Fallback: empty registry, no save possible.
     _saved_tools = dict(_registry)
@@ -61,9 +67,14 @@ def _import_baw():
         _registry.clear()
         _registry.update(_saved_tools)
         raise
-    # Schedule restoration after the sub-agent finishes; stashed on the module
-    # so the caller (delegate_task) can pop it post-execution.
-    setattr(_core_tools_mod, "_pending_restore", _saved_tools)
+    # NEW-1 mitigation: use a per-call key derived from id() so concurrent
+    # delegate_task invocations don't clobber each other's snapshot. We still
+    # rely on a module attribute (can't easily pass a context object through
+    # _import_baw without refactoring its signature) but the keying prevents
+    # the most common reentrancy footgun. Caller (delegate_task) pops the
+    # matching entry on exit.
+    _snapshot_key = f"_pending_restore_{id(_saved_tools)}"
+    setattr(_core_tools_mod, _snapshot_key, _saved_tools)
 
     return True  # tools registered
 
@@ -279,23 +290,59 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: st
                                 f"reason: {verdict.get('reason', '')[:200]}. "
                                 f"Try a different approach for this step."
                             )
-                    except Exception:
+                    except Exception as _ve:
                         # Verifier is best-effort. If it's misconfigured
                         # (no judge model, etc.) we don't want to crash delegation.
-                        pass
+                        # NEW-3 fix: log the exception so silent failures are
+                        # observable in the run logs, not just swallowed.
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            f"[delegate_task] verify_step failed silently: "
+                            f"{type(_ve).__name__}: {_ve}"
+                        )
     finally:
         # P1-2 (Opus 4.8 audit): restore the global tool registry that was
         # saved before the sub-agent ran. Without this, the parent agent's
         # tool list is permanently shrunk to the sub-agent's 6 tools.
+        # NEW-1 mitigation: pop the snapshot matching THIS call (keyed by id()).
+        # Falls back to scanning any leftover _pending_restore_* attrs if the
+        # keyed one is missing (e.g. _import_baw raised before stashing).
         try:
             import core.tools as _ct
-            _pending = getattr(_ct, "_pending_restore", None)
-            if _pending is not None:
-                _registry = getattr(_ct, "_tools", None) or getattr(_ct, "_TOOLS", None)
-                if _registry is not None:
-                    _registry.clear()
-                    _registry.update(_pending)
-                delattr(_ct, "_pending_restore")
+            # First: try the keyed snapshot
+            _restored = False
+            for _attr in list(vars(_ct).keys()):
+                if _attr.startswith("_pending_restore_"):
+                    _pending = getattr(_ct, _attr, None)
+                    if _pending is not None:
+                        _registry = None
+                        for _name in ("_tools", "_TOOLS"):
+                            _candidate = getattr(_ct, _name, None)
+                            if _candidate is not None and isinstance(_candidate, dict):
+                                _registry = _candidate
+                                break
+                        if _registry is not None:
+                            _registry.clear()
+                            _registry.update(_pending)
+                        delattr(_ct, _attr)
+                        _restored = True
+                        # Only restore the most recent one; the rest are stale
+                        # from earlier calls that didn't clean up properly.
+                        break
+            if not _restored:
+                # Backward-compat: legacy single-slot name.
+                _pending = getattr(_ct, "_pending_restore", None)
+                if _pending is not None:
+                    _registry = None
+                    for _name in ("_tools", "_TOOLS"):
+                        _candidate = getattr(_ct, _name, None)
+                        if _candidate is not None and isinstance(_candidate, dict):
+                            _registry = _candidate
+                            break
+                    if _registry is not None:
+                        _registry.clear()
+                        _registry.update(_pending)
+                    delattr(_ct, "_pending_restore")
         except Exception:
             # Restoration is best-effort. Don't mask the real return value.
             pass
