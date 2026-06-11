@@ -169,6 +169,8 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
             "- If the task says 'generate audio', GENERATE IT. Do not describe what audio would sound like.\n"
             "- NEVER output a text description without a tool call. Text-only = wasted iteration.\n"
             "- FIRST message: call a tool. Not 'let me think' — CALL THE TOOL.\n"
+            "- For API calls: use urllib.request (stdlib, always available) — do NOT try curl first.\n"
+            "  curl may not be installed in this environment, wasting iterations.\n"
             "- If you hit an error (API key, missing tool), try an alternative IMMEDIATELY.\n"
             "- python3 is ALWAYS available. urllib.request is in stdlib. Use it when curl is missing.\n"
             "- DO NOT explain what went wrong. FIX IT or try another way.\n"
