@@ -1348,7 +1348,7 @@ class BaseConnector(ABC):
                         # Plan message — edit if exists, else new
                         meta = args or {}
                         total = meta.get("steps", 0)
-                        plan_text = f"🗺️ Route plan: {total} step{'s' if total != 1 else ''}"
+                        plan_text = f"📋 plan"
                         if _progress_msg_id:
                             # Edit existing plan message (dynamic update)
                             self.send(chat_id, plan_text, edit_msg_id=_progress_msg_id)
@@ -1370,13 +1370,10 @@ class BaseConnector(ABC):
                         s = meta.get("step", "")
                         t = meta.get("total", "")
                         g = meta.get("goal", "")[:50]
-                        _grp = meta.get("group", "A")
-                        _gsi = meta.get("step_in_group", s)
-                        _ggt = meta.get("group_total", t)
-                        if t and int(t) <= 1:
-                            _progress_lines.append(f"  ✅ {g}")
+                        if g:
+                            _progress_lines.append(f"✅ {g}")
                         else:
-                            _progress_lines.append(f"  ✅ Step {_grp} {_gsi}/{_ggt}: {g}")
+                            _progress_lines.append(f"✅ step {s}/{t}")
                         # Keep last 6 lines only for inline editing
                         _lines = _progress_lines[-6:]
                         if len(_progress_lines) > 6:
@@ -1394,7 +1391,7 @@ class BaseConnector(ABC):
                             logger.warning(f"[Loop] {_recalc_total} recalculations — forcing stop")
                             self._cancel_event.set()
                             return
-                        _progress_lines.append(f"↻ Recalculating... (step {meta.get('step','?')})")
+                        _progress_lines.append(f"↻ {meta.get('goal', '')[:40]}" if meta.get('goal') else "↻ recalculating")
                         if _progress_msg_id:
                             self.send(chat_id, "\n".join(_progress_lines[-8:]),
                                        edit_msg_id=_progress_msg_id)
