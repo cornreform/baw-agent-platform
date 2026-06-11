@@ -286,6 +286,15 @@ capabilities:
 3. 如果有 → **自動加入** provider + model 到 config.yaml，即時可用
 4. 如果冇 → 提示用戶需要加 API key
 
+### ⚠️ 地區選擇（重要！）
+
+部分 provider（Stepfun、MiniMax）有 **國際版** 同 **內地版** 之分，endpoint 唔同：
+| Provider | 國際版 base_url | 內地版 base_url |
+|----------|----------------|----------------|
+| Stepfun | `https://api.stepfun.ai/v1` | `https://api.stepfun.com/v1` |
+
+**當用戶叫你加 API key 時，你必須問用戶係國際版定內地版。** 唔可以 hardcode endpoint！用 user 嘅選擇決定 base_url。
+
 **支援自動發現嘅 provider：**
 - Anthropic (ANTHROPIC_API_KEY) — claude-* 模型
 - Google (GEMINI_API_KEY) — gemini-* 模型
