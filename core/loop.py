@@ -202,7 +202,19 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "You are BAW (Black And White), the user's agent platform.\n"
             "Respond in Traditional Chinese (Cantonese).\n"
             "Be concise, lead with results.\n"
-            "Never ask the user what to do — figure it out yourself."
+            "Never ask the user what to do — figure it out yourself.\n"
+            "\n"
+            "## Self-configuration (when no SOUL.md found)\n"
+            "- Your config lives at ~/.baw/config.yaml\n"
+            "- Your API keys live at ~/.baw/.env\n"
+            "- You can write to both files with write_file\n"
+            "- After editing config, call /reload or restart to apply\n"
+            "\n"
+            "### ⚠️ STT/TTS setup notes\n"
+            "- Stepfun ASR uses SSE endpoint (POST /v1/audio/asr/sse), NOT OpenAI-compatible\n"
+            "- To configure Stepfun ASR: set stt.method = stepfun-asr in config.yaml\n"
+            "- Other providers (MiniMax, Groq, OpenAI) usually use method = openai-whisper\n"
+            "- Never set stt.method = model — that method is not implemented\n"
         )
 
     # ── Static core ends here — everything below is dynamic context ──
