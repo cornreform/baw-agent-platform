@@ -797,57 +797,57 @@ class TelegramConnector(BaseConnector):
                                     try:
                                         sse_url = f"{sse_candidate}/audio/asr/sse"
                                         logger.info(f"[Telegram] ASR probe: SSE @ {sse_url}")
-                                    sse_payload = {
-                                        "audio": {
-                                            "data": audio_b64,
-                                            "input": {
-                                                "transcription": {
-                                                    "language": "zh",
-                                                    "model": stt_model_id or "stepaudio-2.5-asr",
-                                                    "enable_itn": True,
-                                                    "enable_timestamp": False,
+                                        sse_payload = {
+                                            "audio": {
+                                                "data": audio_b64,
+                                                "input": {
+                                                    "transcription": {
+                                                        "language": "zh",
+                                                        "model": stt_model_id or "stepaudio-2.5-asr",
+                                                        "enable_itn": True,
+                                                        "enable_timestamp": False,
+                                                    },
+                                                    "format": {"type": audio_type},
                                                 },
-                                                "format": {"type": audio_type},
-                                            },
+                                            }
                                         }
-                                    }
-                                    full_text = ""
-                                    with httpx.Client(timeout=60, verify=True) as cli:
-                                        resp = cli.post(
-                                            sse_url, json=sse_payload,
-                                            headers={
-                                                "Authorization": f"Bearer {api_key}",
-                                                "Content-Type": "application/json",
-                                                "Accept": "text/event-stream",
-                                            },
-                                        )
-                                        if resp.status_code in (200, 201):
-                                            for line in resp.iter_lines():
-                                                line = line.strip()
-                                                if not line:
-                                                    continue
-                                                if line.startswith("data: "):
-                                                    data_str = line[6:]
-                                                    if data_str == "[DONE]":
-                                                        break
-                                                    try:
-                                                        evt = _json.loads(data_str)
-                                                        t = evt.get("type", "")
-                                                        if t == "transcript.text.delta":
-                                                            full_text += evt.get("delta", "")
-                                                        elif t == "transcript.text.done":
-                                                            full_text = evt.get("text", full_text)
-                                                            break
-                                                        elif t == "error":
-                                                            raise RuntimeError(evt.get("message", str(evt)))
-                                                    except _json.JSONDecodeError:
+                                        full_text = ""
+                                        with httpx.Client(timeout=60, verify=True) as cli:
+                                            resp = cli.post(
+                                                sse_url, json=sse_payload,
+                                                headers={
+                                                    "Authorization": f"Bearer {api_key}",
+                                                    "Content-Type": "application/json",
+                                                    "Accept": "text/event-stream",
+                                                },
+                                            )
+                                            if resp.status_code in (200, 201):
+                                                for line in resp.iter_lines():
+                                                    line = line.strip()
+                                                    if not line:
                                                         continue
-                                            if full_text.strip():
-                                                text = full_text.strip()
-                                                used_method = "auto-asr-sse"
-                                                logger.info(f"[Telegram] ASR OK via SSE: {len(text)} chars")
-                                except Exception as e2:
-                                    logger.info(f"[Telegram] SSE ASR failed: {e2}")
+                                                    if line.startswith("data: "):
+                                                        data_str = line[6:]
+                                                        if data_str == "[DONE]":
+                                                            break
+                                                        try:
+                                                            evt = _json.loads(data_str)
+                                                            t = evt.get("type", "")
+                                                            if t == "transcript.text.delta":
+                                                                full_text += evt.get("delta", "")
+                                                            elif t == "transcript.text.done":
+                                                                full_text = evt.get("text", full_text)
+                                                                break
+                                                            elif t == "error":
+                                                                raise RuntimeError(evt.get("message", str(evt)))
+                                                        except _json.JSONDecodeError:
+                                                            continue
+                                        if full_text.strip():
+                                            text = full_text.strip()
+                                            used_method = "auto-asr-sse"
+                                            logger.info(f"[Telegram] ASR OK via SSE: {len(text)} chars")
+                                    except Exception as e2:
+                                        logger.info(f"[Telegram] SSE ASR failed: {e2}")
 
                             if text:
                                 used_method = used_method or "auto-asr"
