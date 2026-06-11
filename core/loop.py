@@ -1536,6 +1536,49 @@ def run_agent(
                         response.content += _dead_note
         except Exception:
             pass  # non-critical
+
+        # ── Post-synthesis: MEDIA path resolution ──
+        # Sub-agent plans may use wrong output paths (e.g. /tmp/baw_test/ instead of
+        # the actual /tmp/baw_tts_*.mp3). Extract real file paths from delegation results.
+        if response and response.content:
+            try:
+                import re as _media_re
+                from pathlib import Path as _MediaPath
+                # Find all MEDIA: paths in the response
+                _media_paths = _media_re.findall(r'MEDIA:([^\n]+\.mp3)', response.content)
+                if _media_paths:
+                    # Collect real file paths from delegation results (OK /path/file.mp3)
+                    _real_files = []
+                    for _r in _delegation_results:
+                        _ok_matches = _media_re.findall(r'\bOK\s+(/[^\n]+\.mp3)', _r)
+                        _real_files.extend(_ok_matches)
+                    # For each MEDIA path that doesn't exist, try to resolve
+                    for _mp in _media_paths:
+                        _mp_clean = _mp.strip()
+                        if _MediaPath(_mp_clean).exists():
+                            continue
+                        # Find a real file with matching voice name in delegation results
+                        _voice_match = _media_re.search(r'([A-Za-z_]+)\.mp3', _mp_clean)
+                        _voice_name = _voice_match.group(1) if _voice_match else ""
+                        _replacement = ""
+                        if _voice_name and _real_files:
+                            for _rf in _real_files:
+                                if _voice_name in _rf:
+                                    _replacement = _rf
+                                    break
+                        if not _replacement and _real_files:
+                            _replacement = _real_files[0]
+                        if _replacement:
+                            response.content = response.content.replace(
+                                f"MEDIA:{_mp_clean}", f"MEDIA:{_replacement}"
+                            )
+                        else:
+                            _warn = f"\n⚠️ MEDIA file not found: {_mp_clean}"
+                            if _real_files:
+                                _warn += f"\n   Try: MEDIA:{_real_files[0]}"
+                            response.content += _warn
+            except Exception:
+                pass  # non-critical
     else:
         # No delegation results — fall back to neutral response
         response = neutral_response
