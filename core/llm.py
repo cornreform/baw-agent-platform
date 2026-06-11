@@ -436,6 +436,12 @@ def call_llm_with_fallback(
     primary_id = primary_id or model_cfg.get("default", "deepseek-v4-flash")
     fallback_id = model_cfg.get("fallback", "")
 
+    # ── Sanity check: fallback must differ from primary ──
+    if fallback_id and fallback_id == primary_id:
+        import logging as _log
+        _log.warning(f"[LLM] fallback '{fallback_id}' == primary — will be skipped")
+        fallback_id = ""
+
     # ── Auto-route based on message size ──
     primary_id = _route_model(config, messages, primary_id)
 
