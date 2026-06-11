@@ -1165,6 +1165,19 @@ def run_agent(
                 _same_step_fails[_same_key] = _same_step_fails.get(_same_key, 0) + 1
                 _position_fails[_step_idx] = _position_fails.get(_step_idx, 0) + 1
 
+                # ── Zero-tool-call failure: sub-agent can't execute this step → skip immediately ──
+                _err_str = str(_e)
+                _zero_tool = "0 tool calls" in _err_str or "no execution" in _err_str.lower()
+                if _zero_tool:
+                    if verbose:
+                        print(f"  ⏭️ Step {_g} {_si}/{_gt} can't execute (0 tool calls) — skipping")
+                    _synthesis_results.append(f"[SKIPPED] {_step_desc_short}")
+                    _dsp = f"  ⏭️ Step {_g} {_si}/{_gt}: {_step_desc_short} — sub-agent can't execute"
+                    _display_log.append(_dsp)
+                    _step_idx += 1
+                    _recalc_count = 0
+                    continue
+
                 # Position-based: if position fails 3+ times → skip ANYTHING here + ban across pursuits
                 if _position_fails.get(_step_idx, 0) >= 3:
                     _permanent_skip.add(_step_idx)  # ban this position for all future pursuits
