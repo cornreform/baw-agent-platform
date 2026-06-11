@@ -20,9 +20,12 @@ Flow per user turn:
 from __future__ import annotations
 import re
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 from typing import Callable
+
+logger = logging.getLogger("baw.loop")
 
 from .llm import get_model, call_llm_with_fallback, calculate_cost, FallbackResult
 from .context import Context, Message
@@ -346,8 +349,10 @@ def run_agent(
     try:
         from .search import _auto_discover as _init_search
         _init_search()
-    except Exception:
-        pass
+    except ImportError:
+        logger.debug("[loop] search module not present (optional)")
+    except Exception as _se:
+        logger.warning(f"[loop] search provider init failed: {_se}")
 
     system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
 
@@ -567,8 +572,8 @@ def run_agent(
         output += f"\n\n{format_cost_summary()}"
         try:
             mem.remember(f"User: {prompt[:150]} → BAW: {final_content[:150]}")
-        except Exception:
-            pass
+        except Exception as _me:
+            logger.warning(f"[loop] memory save failed: {_me}")
         return output, {
             "cost": round(session_cost, 4),
             "model": f"{model.provider}/{model.id}",
@@ -591,10 +596,15 @@ def run_agent(
     try:
         if angel_model_id:
             angel_model = get_model(config, angel_model_id)
+            logger.debug(f"[loop] angel_model loaded: {angel_model_id}")
         if devil_model_id:
             devil_model = get_model(config, devil_model_id)
-    except Exception:
-        pass
+            logger.debug(f"[loop] devil_model loaded: {devil_model_id}")
+    except ValueError as _ve:
+        # Model not in config — fall back to default for that side
+        logger.warning(f"[loop] court model not found ({_ve}), using default")
+    except Exception as _ce:
+        logger.warning(f"[loop] court model load failed: {_ce}")
     court = AdversarialCourt(
         model, system_prompt, config,
         angel_model=angel_model, devil_model=devil_model,
