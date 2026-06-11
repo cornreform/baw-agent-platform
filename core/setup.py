@@ -224,8 +224,8 @@ def cmd_setup(data_dir: Path):
     _print_logo()
     _print_header("Setup Wizard")
     if is_first_run:
-        _print_note(f"Welcome! Let's get BAW running. First-time setup at {data_dir}")
-        _print_note(f"Press Enter to accept defaults, type your own value to change.")
+        _print_note("Welcome! Let's get BAW running.")
+        _print_note("Press Enter to accept defaults, type your own value to change.")
     else:
         _print_note("Updating existing configuration. Press Enter to keep current values.")
     print()
@@ -265,28 +265,40 @@ def cmd_setup(data_dir: Path):
                 existing_env[k.strip()] = v.strip()
 
     _print_note("Enter API keys one by one. Leave blank to skip.")
-    _print_note("Key-specific: some providers have separate 國際版 / 內地版 endpoints.")
+    _print_note("For providers with special plans, you'll be asked about your plan type.")
     providers_prompt = [
-        ("STEPFUN_API_KEY", "Stepfun (chat models + TTS/ASR)", "國際版"),
-        ("MINIMAX_API_KEY", "MiniMax (fallback chat + TTS + vision)", "國際版"),
-        ("DEEPSEEK_API_KEY", "DeepSeek (fast cheap model)", "國際版"),
-        ("OPENAI_API_KEY", "OpenAI (GPT-4o, DALL-E)", "國際版"),
-        ("ANTHROPIC_API_KEY", "Anthropic (Claude models)", "國際版"),
-        ("GEMINI_API_KEY", "Google (Gemini models)", "國際版"),
-        ("AGNES_API_KEY", "Agnes AI (free image/video gen)", "國際版"),
+        ("STEPFUN_API_KEY", "Stepfun (chat + TTS/ASR)"),
+        ("MINIMAX_API_KEY", "MiniMax (fallback chat + TTS + vision)"),
+        ("MOONSHOT_API_KEY", "Moonshot/Kimi (alternative chat)"),
+        ("DEEPSEEK_API_KEY", "DeepSeek (fast cheap model)"),
+        ("OPENAI_API_KEY", "OpenAI (GPT-4o, DALL-E)"),
+        ("ANTHROPIC_API_KEY", "Anthropic (Claude models)"),
+        ("GEMINI_API_KEY", "Google (Gemini models)"),
+        ("AGNES_API_KEY", "Agnes AI (free image/video gen)"),
     ]
     new_env = {}
-    region_choices = {}
-    for env_key, label, default_region in providers_prompt:
+    plan_choices = {}
+    for env_key, label in providers_prompt:
         current_val = existing_env.get(env_key, "")
         hint = f" ({current_val[:8]}...)" if current_val and len(current_val) > 8 else ""
         val = input(f"  {C.CYAN}?{C.RESET} {label} ({env_key}){hint}: ").strip()
         if val:
             new_env[env_key] = val
-            # Ask region for providers with separate international/China endpoints
-            if env_key in ("STEPFUN_API_KEY", "MINIMAX_API_KEY"):
-                region = _input("  國際版定係內地版? (國際/內地)", default=default_region)
-                region_choices[env_key] = "國際" if region in ("國際", "international", "intl") else "內地"
+            # Ask about plan type for known plan-based providers
+            if env_key == "STEPFUN_API_KEY":
+                plan = _input("  Plan type (standard / step-plan)", default="step-plan")
+                plan_choices[env_key] = plan.lower().replace("-", "_")
+            elif env_key == "MINIMAX_API_KEY":
+                plan = _input("  Plan type (standard / subscription)", default="standard")
+                plan_choices[env_key] = plan.lower()
+            elif env_key == "MOONSHOT_API_KEY":
+                plan = _input("  Plan type (standard / code-plan)", default="standard")
+                plan_choices[env_key] = plan.lower().replace("-", "_")
+            else:
+                # Ask for custom endpoint if they want to override
+                endpoint = _input("  Custom base URL? (leave blank for default)", default="")
+                if endpoint:
+                    plan_choices[env_key] = f"custom:{endpoint}"
         elif current_val and not val:
             pass
 
@@ -312,12 +324,16 @@ def cmd_setup(data_dir: Path):
     # Stepfun
     if "STEPFUN_API_KEY" in all_keys:
         if "stepfun" not in providers:
-            region = region_choices.get("STEPFUN_API_KEY", "國際版")
-            # Detect from existing config if available
-            existing_base = cfg.get("providers", {}).get("stepfun", {}).get("base_url", "")
-            if existing_base and "stepfun" not in region_choices:
-                region = "國際" if "api.stepfun.ai" in existing_base else "內地"
-            base_url = "https://api.stepfun.ai/v1" if region == "國際" else "https://api.stepfun.com/v1"
+            plan = plan_choices.get("STEPFUN_API_KEY", "step_plan")
+            # Determine base_url from plan choice
+            if plan == "step_plan":
+                base_url = "https://api.stepfun.ai/step_plan/v1"
+            elif plan == "international":
+                base_url = "https://api.stepfun.ai/v1"
+            elif plan == "china":
+                base_url = "https://api.stepfun.com/v1"
+            else:
+                base_url = "https://api.stepfun.ai/step_plan/v1"  # default
             providers["stepfun"] = {
                 "api_key_env": "STEPFUN_API_KEY",
                 "base_url": base_url,
@@ -388,8 +404,8 @@ def cmd_setup(data_dir: Path):
     has_stt_key = any(k for k in all_keys if k in ("STEPFUN_API_KEY", "MINIMAX_API_KEY"))
     if has_stt_key and not caps.get("stt"):
         if "STEPFUN_API_KEY" in all_keys:
-            region = region_choices.get("STEPFUN_API_KEY", "國際版")
-            stt_base = "https://api.stepfun.ai/v1" if region == "國際" else "https://api.stepfun.com/v1"
+            plan = plan_choices.get("STEPFUN_API_KEY", "step_plan")
+            stt_base = "https://api.stepfun.ai/step_plan/v1" if plan == "step_plan" else "https://api.stepfun.ai/v1"
             caps["stt"] = {
                 "method": "auto-asr",
                 "model": "stepaudio-2.5-asr",
@@ -405,11 +421,10 @@ def cmd_setup(data_dir: Path):
     # TTS
     if not caps.get("tts"):
         if "STEPFUN_API_KEY" in all_keys:
-            region = region_choices.get("STEPFUN_API_KEY", "國際版")
-            tts_model = "stepaudio-2.5-tts"
-            caps["tts"] = {"method": "model", "model": tts_model, "voice": "Cantonese_GentleLady",
-                          "config": {"api_model": tts_model},
-                          "base_url": "https://api.stepfun.ai/v1" if region == "國際" else "https://api.stepfun.com/v1"}
+            plan = plan_choices.get("STEPFUN_API_KEY", "step_plan")
+            tts_base = "https://api.stepfun.ai/step_plan/v1" if plan == "step_plan" else "https://api.stepfun.ai/v1"
+            caps["tts"] = {"method": "model", "model": "stepaudio-2.5-tts", "voice": "Cantonese_GentleLady",
+                          "config": {"api_model": "stepaudio-2.5-tts", "base_url": tts_base}}
             _ok("TTS configured (Stepfun)")
         elif "MINIMAX_API_KEY" in all_keys:
             caps["tts"] = {"model": "MiniMax-M3", "voice": "Cantonese_GentleLady",
