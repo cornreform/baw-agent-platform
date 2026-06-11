@@ -356,6 +356,26 @@ def run_agent(
 
     system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
 
+    # ── Tier-based routing decision ──
+    from .router import route_task
+    _ctx_tokens_est = len(prompt) // 3  # rough estimate
+    _route = route_task(
+        prompt, config,
+        estimated_tool_count=0,  # updated after first tool call
+        context_tokens=_ctx_tokens_est,
+    )
+    logger.info(f"[router] {_route.reasoning}")
+    # Override model_id if router picked a better tier-specific one
+    # AND user didn't explicitly pass model_id
+    if not model_id and _route.model_id:
+        try:
+            model = get_model(config, _route.model_id)
+            model_id = _route.model_id
+            model_temperature = getattr(model, "temperature", 0.7)
+            logger.info(f"[router] using tier-appropriate model: {model_id}")
+        except Exception as _re:
+            logger.warning(f"[router] could not load model {_route.model_id}: {_re}")
+
     # ── Detect tone switch ──
     from .tone import detect_tone_switch, format_tone_confirmation
     old_tone = config.get("tone", {}).get("default", "casual")
