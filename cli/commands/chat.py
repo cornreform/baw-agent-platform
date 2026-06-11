@@ -653,6 +653,11 @@ Identity: BAW. Never say "Hermes" or "Sticky".
             break
 
         inp = inp.strip()
+        # Sanitize: strip surrogate characters that cause 'surrogates not allowed' error
+        try:
+            inp.encode('utf-8')
+        except UnicodeEncodeError:
+            inp = inp.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='replace')
         if not inp:
             continue
 
