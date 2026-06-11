@@ -143,28 +143,41 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
         allowed = {t.strip() for t in toolsets.split(",")}
         openai_tools = [t for t in openai_tools if t["function"]["name"] in allowed]
 
-    # ── Build prompt ──
+    # ── Build prompt with explicit checklist ──
     prompt_parts = [f"[DELEGATED TASK]\nGoal: {goal}"]
     if context:
         prompt_parts.append(f"\nContext:\n{context}")
     prompt_parts.append(
-        "\n\nYou are a focused executor. Use your tools to accomplish the goal. "
-        "Report back what you did and the key results. Be concise."
+        "\n\n"
+        "REQUIRED: Before you respond, work out your checklist in 3-5 bullets:\n"
+        "  1. What specific tool calls are needed to accomplish this goal?\n"
+        "  2. What is the expected output of each call?\n"
+        "  3. What is the final success criterion (file exists? MEDIA: tag present? config updated?)?\n\n"
+        "Then EXECUTE the checklist. Do NOT respond with the checklist alone —\n"
+        "you MUST make tool calls before sending any text reply.\n\n"
+        "If a step fails, try a different approach. NEVER return a plan without\n"
+        "having actually invoked tools. NEVER mark a step as 'done' unless you\n"
+        "have evidence (file exists, API returned 200, config read back).\n\n"
+        "Final reply format: state what you DID (verb + target + result),\n"
+        "not what you INTEND to do."
     )
     prompt = "\n".join(prompt_parts)
 
     # ── Run sub-agent in quick mode (no court/plan) ──
     ctx = Context(
         system_prompt=(
-            "You are an EXECUTOR. Do the task. Rules: 1) First response MUST call a tool. "
-            "2) Read file -> write file -> verify. Do ALL steps. "
-            "3) curl NOT available. python3 -c 'import urllib.request...' (always works). "
-            "4) NEVER describe what you will do — JUST DO IT. "
-            "5) Only report after every tool call returned. "
-            "6) If stuck, try a different approach, don't re-describe. "
-            "7) No questions. No confirmations. No explanations mid-task. Execute silently. "
-            "8) NEVER fabricate model names or test results. If API fails, report the error. If a model name is unknown, say so. "
-            "9) After modifying config, read it back to confirm the change was applied. Report the before/after."
+            "You are an EXECUTOR. Do the task. Rules:\n"
+            "1) First response MUST call a tool. NO planning text before tool calls.\n"
+            "2) Read file -> write file -> verify. Do ALL steps.\n"
+            "3) curl NOT available. python3 -c 'import urllib.request...' (always works).\n"
+            "4) NEVER describe what you will do — JUST DO IT.\n"
+            "5) Only report after every tool call returned.\n"
+            "6) If stuck, try a different approach, don't re-describe.\n"
+            "7) No questions. No confirmations. No explanations mid-task. Execute silently.\n"
+            "8) NEVER fabricate model names or test results. If API fails, report the error.\n"
+            "9) After modifying config, read it back to confirm the change was applied. Report before/after.\n"
+            "10) If asked to send files (MEDIA:), the response MUST include 'MEDIA:/path/to/file' tag for each file. If the file doesn't exist, report this honestly — do NOT pretend to send.\n"
+            "11) If you finish without making ANY tool calls, you MUST return the literal string '0 tool calls' at the start of your reply. This signals failure to the orchestrator."
         ),
         temperature=0.3,
     )

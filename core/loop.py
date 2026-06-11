@@ -997,35 +997,70 @@ def run_agent(
     ]
 
     def _is_inline_candidate(goal: str) -> bool:
-        """Inline by default. Sub-agent only when multi-turn reasoning is needed."""
+        """Decide whether a step should run INLINE (orchestrator itself
+        executes via exec()) or DELEGATE (spawn sub-agent).
+
+        Defaults: INLINE. Only delegate if the step clearly needs
+        multi-turn reasoning, exploration, or interactive work.
+
+        Heuristics (in priority order):
+        1. Trivial markers → NOT a real step (header, blank, emoji-prefixed)
+        2. Multi-turn reasoning keywords → DELEGATE
+        3. Exploration keywords → DELEGATE
+        4. Action verbs + specific tool names → INLINE
+        5. Very short steps → INLINE
+        6. Default: INLINE
+        """
         _stripped = goal.strip()
         if not _stripped or _stripped.startswith(('#', '##', '```', '✅', '❌', '▶', '⏭', '⚠', '📋', '🔄')):
             return False  # Not a real step description
 
         _lower = goal.lower()
 
-        # If it matches any sub-agent-required pattern → MUST use sub-agent
+        # 2. Multi-turn reasoning needed → MUST delegate
         for _sg in _SUBAGENT_REQUIRED_PATTERNS:
             if _re2.search(_sg, _lower):
-                return False  # Not inline — needs sub-agent
+                return False
 
-        # If it matches any explicit sub-agent keyword → use sub-agent
+        # 3. Explicit sub-agent keyword → delegate
         for _sk in _SUBAGENT_KEYWORDS:
             if _re2.search(_sk, _lower):
                 return False
 
-        # If it matches any inline-executable keyword → inline
+        # 4. Action verbs + specific tool names → INLINE (most common case)
         for _ik in _INLINE_EXECUTABLE_KEYWORDS:
-            # Match as whole word
             if _re2.search(r'\b' + _re2.escape(_ik) + r'\b', _lower):
                 return True
 
-        # Very short steps (under 15 words) → inline (likely simple)
+        # 5. Very short steps (under 15 words) → INLINE
         if len(_stripped.split()) < 15:
             return True
 
-        # Default: inline. Only sub-agent when explicitly needed.
+        # 6. Default: INLINE. Orchestrator itself runs the step.
         return True
+
+    def _check_subagent_compliance(result: str, step_goal: str) -> tuple[bool, str]:
+        """Verify sub-agent actually executed the step.
+
+        Returns (passed, reason). If passed=False, orchestrator should
+        pick up the step itself and execute inline rather than re-delegating.
+
+        Checks:
+        1. Sub-agent did not return a "plan" without execution
+        2. Sub-agent did not return "[FAILED-*" or "[SKIPPED*"
+        3. Step goal's expected output is present (e.g. MEDIA: tag if requested)
+        """
+        if not result or len(result) < 5:
+            return False, "empty result"
+        if "0 tool calls" in result.lower():
+            return False, "sub-agent made 0 tool calls (just wrote a plan)"
+        if result.startswith("[FAILED") or result.startswith("[SKIPPED"):
+            return False, f"sub-agent marked step as {result[:20]}"
+        # If step goal mentions sending files, check for MEDIA: tag
+        if any(kw in step_goal.lower() for kw in ("send", "media:", "deliver", "attach")):
+            if "MEDIA:" not in result and "media:" not in result.lower():
+                return False, "step asked to send files but no MEDIA: tag in result"
+        return True, "ok"
 
     # ── Phase 3b: Goal-pursuit loop ──
     # Route recalculation: wrong turn → silently recalculates new route from current position
@@ -1255,6 +1290,27 @@ def run_agent(
                     if _step_exc[0]:
                         raise _step_exc[0]  # re-raise inside try block for recalc
                     _result = _step_result[0]
+
+                    # ── Sub-agent compliance check: did it actually do the work? ──
+                    _compliant, _complain_reason = _check_subagent_compliance(
+                        str(_result or ""), _step_goal
+                    )
+                    if not _compliant:
+                        logger.warning(
+                            f"[loop] sub-agent step {_step_idx + 1} non-compliant: "
+                            f"{_complain_reason}. Orchestrator picking up inline."
+                        )
+                        if verbose:
+                            print(
+                                f"  🔄 Sub-agent failed: {_complain_reason}. "
+                                f"Orchestrator picking up..."
+                            )
+                        # Don't mark as success — orchestrator tries inline
+                        # Re-raise so the except block triggers route recalc
+                        # but tag it so we know orchestrator should pick up
+                        raise RuntimeError(
+                            f"sub-agent non-compliant: {_complain_reason}"
+                        )
 
                 while len(_delegation_results) <= _step_idx:
                     _delegation_results.append("")
