@@ -758,16 +758,19 @@ def run_agent(
 
     plan_prompt = (
         "[ORCHESTRATOR] Goal: " + prompt + "\n\n"
-        "Write a minimal execution plan.\n"
-        "A 1-step plan is fine for trivial tasks. Combine related tool calls into one step.\n"
-        "NEVER create more than 2 steps unless the task truly requires distinct phases.\n"
-        "Describe each step in human language — NOT raw commands.\n"
+        "Write an action-oriented execution plan.\n"
+        "A 1-step plan is fine. Each step must INCLUDE all 3 phases: read → modify → verify.\n"
         "Format:\n"
-        "  Step 1: <description>\n"
-        "  Step 2: <description> (only if needed)\n\n"
-        "Simple grouping with numbered steps only — NO letter prefixes (A, B, C).\n"
-        "Reply with ONLY the plan, using flat numbered steps.\n"
-        "RULE: If the task is a simple read/check/status query — plan 1 step only."
+        "  Step 1: <read config/data> → <modify/create> → <verify/test>\n\n"
+        "EXAMPLES:\n"
+        "  'Read config.yaml to find Stepfun base_url, use urllib to query /v1/models,\n"
+        "   identify the correct model, update config.yaml, read back to confirm.'\n"
+        "  'Check current STT setting, if stepaudio exists set capabilities.stt.model\n"
+        "   to stepaudio-2.5-asr, test with a short curl/urllib call, confirm.'\n\n"
+        "Rules:\n"
+        "- NEVER write a step that only 'checks' or 'reads' without also modifying or configuring.\n"
+        "- Each step must take action, not just report status.\n"
+        "- Reply with ONLY the plan, flat numbered steps."
     )
     _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": plan_prompt}]
     plan_fb = call_llm_with_fallback(
@@ -974,9 +977,10 @@ def run_agent(
                 f"Original goal: {prompt}\n\n"
                 f"Previous run failed. Here's what happened:\n{_failure_log}\n\n"
                 f"Analyse what went wrong. Write a COMPLETELY DIFFERENT plan.\n"
-                f"GROUP steps into logical phases:\n"
-                f"  ## Group A — <phase name>\n"
-                f"  Step A-1: <description>\n"
+                f"Each step must INCLUDE all 3 phases: read → modify → verify.\n"
+                f"NEVER write a step that only checks or reads without taking action.\n"
+                f"  Step 1: <read> → <modify> → <verify>\n"
+                f"  Step 2: <read> → <modify> → <verify> (if needed)\n"
             )
             _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _plan_prompt}]
             _plan_fb = call_llm_with_fallback(config, _plan_msgs, temperature=None)
@@ -1226,9 +1230,9 @@ def run_agent(
                     f"Recalculate a NEW route from HERE to reach the destination.\n"
                     f"List ONLY the remaining steps needed (numbered from 1).\n"
                     f"Do NOT re-list already completed steps.\n"
-                    f"GROUP steps into logical phases:\n"
-                    f"  ## Group A — <phase name>\n"
-                    f"  Step A-1: <description>"
+                    f"Each step must INCLUDE all 3 phases: read → modify → verify.\n"
+                    f"NEVER write a step that only checks or reads without taking action.\n"
+                    f"  Step 1: <read> → <modify> → <verify>\n"
                 )
                 _replan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _replan_prompt}]
                 _replan_fb = call_llm_with_fallback(config, _replan_msgs, temperature=None)
