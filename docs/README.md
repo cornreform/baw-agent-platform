@@ -23,12 +23,18 @@ baw (CLI) → core/ (engine) → tools/ (built-ins)
 
 | File | Purpose | Edit Rule |
 |------|---------|-----------|
-| `baw` | CLI entry point | Small edits only; add commands in `commands.py` |
+| `baw` | CLI entry point | All 35+ subcommands; add new ones after existing handlers |
 | `core/loop.py` | Main agent loop | Court → Plan → Execute → Report pipeline |
 | `core/llm.py` | LLM abstraction | Add protocols via `register_protocol()` |
 | `core/adversarial.py` | Angel/Devil court | v2: parallel independent analysis |
 | `core/memory.py` | JSONL memory store | Append-only; scores decay over time |
 | `core/commands.py` | Slash commands | 60s cache on static commands |
+| `core/setup.py` | Setup wizard + Config CLI | Interactive English wizard, plan-based endpoints |
+| `core/doctor.py` | Health check (--doctor) | Validates config, deps, Docker, disk, API keys |
+| `core/update.py` | Self-update (--update) | Git pull + Docker build + restart |
+| `core/backup.py` | Backup & restore | tar.gz of config/.env/memory/sessions |
+| `core/profile.py` | Profile management | Isolated config/memory/sessions per profile |
+| `core/diagnostics.py` | System diagnostics | Collect debug info for troubleshooting |
 
 ## Don't
 
