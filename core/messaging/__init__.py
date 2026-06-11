@@ -1402,9 +1402,13 @@ class BaseConnector(ABC):
                     pass
 
             # Run BAW with a timeout via thread pool — multi-round loop
-            # If goal not achieved, auto-feed output back as next prompt (max 3 rounds)
-            _MAX_AUTO_ROUNDS = 1  # Single round only — no auto-continuation (was 3)
-            _MAX_RECALC_THRESHOLD = 2  # Hard cap on recalculations per round (was 5)
+            # If goal not achieved, auto-feed output back as next prompt (max 5 rounds)
+            # Round = full agent run (plan → execute steps → verify)
+            # Each round includes internal recalculations (replan on step failure)
+            # Total attempts = _MAX_AUTO_ROUNDS * _MAX_RECALC_THRESHOLD
+            _MAX_AUTO_ROUNDS = 5      # Try up to 5 different approaches before giving up (was 1)
+            _MAX_RECALC_THRESHOLD = 5  # Hard cap on recalculations per round (was 2)
+            _MAX_TOTAL_SECONDS = 600   # 10 min absolute max per request
             output = ""
             info = {}
             all_plan_recaps = []
@@ -1473,7 +1477,11 @@ class BaseConnector(ABC):
                     break
                 # Goal not achieved — auto-continue to next round
                 if _round >= _MAX_AUTO_ROUNDS:
-                    output += "\n\n⚠️ Max auto-rounds reached. Goal may be incomplete."
+                    output += (
+                        f"\n\n⚠️ Tried {_round} different approach(es) without reaching goal. "
+                        f"Common fixes: check API key validity/region/plan (e.g. step-plan vs standard, "
+                        f"international vs mainland), install missing packages, or use a different provider."
+                    )
                     break
                 if self._cancel_event.is_set():
                     break
