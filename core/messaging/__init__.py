@@ -1403,8 +1403,8 @@ class BaseConnector(ABC):
 
             # Run BAW with a timeout via thread pool — multi-round loop
             # If goal not achieved, auto-feed output back as next prompt (max 3 rounds)
-            _MAX_AUTO_ROUNDS = 3
-            _MAX_RECALC_THRESHOLD = 5  # Hard cap on recalculations per round
+            _MAX_AUTO_ROUNDS = 1  # Single round only — no auto-continuation (was 3)
+            _MAX_RECALC_THRESHOLD = 2  # Hard cap on recalculations per round (was 5)
             output = ""
             info = {}
             all_plan_recaps = []
