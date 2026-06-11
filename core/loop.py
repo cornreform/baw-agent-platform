@@ -1300,10 +1300,15 @@ def run_agent(
 
                     def _run_step():
                         try:
+                            # P1-1 (Opus 4.8 audit): pass route decision's model_id
+                            # down to delegate_task. Without this, the router's
+                            # tier_preferences selection is silently dropped because
+                            # delegate_task re-resolves model via task_rules.
                             _step_result[0] = _delegate_fn(
                                 goal=_step_goal,
                                 context=_step_ctx,
                                 toolsets="",
+                                model_id=model_id or "",
                             )
                         except Exception as _se:
                             _step_exc[0] = _se

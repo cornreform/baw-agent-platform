@@ -35,14 +35,36 @@ def _import_baw():
         return m.TOOL_DEF
 
     from core.tools import register as _reg, clear as _clear
+    import core.tools as _core_tools_mod
 
-    _clear()
-    _reg(**_ld("bash"))
-    _reg(**_ld("read_file"))
-    _reg(**_ld("write_file"))
-    _reg(**_ld("web_search"))
-    _reg(**_ld("vision"))
-    _reg(**_ld("tts"))
+    # P1-2 (Opus 4.8 audit): save and restore the global tool registry around
+    # the sub-agent's _clear() call. Without this, the sub-agent's _clear()
+    # wipes out all tools the parent agent registered (post-P3 fix, 15+ tools),
+    # and the parent agent loses access to them after delegation returns.
+    # We do a shallow dict snapshot — values are tool-def dicts and don't mutate.
+    # The registry dict is intentionally private; use getattr so we don't bind
+    # to a name that might be renamed in a future refactor.
+    _registry = getattr(_core_tools_mod, "_tools", None) or getattr(_core_tools_mod, "_TOOLS", None)
+    if _registry is None:
+        _registry = {}  # Fallback: empty registry, no save possible.
+    _saved_tools = dict(_registry)
+    try:
+        _clear()
+        _reg(**_ld("bash"))
+        _reg(**_ld("read_file"))
+        _reg(**_ld("write_file"))
+        _reg(**_ld("web_search"))
+        _reg(**_ld("vision"))
+        _reg(**_ld("tts"))
+    except BaseException:
+        # Restore on any failure so the parent process isn't left broken.
+        _registry.clear()
+        _registry.update(_saved_tools)
+        raise
+    # Schedule restoration after the sub-agent finishes; stashed on the module
+    # so the caller (delegate_task) can pop it post-execution.
+    setattr(_core_tools_mod, "_pending_restore", _saved_tools)
+
     return True  # tools registered
 
 def _resolve_executor_model(cfg: dict, goal: str = "") -> str:
@@ -73,15 +95,26 @@ def _resolve_executor_model(cfg: dict, goal: str = "") -> str:
     )
 
 
-def _get_minimax_config(goal: str = "") -> dict:
+def _get_minimax_config(goal: str = "", model_override: str = "") -> dict:
     """Load config and resolve the executor model (per-task routing support).
-    Falls back gracefully if resolved model is not in providers list."""
+    Falls back gracefully if resolved model is not in providers list.
+
+    Args:
+        goal: Used to match model.task_rules for keyword-based routing.
+        model_override: If non-empty, forces this model (P0-1 fix — respects
+                        caller/router decision instead of silently dropping it).
+    """
     import yaml
     data_dir = Path.home() / ".baw"
     cfg = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
 
     model_cfg = cfg.get("model", {})
-    executor_model = _resolve_executor_model(cfg, goal)
+
+    # P0-1: explicit override wins over everything (router decision).
+    if model_override:
+        executor_model = model_override
+    else:
+        executor_model = _resolve_executor_model(cfg, goal)
 
     # Verify executor model actually exists in providers
     providers = cfg.get("providers", {})
@@ -113,7 +146,7 @@ def _get_minimax_config(goal: str = "") -> dict:
     return cfg
 
 
-def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
+def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: str = "") -> str:
     """Delegate a task to a sub-agent (MiniMax executor).
 
     Sub-agent runs independently with its own tools and isolated context.
@@ -124,6 +157,10 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
         context: Optional background info, file paths, constraints.
         toolsets: Comma-separated tool names to restrict (e.g. "bash,read_file").
                  Leave empty for all tools (bash, read_file, write_file, web_search).
+        model_id: P0-1 fix — if non-empty, override model selection with this model.
+                  Lets the caller (e.g. router) force a specific tier model.
+                  Without this, the router's tier_preferences decision is silently
+                  dropped because _resolve_executor_model re-runs task_rules.
     """
     # ── Ensure sys.path before any BAW imports ──
     if _BAW_ROOT not in sys.path:
@@ -136,7 +173,7 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
     from core.tools import execute_tool, get_openai_tools
     from core.context import Context
     openai_tools = get_openai_tools()
-    config = _get_minimax_config(goal)
+    config = _get_minimax_config(goal, model_override=model_id)
 
     # ── Restrict toolsets if specified ──
     if toolsets:
@@ -187,35 +224,81 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
     iteration = 0
     final_content = ""
     _tool_calls_made = 0  # track if sub-agent actually used tools
+    _verify_retries = 0  # P1-4: per-iteration verify_step retries
+    MAX_VERIFY_RETRIES = 2  # P1-4: hard cap so we don't loop forever
 
-    for iteration in range(max_iterations):
-        fb = call_llm_with_fallback(
-            config,
-            ctx.to_openai_messages(),
-            tools=openai_tools,
-            temperature=0.5,
-        )
-        resp = fb.response
+    try:
+        for iteration in range(max_iterations):
+            fb = call_llm_with_fallback(
+                config,
+                ctx.to_openai_messages(),
+                tools=openai_tools,
+                temperature=0.5,
+            )
+            resp = fb.response
 
-        if resp.content:
-            final_content = resp.content
+            if resp.content:
+                final_content = resp.content
 
-        if not resp.tool_calls:
-            break
+            if not resp.tool_calls:
+                break
 
-        _tool_calls_made += len(resp.tool_calls)
-        ctx.add_assistant(resp.content, resp.tool_calls)
+            _tool_calls_made += len(resp.tool_calls)
+            ctx.add_assistant(resp.content, resp.tool_calls)
 
-        for tc in resp.tool_calls:
-            fn = tc.get("function", {})
-            name = fn.get("name", "")
-            raw_args = fn.get("arguments", "{}")
-            try:
-                args = json.loads(raw_args)
-            except json.JSONDecodeError:
-                args = {}
-            result = execute_tool(name, args)
-            ctx.add_tool_result(tc.get("id", ""), name, result)
+            for tc in resp.tool_calls:
+                fn = tc.get("function", {})
+                name = fn.get("name", "")
+                raw_args = fn.get("arguments", "{}")
+                try:
+                    args = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    args = {}
+                result = execute_tool(name, args)
+                ctx.add_tool_result(tc.get("id", ""), name, result)
+
+                # P1-4 (Opus 4.8 audit): verify each tool result with the configured
+                # judge model. score < 7 -> retry. Hard-capped at MAX_VERIFY_RETRIES
+                # so a broken verifier doesn't loop forever. Sub-agent failure
+                # modes (tool returned error string) still surface as normal errors.
+                if _verify_retries < MAX_VERIFY_RETRIES:
+                    try:
+                        from core.verifier import verify_step
+                        verdict = verify_step(
+                            goal=goal,
+                            tool_name=name,
+                            tool_args=args,
+                            tool_result=str(result),
+                            config=config,
+                        )
+                        score = int(verdict.get("score", 7))
+                        if score < 7:
+                            _verify_retries += 1
+                            ctx.add_user(
+                                f"[Verifier] step scored {score}/10, "
+                                f"reason: {verdict.get('reason', '')[:200]}. "
+                                f"Try a different approach for this step."
+                            )
+                    except Exception:
+                        # Verifier is best-effort. If it's misconfigured
+                        # (no judge model, etc.) we don't want to crash delegation.
+                        pass
+    finally:
+        # P1-2 (Opus 4.8 audit): restore the global tool registry that was
+        # saved before the sub-agent ran. Without this, the parent agent's
+        # tool list is permanently shrunk to the sub-agent's 6 tools.
+        try:
+            import core.tools as _ct
+            _pending = getattr(_ct, "_pending_restore", None)
+            if _pending is not None:
+                _registry = getattr(_ct, "_tools", None) or getattr(_ct, "_TOOLS", None)
+                if _registry is not None:
+                    _registry.clear()
+                    _registry.update(_pending)
+                delattr(_ct, "_pending_restore")
+        except Exception:
+            # Restoration is best-effort. Don't mask the real return value.
+            pass
 
     # ── Format result ──
     result = final_content.strip() or "(no output)"
