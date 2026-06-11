@@ -963,6 +963,36 @@ def run_agent(
     # Rule: INLINE BY DEFAULT. Only spawn sub-agent when the step truly needs
     # multi-turn reasoning (research, analysis, complex debugging, browsing).
     # A Python script is almost always more efficient than a sub-agent.
+    # External-API/integration keywords that REQUIRE sub-agent path
+    # because inline exec() cannot make real HTTP calls / use the actual
+    # tool implementations.
+    #
+    # IMPORTANT: These are matched as **action phrases** (verb + noun) to
+    # avoid false positives like "Read config.yaml to find TTS-capable models"
+    # being flagged as needing sub-agent just because "tts" appears in the
+    # description. Only when the step actually INVOKES the external API
+    # (e.g. "generate tts", "use tts tool", "call vision") do we force
+    # sub-agent.
+    _SUBAGENT_REQUIRED_PATTERNS_API = [
+        # TTS — must call provider API
+        r'\b(use|call|invoke|run|with|via)\b.*\b(tts|speech)\b',
+        r'\b(generate|create|make|生|整|生成|做出|製作)\b.*\b(tts|speech|voice|audio|sound)\b',
+        r'\btts_(?:generate|list_voices)\b',
+        # ASR / STT
+        r'\b(transcribe|asr|stt)\b.*\b(audio|file|voice|錄|音頻|錄音)\b',
+        # Image generation
+        r'\b(generate|create|make)\b.*\bimage\b.*\b(dall|with|using)\b',
+        r'\b(image_generate|dalle)\b',
+        # Vision analysis
+        r'\b(use|call|invoke|run|with|via)\b.*\bvision\b',
+        r'\b(analyze|describe|read)\b.*\b(screenshot|image)\b.*\b(with|using|via)\b',
+        # Send to platform
+        r'\bsend\b.*\b(media|file|audio|mp3|attachment)\b.*\b(to|via)\b',
+        r'\bMEDIA:\b',
+        # Browse / fetch web
+        r'\b(use|call|invoke)\b.*\b(browse|browser|web_search)\b',
+        r'\b(navigate to|fetch url|open url)\b',
+    ]
     _SUBAGENT_REQUIRED_PATTERNS = [
         # Multi-turn reasoning needed
         r'\b(research|analyse|analyze|investigate|compare|evaluate)\b.*\b(options|approaches|tradeoffs|alternatives|pros|cons)\b',
@@ -974,17 +1004,15 @@ def run_agent(
         r'\b(optimize|improve|refactor)\b.*\b(system|performance|architecture)\b',
     ]
     _INLINE_EXECUTABLE_KEYWORDS = [
-        # These map to direct tool calls — inline them
+        # Pure-local operations — no external API needed
         'read', 'write', 'create', 'save', 'generate', 'build', 'run',
         'exec', 'install', 'pip', 'apt', 'curl', 'wget', 'fetch',
         'copy', 'move', 'rename', 'delete', 'remove', 'patch',
         'config', 'configure', 'set', 'update', 'modify', 'edit',
         'call', 'invoke', 'test', 'check', 'verify', 'validate',
         'list', 'show', 'print', 'dump', 'export', 'convert',
-        'download', 'upload', 'send', 'post', 'get',
-        'make', 'compile', 'transform', 'parse', 'merge', 'split',
+        'download', 'upload', 'make', 'compile', 'transform', 'parse', 'merge', 'split',
         'extract', 'filter', 'sort', 'count', 'calculate', 'compute',
-        'tts', 'speech', 'voice', 'audio', 'sound',
         'python', 'script', 'shell', 'bash', 'sh',
     ]
     _SUBAGENT_KEYWORDS = [
@@ -997,19 +1025,12 @@ def run_agent(
     ]
 
     def _is_inline_candidate(goal: str) -> bool:
-        """Decide whether a step should run INLINE (orchestrator itself
-        executes via exec()) or DELEGATE (spawn sub-agent).
+        """Inline by default. Sub-agent only when multi-turn reasoning is needed.
 
-        Defaults: INLINE. Only delegate if the step clearly needs
-        multi-turn reasoning, exploration, or interactive work.
-
-        Heuristics (in priority order):
-        1. Trivial markers → NOT a real step (header, blank, emoji-prefixed)
-        2. Multi-turn reasoning keywords → DELEGATE
-        3. Exploration keywords → DELEGATE
-        4. Action verbs + specific tool names → INLINE
-        5. Very short steps → INLINE
-        6. Default: INLINE
+        CRITICAL: External-API keywords (tts/voice/audio/send/telegram/...)
+        are checked FIRST. If a step mentions these, sub-agent is required
+        because inline exec() cannot make real HTTP calls — it just runs
+        Python code in-process. Sub-agent can actually invoke the tts tool.
         """
         _stripped = goal.strip()
         if not _stripped or _stripped.startswith(('#', '##', '```', '✅', '❌', '▶', '⏭', '⚠', '📋', '🔄')):
@@ -1017,26 +1038,33 @@ def run_agent(
 
         _lower = goal.lower()
 
-        # 2. Multi-turn reasoning needed → MUST delegate
+        # ── Check 1: sub-agent required patterns (multi-turn reasoning) ──
         for _sg in _SUBAGENT_REQUIRED_PATTERNS:
             if _re2.search(_sg, _lower):
-                return False
+                return False  # Not inline — needs sub-agent
 
-        # 3. Explicit sub-agent keyword → delegate
+        # ── Check 2: sub-agent keywords (multi-turn reasoning) ──
         for _sk in _SUBAGENT_KEYWORDS:
             if _re2.search(_sk, _lower):
                 return False
 
-        # 4. Action verbs + specific tool names → INLINE (most common case)
+        # ── Check 3: external-API action phrases (must use sub-agent) ──
+        # Matches verb+noun patterns like "use tts", "generate audio",
+        # "send file", "MEDIA:" tag, "analyze image with vision"
+        for _pat in _SUBAGENT_REQUIRED_PATTERNS_API:
+            if _re2.search(_pat, _lower):
+                return False  # Needs sub-agent for real API access
+
+        # ── Check 4: inline-executable keywords ──
         for _ik in _INLINE_EXECUTABLE_KEYWORDS:
             if _re2.search(r'\b' + _re2.escape(_ik) + r'\b', _lower):
                 return True
 
-        # 5. Very short steps (under 15 words) → INLINE
+        # ── Check 5: very short steps → inline (likely simple) ──
         if len(_stripped.split()) < 15:
             return True
 
-        # 6. Default: INLINE. Orchestrator itself runs the step.
+        # ── Default: INLINE (only if nothing suggests otherwise) ──
         return True
 
     def _check_subagent_compliance(result: str, step_goal: str) -> tuple[bool, str]:
