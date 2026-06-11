@@ -265,24 +265,29 @@ def cmd_setup(data_dir: Path):
                 existing_env[k.strip()] = v.strip()
 
     _print_note("Enter API keys one by one. Leave blank to skip.")
+    _print_note("Key-specific: some providers have separate 國際版 / 內地版 endpoints.")
     providers_prompt = [
-        ("STEPFUN_API_KEY", "Stepfun (chat models + TTS/ASR)"),
-        ("MINIMAX_API_KEY", "MiniMax (fallback chat + TTS + vision)"),
-        ("DEEPSEEK_API_KEY", "DeepSeek (fast cheap model)"),
-        ("OPENAI_API_KEY", "OpenAI (GPT-4o, DALL-E)"),
-        ("ANTHROPIC_API_KEY", "Anthropic (Claude models)"),
-        ("GEMINI_API_KEY", "Google (Gemini models)"),
-        ("AGNES_API_KEY", "Agnes AI (free image/video gen)"),
+        ("STEPFUN_API_KEY", "Stepfun (chat models + TTS/ASR)", "國際版"),
+        ("MINIMAX_API_KEY", "MiniMax (fallback chat + TTS + vision)", "國際版"),
+        ("DEEPSEEK_API_KEY", "DeepSeek (fast cheap model)", "國際版"),
+        ("OPENAI_API_KEY", "OpenAI (GPT-4o, DALL-E)", "國際版"),
+        ("ANTHROPIC_API_KEY", "Anthropic (Claude models)", "國際版"),
+        ("GEMINI_API_KEY", "Google (Gemini models)", "國際版"),
+        ("AGNES_API_KEY", "Agnes AI (free image/video gen)", "國際版"),
     ]
     new_env = {}
-    for env_key, label in providers_prompt:
+    region_choices = {}
+    for env_key, label, default_region in providers_prompt:
         current_val = existing_env.get(env_key, "")
         hint = f" ({current_val[:8]}...)" if current_val and len(current_val) > 8 else ""
         val = input(f"  {C.CYAN}?{C.RESET} {label} ({env_key}){hint}: ").strip()
         if val:
             new_env[env_key] = val
+            # Ask region for providers with separate international/China endpoints
+            if env_key in ("STEPFUN_API_KEY", "MINIMAX_API_KEY"):
+                region = _input("  國際版定係內地版? (國際/內地)", default=default_region)
+                region_choices[env_key] = "國際" if region in ("國際", "international", "intl") else "內地"
         elif current_val and not val:
-            # Keep existing
             pass
 
     # Write .env
@@ -307,9 +312,15 @@ def cmd_setup(data_dir: Path):
     # Stepfun
     if "STEPFUN_API_KEY" in all_keys:
         if "stepfun" not in providers:
+            region = region_choices.get("STEPFUN_API_KEY", "國際版")
+            # Detect from existing config if available
+            existing_base = cfg.get("providers", {}).get("stepfun", {}).get("base_url", "")
+            if existing_base and "stepfun" not in region_choices:
+                region = "國際" if "api.stepfun.ai" in existing_base else "內地"
+            base_url = "https://api.stepfun.ai/v1" if region == "國際" else "https://api.stepfun.com/v1"
             providers["stepfun"] = {
                 "api_key_env": "STEPFUN_API_KEY",
-                "base_url": "https://api.stepfun.ai/v1",
+                "base_url": base_url,
                 "models": [
                     {"id": "step-3.7-flash", "capabilities": ["chat", "vision"], "context_window": 65536},
                     {"id": "step-3.5-flash", "capabilities": ["chat"], "context_window": 65536},
@@ -377,10 +388,12 @@ def cmd_setup(data_dir: Path):
     has_stt_key = any(k for k in all_keys if k in ("STEPFUN_API_KEY", "MINIMAX_API_KEY"))
     if has_stt_key and not caps.get("stt"):
         if "STEPFUN_API_KEY" in all_keys:
+            region = region_choices.get("STEPFUN_API_KEY", "國際版")
+            stt_base = "https://api.stepfun.ai/v1" if region == "國際" else "https://api.stepfun.com/v1"
             caps["stt"] = {
                 "method": "auto-asr",
                 "model": "stepaudio-2.5-asr",
-                "base_url": "https://api.stepfun.ai/v1",
+                "base_url": stt_base,
                 "api_key_env": "STEPFUN_API_KEY",
             }
             _ok("STT configured (Stepfun auto-asr)")
@@ -392,8 +405,11 @@ def cmd_setup(data_dir: Path):
     # TTS
     if not caps.get("tts"):
         if "STEPFUN_API_KEY" in all_keys:
-            caps["tts"] = {"method": "model", "model": "stepaudio-2.5-tts", "voice": "Cantonese_GentleLady",
-                          "config": {"api_model": "stepaudio-2.5-tts"}}
+            region = region_choices.get("STEPFUN_API_KEY", "國際版")
+            tts_model = "stepaudio-2.5-tts"
+            caps["tts"] = {"method": "model", "model": tts_model, "voice": "Cantonese_GentleLady",
+                          "config": {"api_model": tts_model},
+                          "base_url": "https://api.stepfun.ai/v1" if region == "國際" else "https://api.stepfun.com/v1"}
             _ok("TTS configured (Stepfun)")
         elif "MINIMAX_API_KEY" in all_keys:
             caps["tts"] = {"model": "MiniMax-M3", "voice": "Cantonese_GentleLady",
