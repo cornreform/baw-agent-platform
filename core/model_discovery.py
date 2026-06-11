@@ -205,13 +205,6 @@ KNOWN_PROVIDERS: dict[str, dict] = {
         "protocol": "openai-chat",
         "model_patterns": [r"^agnes-", r"^agnes/"],
     },
-    # StepFun
-    "stepfun": {
-        "env_var": "STEPFUN_API_KEY",
-        "base_url": "https://api.stepfun.ai/v1",
-        "protocol": "openai-chat",
-        "model_patterns": [r"^step-", r"^stp"],
-    },
 }
 
 # ── Model ID → provider hints (common models) ──
@@ -375,6 +368,36 @@ def auto_discover_model(config: dict, model_id: str, data_dir: Path | None = Non
     return None
 
 
+def _guess_capabilities(model_id: str) -> list[str]:
+    """Guess capabilities from model ID patterns.
+
+    Used by auto_discover_all_models to tag models discovered via /v1/models.
+    """
+    mid = model_id.lower()
+    caps = ["chat"]
+
+    # STT / ASR
+    if any(kw in mid for kw in ("asr", "whisper", "stt", "audio-input", "transcri", "speech-to-text", "audio_input")):
+        caps.append("stt")
+    # TTS / Voice
+    if any(kw in mid for kw in ("tts", "voice", "speech", "audio-output", "sound", "speaker", "text-to-speech", "audio_output")):
+        caps.append("tts")
+    # Vision
+    if any(kw in mid for kw in ("vision", "vl", "vlm", "multimodal", "image-input", "image_input")):
+        caps.append("vision")
+    # Image generation
+    if any(kw in mid for kw in ("dall-e", "cogview", "image-gen", "image-generation", "imagegen", "draw")):
+        caps.append("image_generation")
+    # Video generation
+    if any(kw in mid for kw in ("video-gen", "video-generation", "videogen", "cogvideo")):
+        caps.append("video_generation")
+    # Embedding
+    if any(kw in mid for kw in ("embed", "embedding")):
+        caps.append("embedding")
+
+    return caps
+
+
 def auto_discover_all_models(config: dict) -> int:
     """Query /v1/models for every configured provider and add any missing models.
     
@@ -419,7 +442,7 @@ def auto_discover_all_models(config: dict) -> int:
                 if mid and mid not in existing_ids:
                     config.setdefault("providers", {}).setdefault(pname, {}).setdefault("models", []).append({
                         "id": mid,
-                        "capabilities": ["chat"],
+                        "capabilities": _guess_capabilities(mid),
                         "context_window": _guess_context_window(mid),
                     })
                     added += 1
