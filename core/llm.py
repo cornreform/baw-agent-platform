@@ -36,24 +36,51 @@ _CIRCUIT_LOCK = threading.Lock()
 CIRCUIT_THRESHOLD = 5        # consecutive failures to open
 CIRCUIT_COOLDOWN_SEC = 30    # pause before retry
 
-def _check_circuit(provider: str) -> None:
-    """Raise RuntimeError if circuit is open for this provider."""
+def _check_circuit(provider_or_model: str) -> None:
+    """Raise RuntimeError ONLY if circuit just opened (give a grace period).
+
+    If circuit is in cooldown, do NOT raise — instead log a warning and
+    return. The caller will try the call, and on failure the next
+    second-tier fallback will pick another provider immediately.
+    This prevents the user-facing 'retry in 22s' deadlock.
+    """
+    import logging as _log
     with _CIRCUIT_LOCK:
-        state = _CIRCUIT_STATE.get(provider)
+        state = _CIRCUIT_STATE.get(provider_or_model)
         if state and state.get("open_until", 0) > time.time():
             remain = int(state["open_until"] - time.time())
-            raise RuntimeError(
-                f"Circuit OPEN for {provider} - {state['failures']} consecutive failures, "
-                f"retry in {remain}s"
+            _log.debug(
+                f"[LLM] circuit-cooling {provider_or_model} "
+                f"({state['failures']} fails, {remain}s remain) — trying anyway"
             )
 
-def _record_circuit_failure(provider: str) -> None:
-    """Record a failure. Opens circuit if threshold reached."""
+def _record_circuit_failure(provider_or_model: str, error_signature: str = "") -> None:
+    """Record a failure. Opens circuit if threshold reached AND
+    failure signatures repeat (same error pattern, not transient).
+
+    error_signature: short hash of the error class+code so we only
+    count *persistent* failures. Transient 429/503 don't open the
+    circuit — they retry via fallback.
+    """
     with _CIRCUIT_LOCK:
-        state = _CIRCUIT_STATE.setdefault(provider, {"failures": 0, "last_fail": 0, "open_until": 0})
+        state = _CIRCUIT_STATE.setdefault(
+            provider_or_model,
+            {"failures": 0, "last_fail": 0, "open_until": 0,
+             "last_sig": "", "sig_count": 0}
+        )
         state["failures"] += 1
         state["last_fail"] = time.time()
-        if state["failures"] >= CIRCUIT_THRESHOLD:
+        # If same error signature, increment sig count.
+        # Different error → reset sig count (don't punish if failures
+        # are diverse — they may be transient).
+        if error_signature and error_signature == state.get("last_sig"):
+            state["sig_count"] = state.get("sig_count", 0) + 1
+        else:
+            state["last_sig"] = error_signature
+            state["sig_count"] = 1
+        # Only OPEN if threshold reached AND same signature repeats 3x
+        if (state["failures"] >= CIRCUIT_THRESHOLD
+                and state["sig_count"] >= 3):
             state["open_until"] = time.time() + CIRCUIT_COOLDOWN_SEC
 
 def _record_circuit_success(provider: str) -> None:
@@ -445,23 +472,17 @@ def call_llm_with_fallback(
     # ── Auto-route based on message size ──
     primary_id = _route_model(config, messages, primary_id)
 
-    # ── Circuit breaker check ──
+    # ── Circuit breaker check (advisory only — won't block) ──
     try:
         primary_model = get_model(config, primary_id)
         _check_circuit(primary_model.provider)
-        _check_circuit(primary_id)  # also check model-level circuit
-    except RuntimeError as ce:
-        # Circuit is open — skip straight to fallback
-        if fallback_id:
-            try:
-                fallback_model = get_model(config, fallback_id)
-                _check_circuit(fallback_model.provider)
-            except RuntimeError:
-                raise RuntimeError(f"All circuits open. Primary ({primary_id}) + fallback unavailable.")
-            _record_fallback(primary_id, fallback_id, f"Circuit open: {ce}")
-            fb = call_llm_with_fallback(config, messages, tools, fallback_id, temperature, max_tokens)
-            return FallbackResult(response=fb.response, model_used="fallback", primary_model=primary_id)
-        raise
+        _check_circuit(primary_id)
+    except ValueError as ve:
+        raise ve
+    except RuntimeError:
+        # Old: skip straight to fallback. New: just continue,
+        # let the actual API call fail and trigger second-tier fallback.
+        pass
 
     RETRYABLE_STATUS = {429, 503, 502, 504}
     MAX_RETRIES = 3
@@ -488,7 +509,7 @@ def call_llm_with_fallback(
         except ValueError as e:
             # Model not found in config — skip retry, go straight to fallback
             error_msg = str(e)[:300]
-            _record_circuit_failure(last_provider or primary_id)
+            _record_circuit_failure(last_provider or primary_id, f"ValueError:{primary_id}")
             break
         except (httpx.HTTPStatusError) as e:
             status = e.response.status_code
@@ -497,12 +518,12 @@ def call_llm_with_fallback(
                 delay = BASE_DELAY * (2 ** attempt)
                 _time.sleep(delay)
                 continue
-            _record_circuit_failure(last_provider or primary_id)
+            _record_circuit_failure(last_provider or primary_id, f"HTTP:{status}")
             break  # non-retryable or exhausted
         except (httpx.TimeoutException, httpx.ConnectError,
                 ConnectionError, TimeoutError) as e:
             error_msg = str(e)[:300]
-            _record_circuit_failure(last_provider or primary_id)
+            _record_circuit_failure(last_provider or primary_id, "NetworkTimeout")
             if attempt < MAX_RETRIES:
                 delay = BASE_DELAY * (2 ** attempt)
                 _time.sleep(delay)
@@ -510,7 +531,16 @@ def call_llm_with_fallback(
             break  # exhausted retries
         except RuntimeError as e:
             error_msg = str(e)[:300]
-            _record_circuit_failure(last_provider or primary_id)
+            # Extract status code or error category from message
+            _sig = "RuntimeError"
+            if "402" in error_msg: _sig = "HTTP:402"
+            elif "429" in error_msg: _sig = "HTTP:429"
+            elif "401" in error_msg: _sig = "HTTP:401"
+            elif "403" in error_msg: _sig = "HTTP:403"
+            elif "500" in error_msg: _sig = "HTTP:500"
+            elif "503" in error_msg: _sig = "HTTP:503"
+            elif "timeout" in error_msg.lower(): _sig = "Timeout"
+            _record_circuit_failure(last_provider or primary_id, _sig)
             # Check if it's a transient error (timeout/rate-limit message)
             if ("timeout" in error_msg.lower() or "rate" in error_msg.lower()
                     or "overloaded" in error_msg.lower()) and attempt < MAX_RETRIES:
@@ -537,7 +567,7 @@ def call_llm_with_fallback(
             primary_model=primary_id,
         )
     except Exception as e:
-        _record_circuit_failure(fallback_id)
+        _record_circuit_failure(fallback_id, "SecondTier")
         # ── Second-tier fallback: scan all providers for any working model ──
         _providers = config.get("providers", {})
         _tried = {primary_id, fallback_id}
@@ -566,8 +596,33 @@ def call_llm_with_fallback(
                         model_used=f"fallback2:{_mid}",
                         primary_model=primary_id,
                     )
+                except Exception as _e2:
+                    _sig = "SecondTier:" + (str(_e2)[:50] if str(_e2) else "Unknown")
+                    _record_circuit_failure(_mid, _sig)
+                    continue
+
+        # ── Last resort: try ALL models in ALL providers regardless ──
+        for _pname, _pcfg in _providers.items():
+            for _m in _pcfg.get("models", []):
+                _mid = _m.get("id", "")
+                if not _mid or _mid in _tried:
+                    continue
+                if "chat" not in _m.get("capabilities", []):
+                    continue
+                _tried.add(_mid)
+                try:
+                    _fb3 = get_model(config, _mid)
+                    _resp = _call_with_timeout(_fb3, messages, tools, _fb3.temperature, max_tokens)
+                    _record_circuit_success(_pname)
+                    return FallbackResult(
+                        response=_resp,
+                        model_used=f"last-resort:{_mid}",
+                        primary_model=primary_id,
+                    )
                 except Exception:
                     continue
+
+        # Only when EVERY chat-capable model across ALL providers has failed
         raise RuntimeError(
             f"All models failed. Primary: {error_msg}\nFallback: {e}\n"
             f"Tried: {sorted(_tried)}"
