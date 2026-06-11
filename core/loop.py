@@ -929,39 +929,73 @@ def run_agent(
             return "KNOWN FACTS (from previous steps — DO NOT re-discover):\n" + "\n".join(_facts[:15])
         return ""
 
-    # ── Helper: inline gate — skip sub-agent spawn for trivial steps ──
-    _INLINE_PATTERNS = [
-        r'\b(read|cat|grep|ls|head|tail|stat|file|which|find)\b',  # read-only
-        r'\b(curl|wget)\b.*\b(GET|check|test|verify|ping)\b',       # curl GET test
-        r'\b(echo|print|env|whoami|pwd|date)\b',                     # no-side-effect
+    # ── Helper: inline gate — is this step simple enough to execute directly? ──
+    # Rule: INLINE BY DEFAULT. Only spawn sub-agent when the step truly needs
+    # multi-turn reasoning (research, analysis, complex debugging, browsing).
+    # A Python script is almost always more efficient than a sub-agent.
+    _SUBAGENT_REQUIRED_PATTERNS = [
+        # Multi-turn reasoning needed
+        r'\b(research|analyse|analyze|investigate|compare|evaluate)\b.*\b(options|approaches|tradeoffs|alternatives|pros|cons)\b',
+        r'\b(browse|browser|navigate|web.*page)\b',
+        r'\b(debug|troubleshoot|diagnose)\b.*\b(stack trace|error|bug|issue)\b',
+        r'\b(multi.file|multiple files|several files|complex|refactor|restructure)\b',
+        r'\b(search.*documentation|docs.*search|find.*api|api.*search)\b',
+        r'\b(understand|comprehend|explain|analyze)\b.*\b(codebase|code|logic|architecture)\b',
+        r'\b(optimize|improve|refactor)\b.*\b(system|performance|architecture)\b',
     ]
-    _INLINE_PATTERNS_C = [_re2.compile(p, _re2.IGNORECASE) for p in _INLINE_PATTERNS]
+    _INLINE_EXECUTABLE_KEYWORDS = [
+        # These map to direct tool calls — inline them
+        'read', 'write', 'create', 'save', 'generate', 'build', 'run',
+        'exec', 'install', 'pip', 'apt', 'curl', 'wget', 'fetch',
+        'copy', 'move', 'rename', 'delete', 'remove', 'patch',
+        'config', 'configure', 'set', 'update', 'modify', 'edit',
+        'call', 'invoke', 'test', 'check', 'verify', 'validate',
+        'list', 'show', 'print', 'dump', 'export', 'convert',
+        'download', 'upload', 'send', 'post', 'get',
+        'make', 'compile', 'transform', 'parse', 'merge', 'split',
+        'extract', 'filter', 'sort', 'count', 'calculate', 'compute',
+        'tts', 'speech', 'voice', 'audio', 'sound',
+        'python', 'script', 'shell', 'bash', 'sh',
+    ]
+    _SUBAGENT_KEYWORDS = [
+        # These likely need multi-turn reasoning
+        'research', 'investigate', 'analyse', 'analyze',
+        'browse', 'navigate', 'search.*web', 'web.*search',
+        'compare.*options', 'evaluate.*approach',
+        'find.*documentation', 'search.*docs',
+        'understand.*code', 'debug.*complex',
+    ]
 
     def _is_inline_candidate(goal: str) -> bool:
-        """Check if a step goal describes a trivial read/check that doesn't need sub-agent spawn."""
-        # Reject obvious non-commands (plan headers, markdown, emoji-only lines)
+        """Inline by default. Sub-agent only when multi-turn reasoning is needed."""
         _stripped = goal.strip()
         if not _stripped or _stripped.startswith(('#', '##', '```', '✅', '❌', '▶', '⏭', '⚠', '📋', '🔄')):
-            return False
-        # Reject markdown-contaminated text (would break shell)
-        if '**' in goal or '`' in goal:
-            return False
-        for _pat in _INLINE_PATTERNS_C:
-            if _pat.search(goal):
+            return False  # Not a real step description
+
+        _lower = goal.lower()
+
+        # If it matches any sub-agent-required pattern → MUST use sub-agent
+        for _sg in _SUBAGENT_REQUIRED_PATTERNS:
+            if _re2.search(_sg, _lower):
+                return False  # Not inline — needs sub-agent
+
+        # If it matches any explicit sub-agent keyword → use sub-agent
+        for _sk in _SUBAGENT_KEYWORDS:
+            if _re2.search(_sk, _lower):
+                return False
+
+        # If it matches any inline-executable keyword → inline
+        for _ik in _INLINE_EXECUTABLE_KEYWORDS:
+            # Match as whole word
+            if _re2.search(r'\b' + _re2.escape(_ik) + r'\b', _lower):
                 return True
-        # Also check: single tool call described — REJECT research/config steps
-        _research_kw = ("search", "research", "web", "browse", "browser", "docs", "documentation",
-                        "官網", "官網", "查", "調查", "查詢", " online ", "internet",
-                        "api", "endpoint", "model", "provider",
-                        "config", "update", "update", "configure", "設定", "改",
-                        "write_file", "patch", "read_file", "bash", "yaml")
-        if any(kw in goal.lower() for kw in ("write", "modify", "create", "install", "delete", "generate", "build",
-                                              "search", "research", "config", "configure", "設定",
-                                              "docs", "documentation", "查", "調査")):
-            return False
-        if goal.count(" ") < 15:
+
+        # Very short steps (under 15 words) → inline (likely simple)
+        if len(_stripped.split()) < 15:
             return True
-        return False
+
+        # Default: inline. Only sub-agent when explicitly needed.
+        return True
 
     # ── Phase 3b: Goal-pursuit loop ──
     # Route recalculation: wrong turn → silently recalculates new route from current position
@@ -1105,31 +1139,51 @@ def run_agent(
                 print(f"  🗺️ Step {_g} {_si}/{_gt}: {_step_desc_short}")
 
             try:
-                # ── Inline gate: skip sub-agent spawn for trivial read/check steps ──
+                # ── Inline gate: execute directly (fast) or spawn sub-agent (slow) ──
                 if _is_inline_candidate(_step_goal):
                     if verbose:
                         print(f"  ⚡ Inline gate: running step directly (no sub-agent spawn)")
                     try:
-                        import subprocess as _sp2
-                        # Strip markdown formatting before passing to shell
-                        _clean_cmd = _step_goal
-                        _clean_cmd = _re2.sub(r'\*\*(.*?)\*\*', r'\1', _clean_cmd)  # bold
-                        _clean_cmd = _re2.sub(r'`(.*?)`', r'\1', _clean_cmd)          # inline code
-                        _clean_cmd = _clean_cmd.replace('```bash', '').replace('```', '')
-                        _inline_result = _sp2.run(
-                            _clean_cmd, shell=True, capture_output=True, text=True, timeout=30,
-                            cwd=str(Path.home()),
+                        # Use the orchestrator model to generate + execute code in one shot
+                        # Much faster than spawning a full sub-agent with its own LLM loop
+                        _inline_ctx = Context(
+                            system_prompt=(
+                                f"You are BAW's inline step executor. "
+                                f"Generate and execute Python code to complete this step. "
+                                f"You have access to:\n"
+                                f"- import subprocess, os, json, yaml, re, sys\n"
+                                f"- from pathlib import Path\n"
+                                f"- Path.home() = {Path.home()}\n"
+                                f"- ~/.baw/config.yaml has the config\n"
+                                f"Output the step result. Keep it short."
+                            ),
+                            temperature=0.1,
                         )
-                        _result = _inline_result.stdout.strip() or _inline_result.stderr.strip()
-                        if _inline_result.returncode != 0 and not _result:
-                            raise RuntimeError(
-                                f"Inline step failed (exit {_inline_result.returncode}): "
-                                f"{_inline_result.stderr[:200]}"
-                            )
-                        else:
-                            _result = _result[:2000]
+                        # Inject context from previous steps
+                        _inline_step_ctx = _step_ctx[:1000] if _step_ctx else ""
+                        _inline_prompt = (
+                            f"Goal: {_step_goal}\n\n"
+                            + (f"Context:\n{_inline_step_ctx}\n\n" if _inline_step_ctx else "")
+                            + "Execute the step now. Print the result."
+                        )
+                        _inline_ctx.add_user(_inline_prompt)
+                        _inline_fb = call_llm_with_fallback(config, _inline_ctx.to_openai_messages(), temperature=0.1)
+                        _inline_code = (_inline_fb.response.content or "").strip()
+                        # Extract code blocks if present
+                        import re as _re_inline
+                        _code_match = _re_inline.search(r'```(?:python)?\n(.*?)\n```', _inline_code, _re_inline.DOTALL)
+                        if _code_match:
+                            _inline_code = _code_match.group(1)
+                        # Execute the generated Python code
+                        _inline_vars = {"__builtins__": __builtins__}
+                        try:
+                            exec(_inline_code, _inline_vars)
+                            _result = _inline_vars.get("_result", _inline_code[:2000])
+                            if not isinstance(_result, str):
+                                _result = str(_result)
+                        except Exception as _exec_e:
+                            _result = f"[INLINE EXEC] {_step_goal[:60]}: {_exec_e}"
                     except Exception as _ie:
-                        # Inline execution failed — re-raise so it falls through to step failure/recalculate path
                         raise RuntimeError(f"Inline execution failed: {_ie}") from _ie
                 else:
                     # ── Step timeout: prevent silent hangs from stuck sub-agents ──
