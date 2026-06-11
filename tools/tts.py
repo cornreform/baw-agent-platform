@@ -51,22 +51,24 @@ def _get_env(key: str) -> str:
 # ── Provider detection ──
 
 def _detect_provider() -> str:
-    """Return 'minimax', 'stepfun', 'edge', or 'auto'."""
+    """Return 'minimax', 'stepfun', 'edge', or 'auto'.
+
+    Priority: MiniMax (more Cantonese voices) → Stepfun → Edge (free fallback).
+    """
     cfg = _load_config()
     tts_cfg = cfg.get("capabilities", {}).get("tts", {})
     model = tts_cfg.get("model", "")
     method = tts_cfg.get("method", "")
-    if "stepaudio" in model or "step-tts" in model:
-        return "stepfun"
-    if "MiniMax" in model or method == "minimax":
-        return "minimax"
-    if method == "edge":
-        return "edge"
-    # Auto-detect: try MiniMax first, then stepfun, then edge
+    # Explicit override via method field
+    if method in ("minimax", "stepfun", "edge"):
+        return method
+    # MiniMax first (more Cantonese female voices: Cantonese_GentleLady, etc.)
     if _get_env("MINIMAX_API_KEY"):
         return "minimax"
-    if _get_env("STEPFUN_API_KEY"):
+    # Stepfun second (has lively-girl, gentle-woman, cute-girl)
+    if _get_env("STEPFUN_API_KEY") and ("stepaudio" in model or "step-tts" in model):
         return "stepfun"
+    # Edge as last resort (local, free, 2 Cantonese voices)
     return "edge"
 
 
@@ -109,8 +111,8 @@ def _tts_minimax(text: str, voice: str, output_path: str, speed: float = 1.0) ->
     api_key = _get_env("MINIMAX_API_KEY")
     if not api_key:
         return "ERROR: MINIMAX_API_KEY not found"
-    cfg = _load_config()
-    model = cfg.get("capabilities", {}).get("tts", {}).get("config", {}).get("api_model", "speech-2.8-hd")
+    # MiniMax TTS uses speech-2.8-hd (NOT shared config.api_model — that belongs to Stepfun)
+    model = "speech-2.8-hd"
     payload = {
         "model": model,
         "text": text[:500],
