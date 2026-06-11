@@ -79,17 +79,21 @@ Slash commands (interactive mode):
   /rethink    Rerun last prompt with alternative analysis
   /court      Show last Angel/Devil verdict
   /fresh      Raw model — no soul, no memories
+  /doctor     Run health check
 
 Examples:
   baw "list files in current directory"
   baw --model MiniMax-M3 "describe this image"
   baw --tone business "write a proposal"
-  baw --verbose "debug the server"
-  baw --remember "always use Traditional Chinese"
-  baw --search "memory keyword"
-  baw --status
-  baw --search-provider list
-  baw --search-provider test duckduckgo "latest Linux kernel version"
+  baw --doctor              # Health check
+  baw --doctor --fix        # Health check + auto-fix
+  baw --update              # Update from git + rebuild Docker
+  baw --backup              # Backup config, memory, sessions
+  baw --restore             # Restore latest backup
+  baw --profile-list        # List profiles
+  baw --profile-create dev   # Create profile
+  baw --diagnostics         # System debug info
+  baw --config edit         # Open config in editor
         """,
     )
     parser.add_argument("prompt", nargs="*", help="Prompt for the agent")
@@ -134,7 +138,26 @@ Examples:
     subcommands.add_argument("--board", action="store_true", help="Generate HTML dashboard")
     subcommands.add_argument("--setup", action="store_true", help="Interactive setup wizard")
     subcommands.add_argument("--cfg", nargs="+",
-                             help="Config commands: list | get <key> | set <key> <value> | help")
+                             help="Config commands: list | get <key> | set <key> <value> | edit | path | env-path | check | help")
+    subcommands.add_argument("--doctor", action="store_true", help="Run health check (--fix to auto-repair)")
+    subcommands.add_argument("--fix", action="store_true", help="Auto-fix issues (use with --doctor)")
+    subcommands.add_argument("--update", action="store_true", help="Pull latest code + rebuild Docker")
+    subcommands.add_argument("--backup", action="store_true", help="Backup config, .env, memory, sessions")
+    subcommands.add_argument("--restore", nargs="?", const="latest", default=None,
+                             help="Restore from backup (optional path)")
+    subcommands.add_argument("--backup-list", action="store_true", help="List available backups")
+    subcommands.add_argument("--profile-list", action="store_true", help="List profiles")
+    subcommands.add_argument("--profile-create", metavar="NAME", help="Create a new profile")
+    subcommands.add_argument("--profile-use", metavar="NAME", help="Switch to a profile")
+    subcommands.add_argument("--profile-delete", metavar="NAME", help="Delete a profile")
+    subcommands.add_argument("--diagnostics", action="store_true", help="Collect system debug info")
+    subcommands.add_argument("--logs", nargs="?", const="auto", default=None,
+                             help="Show recent logs (optional: number of lines)")
+    subcommands.add_argument("--reset", action="store_true", help="Wipe config and start fresh")
+    subcommands.add_argument("--completion", metavar="SHELL", choices=["bash", "zsh"],
+                             help="Generate shell completion")
+    subcommands.add_argument("--tools-list", action="store_true", help="List registered tools")
+    subcommands.add_argument("--memory-stats", action="store_true", help="Memory store statistics")
 
     args = parser.parse_args()
 
@@ -486,6 +509,7 @@ Examples:
     # ── Config commands ──
     if args.cfg:
         from baw.core.setup import cmd_config_list, cmd_config_get, cmd_config_set, cmd_config_help
+        from baw.core.setup import cmd_config_edit, cmd_config_path, cmd_config_env_path, cmd_config_check
         cmd = args.cfg[0]
         rest = args.cfg[1:]
         if cmd == "list":
@@ -494,10 +518,18 @@ Examples:
             cmd_config_get(data_dir, rest[0])
         elif cmd == "set" and len(rest) >= 2:
             cmd_config_set(data_dir, rest[0], " ".join(rest[1:]))
+        elif cmd == "edit":
+            cmd_config_edit(data_dir)
+        elif cmd == "path":
+            cmd_config_path(data_dir)
+        elif cmd == "env-path":
+            cmd_config_env_path(data_dir)
+        elif cmd == "check":
+            cmd_config_check(data_dir)
         elif cmd == "help":
             cmd_config_help()
         else:
-            print("Usage: --cfg {list | get <key> | set <key> <value> | help}")
+            print("Usage: --cfg {list | get <key> | set <key> <value> | edit | path | env-path | check | help}")
         return
 
     # ── Learn skill ──
@@ -535,6 +567,160 @@ Examples:
                 print(f"   Saved: {result['file']}")
             if args.verbose:
                 print(f"\n─── Analysis ───\n{result['analysis'][:500]}")
+        return
+
+    # ── Doctor (health check) ──
+    if args.doctor:
+        from baw.core.doctor import cmd_doctor
+        cmd_doctor(data_dir, fix=args.fix)
+        return
+
+    # ── Update ──
+    if args.update:
+        from baw.core.update import cmd_update
+        cmd_update(data_dir)
+        return
+
+    # ── Version (detailed) ──
+    if hasattr(args, 'version') and args.version:
+        from baw.core.update import cmd_version
+        cmd_version(data_dir)
+        return
+
+    # ── Backup / Restore ──
+    if args.backup:
+        from baw.core.backup import cmd_backup
+        cmd_backup(data_dir)
+        return
+    if args.restore is not None:
+        from baw.core.backup import cmd_restore
+        backup_path = args.restore if args.restore != "latest" else ""
+        cmd_restore(data_dir, backup_path)
+        return
+    if args.backup_list:
+        from baw.core.backup import cmd_backup_list
+        cmd_backup_list(data_dir)
+        return
+
+    # ── Profile management ──
+    if args.profile_list:
+        from baw.core.profile import cmd_profile_list
+        cmd_profile_list(data_dir)
+        return
+    if args.profile_create:
+        from baw.core.profile import cmd_profile_create
+        cmd_profile_create(data_dir, args.profile_create)
+        return
+    if args.profile_use:
+        from baw.core.profile import cmd_profile_use
+        cmd_profile_use(data_dir, args.profile_use)
+        return
+    if args.profile_delete:
+        from baw.core.profile import cmd_profile_delete
+        cmd_profile_delete(data_dir, args.profile_delete)
+        return
+
+    # ── Diagnostics ──
+    if args.diagnostics:
+        from baw.core.diagnostics import cmd_diagnostics
+        cmd_diagnostics(data_dir)
+        return
+
+    # ── Logs ──
+    if args.logs is not None:
+        lines = args.logs if args.logs != "auto" else "50"
+        try:
+            n = int(lines)
+            import subprocess
+            r = subprocess.run(
+                ["docker", "logs", "baw-telegram", "--tail", str(n)],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.stdout:
+                print(r.stdout)
+            if r.stderr:
+                print(r.stderr)
+        except Exception as e:
+            print(f"❌ Logs error: {e}")
+        return
+
+    # ── Reset ──
+    if args.reset:
+        print("⚠️  This will wipe all BAW data (config, .env, memory, sessions, skills)")
+        confirm = input("   Type 'RESET' to confirm: ").strip()
+        if confirm == "RESET":
+            import shutil
+            for item in ["config.yaml", ".env", "SOUL.md", "memory", "sessions", "tasks", "skills"]:
+                p = data_dir / item
+                if p.exists():
+                    if p.is_dir():
+                        shutil.rmtree(p)
+                    else:
+                        p.unlink()
+                    print(f"   Removed: {item}")
+            print("✅  BAW reset complete. Run 'baw --setup' to configure.")
+        else:
+            print("   Reset cancelled.")
+        return
+
+    # ── Completion ──
+    if args.completion:
+        if args.completion == "bash":
+            print('''_baw_completion() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    COMPREPLY=($(compgen -W "--help --version --model --tone --mode --verbose --dry-run --btw --delegate --task-id --config --remember --search --status --dream --search-provider --tasks --task-cancel --gh --schedule-list --schedule-add --schedule-rm --skill-list --skill-run --skill-args --learn-skill --learn-url --board --setup --cfg --doctor --fix --update --backup --restore --backup-list --profile-list --profile-create --profile-use --profile-delete --diagnostics --logs --reset --completion --tools-list --memory-stats" -- "$cur"))
+}
+complete -F _baw_completion baw
+''')
+        elif args.completion == "zsh":
+            print('''#compdef baw
+_arguments \\
+    "--help[Show help]" \\
+    "--version[Show version]" \\
+    "--model[Override model]:model name" \\
+    "--doctor[Run health check]" \\
+    "--fix[Auto-fix issues]" \\
+    "--update[Update from git]" \\
+    "--backup[Backup data]" \\
+    "--restore[Restore from backup]:backup path" \\
+    "--profile-list[List profiles]" \\
+    "--profile-create[Create profile]:profile name" \\
+    "--profile-use[Switch profile]:profile name" \\
+    "--profile-delete[Delete profile]:profile name" \\
+    "--diagnostics[System info]" \\
+    "--logs[Show logs]:lines:(50 100 200)" \\
+    "--reset[Factory reset]" \\
+    "--completion[Generate completion]:shell:(bash zsh)" \\
+    "--tools-list[List tools]" \\
+    "--memory-stats[Memory stats]"
+''')
+        return
+
+    # ── Tools list ──
+    if args.tools_list:
+        try:
+            from baw.tools import list_tools
+            tools = list_tools()
+            print(f"📦 Registered tools ({len(tools)}):")
+            for t in tools:
+                print(f"  {t.name}")
+        except Exception as e:
+            print(f"❌ Tools list error: {e}")
+        return
+
+    # ── Memory stats ──
+    if args.memory_stats:
+        try:
+            from baw.core.memory import MemoryStore
+            mem = MemoryStore(data_dir)
+            stats = mem.stats()
+            print(f"🧠 Memory Store")
+            print(f"  Total entries: {stats['total']}")
+            if stats['total'] > 0:
+                print(f"  Avg score: {stats['avg_score']:.2f}")
+                print(f"  High score: {stats['high_score']:.2f}")
+        except Exception as e:
+            print(f"❌ Memory stats error: {e}")
         return
 
     # Agent mode

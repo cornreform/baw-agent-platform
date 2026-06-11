@@ -762,32 +762,41 @@ class TelegramConnector(BaseConnector):
                             audio_type = "ogg" if local_path.endswith(".ogg") else "mp3"
                             b_url = base_url.rstrip("/")
 
-                            # Strategy 1: OpenAI-compatible transcri ptions endpoint
+                            # Strategy 1: OpenAI-compatible transcription endpoint
                             text = ""
-                            try:
-                                transcription_url = f"{b_url}/audio/transcriptions"
-                                logger.info(f"[Telegram] ASR probe: OpenAI @ {transcription_url}")
-                                with httpx.Client(timeout=30, verify=True) as cli:
-                                    files = {"file": (f"voice.{audio_type}", audio_bytes, f"audio/{audio_type}")}
-                                    data = {"model": stt_model_id or "whisper-1", "language": "zh"}
-                                    resp = cli.post(
-                                        transcription_url, files=files, data=data,
-                                        headers={"Authorization": f"Bearer {api_key}"},
-                                    )
-                                if resp.status_code == 200:
-                                    result = resp.json()
-                                    text = result.get("text", "")
-                                    if text:
-                                        used_method = "openai-whisper"
-                                        logger.info(f"[Telegram] ASR OK via OpenAI-compatible: {len(text)} chars")
-                            except Exception as e:
-                                logger.info(f"[Telegram] OpenAI-compatible ASR failed: {e}")
+                            for candidate_url in [b_url, b_url.replace("/v1", "/step_plan/v1")]:
+                                try:
+                                    transcription_url = f"{candidate_url}/audio/transcriptions"
+                                    logger.info(f"[Telegram] ASR probe: OpenAI @ {transcription_url}")
+                                    with httpx.Client(timeout=15, verify=True) as cli:
+                                        files = {"file": (f"voice.{audio_type}", audio_bytes, f"audio/{audio_type}")}
+                                        data = {"model": stt_model_id or "whisper-1", "language": "zh"}
+                                        resp = cli.post(
+                                            transcription_url, files=files, data=data,
+                                            headers={"Authorization": f"Bearer {api_key}"},
+                                        )
+                                    if resp.status_code == 200:
+                                        result = resp.json()
+                                        text = result.get("text", "")
+                                        if text:
+                                            used_method = "openai-whisper"
+                                            logger.info(f"[Telegram] ASR OK via OpenAI @ {candidate_url}")
+                                            break
+                                    elif resp.status_code == 402:
+                                        logger.info(f"[Telegram] ASR 402 Quota @ {candidate_url}")
+                                        # Not a failure of the probe itself — keep trying other strategies
+                                except Exception as e:
+                                    logger.info(f"[Telegram] OpenAI-compatible ASR failed @ {candidate_url}: {e}")
+                            # If we got 402, report it but still try SSE
+                            if not text and resp and resp.status_code == 402:
+                                self.send(chat_id, "⚠️ Stepfun API 配額不足（402），SSE 可能也一樣...")
 
                             # Strategy 2: Stepfun-style SSE ASR
                             if not text:
-                                try:
-                                    sse_url = f"{b_url}/audio/asr/sse"
-                                    logger.info(f"[Telegram] ASR probe: SSE @ {sse_url}")
+                                for sse_candidate in [b_url, b_url.replace("/v1", "/step_plan/v1")]:
+                                    try:
+                                        sse_url = f"{sse_candidate}/audio/asr/sse"
+                                        logger.info(f"[Telegram] ASR probe: SSE @ {sse_url}")
                                     sse_payload = {
                                         "audio": {
                                             "data": audio_b64,

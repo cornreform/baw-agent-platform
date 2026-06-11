@@ -260,8 +260,72 @@ def cmd_setup(data_dir: Path):
     print()
     print(f"{C.GREEN}{'=' * 50}{C.RESET}")
     print(f"{C.GREEN}✅ Configuration saved!{C.RESET}")
-    print(f"{C.GREEN}{'=' * 50}{C.RESET}")
-    print()
+    print(f"{C.GREEN}{'=' * 50}{C.RESET}\n")
 
     # Show summary
     cmd_config_list(data_dir)
+    _print_note("Use `baw --cfg edit` to fine-tune manually.")
+    _print_note("Use `baw --doctor` to check health.")
+
+
+# ── New config subcommands ──
+
+def cmd_config_edit(data_dir: Path):
+    """Open config.yaml in editor."""
+    path = data_dir / "config.yaml"
+    if not path.exists():
+        print(f"{C.RED}  ✗ config.yaml not found{C.RESET}")
+        return
+    editor = os.environ.get("EDITOR", "")
+    if not editor:
+        for e in ["nano", "vim", "vi"]:
+            if shutil.which(e):
+                editor = e
+                break
+    if not editor:
+        print(f"{C.RED}  ✗ No editor found. Set $EDITOR or install nano/vim.{C.RESET}")
+        return
+    print(f"  {C.YELLOW}⟳{C.RESET} Opening {path} with {editor}...")
+    os.system(f"{editor} {path}")
+
+
+def cmd_config_path(data_dir: Path):
+    """Print config.yaml path."""
+    path = data_dir / "config.yaml"
+    print(f"  Config: {path}")
+    if path.exists():
+        print(f"  Size: {path.stat().st_size:,} bytes")
+
+
+def cmd_config_env_path(data_dir: Path):
+    """Print .env path."""
+    path = data_dir / ".env"
+    print(f"  Env file: {path}")
+    if path.exists():
+        print(f"  Size: {path.stat().st_size:,} bytes ({sum(1 for l in path.read_text().splitlines() if '=' in l)} keys)")
+
+
+def cmd_config_check(data_dir: Path):
+    """Validate config for required sections."""
+    cfg = load_config(data_dir)
+    issues = []
+
+    checks = [
+        ("model.default", cfg.get("model", {}).get("default", "")),
+        ("providers (at least one)", bool(cfg.get("providers"))),
+        ("capabilities.chat.model", bool(cfg.get("capabilities", {}).get("chat", {}).get("model"))),
+        ("capabilities.stt", bool(cfg.get("capabilities", {}).get("stt"))),
+        ("capabilities.tts", bool(cfg.get("capabilities", {}).get("tts"))),
+        ("tone.default", bool(cfg.get("tone", {}).get("default"))),
+    ]
+
+    for name, ok in checks:
+        if ok:
+            val = ok if isinstance(ok, str) else "ok"
+            print(f"  {C.GREEN}✓{C.RESET} {name}: {val}")
+        else:
+            print(f"  {C.YELLOW}⚠{C.RESET} {name}: missing")
+            issues.append(name)
+
+    if issues:
+        print(f"\n  {C.YELLOW}Tip:{C.RESET} Run 'baw --setup' to configure interactively")
