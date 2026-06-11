@@ -1118,6 +1118,10 @@ def run_agent(
         _position_fails = {}    # {step_idx: count} — skip ANY step at this position after 3 fails
 
         while _step_idx < len(_execution_plan) and not _pursuit_failed:
+            logger.info(
+                f"[loop] step {_step_idx + 1}/{len(_execution_plan)}: "
+                f"{_execution_plan[_step_idx]['desc'][:60]!r}"
+            )
             # Cross-pursuit permanent skip
             if _step_idx in _permanent_skip:
                 _step = _execution_plan[_step_idx]
