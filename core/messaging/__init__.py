@@ -1401,17 +1401,17 @@ class BaseConnector(ABC):
                 except Exception:
                     pass
 
-            # Run BAW with a timeout via thread pool — multi-round loop
-            # If goal not achieved, auto-feed output back as next prompt (max 5 rounds)
-            # Round = full agent run (plan → execute steps → verify)
-            # Each round includes internal recalculations (replan on step failure)
-            # Total attempts = _MAX_AUTO_ROUNDS * _MAX_RECALC_THRESHOLD
-            _MAX_AUTO_ROUNDS = 5      # Try up to 5 different approaches before giving up (was 1)
-            _MAX_RECALC_THRESHOLD = 5  # Hard cap on recalculations per round (was 2)
-            _MAX_TOTAL_SECONDS = 600   # 10 min absolute max per request
+            # Run BAW with a multi-round, multi-strategy pursuit loop.
+            # Each round = full agent run (plan → execute → self-review).
+            # If goal not achieved, next round gets full failure context and MUST try different approach.
+            # After all rounds exhausted, runs diagnosis → user-facing actionable report.
+            _MAX_AUTO_ROUNDS = 5
+            _MAX_RECALC_THRESHOLD = 5
+            _MAX_TOTAL_SECONDS = 600
             output = ""
             info = {}
             all_plan_recaps = []
+            all_failure_reasons = []
             _recalc_total = 0
 
             # Send typing indicator
@@ -1419,7 +1419,27 @@ class BaseConnector(ABC):
                 self.send_typing(chat_id)
 
             for _round in range(1, _MAX_AUTO_ROUNDS + 1):
-                _current_prompt = prompt if _round == 1 else output  # Feed output back
+                # Build round-specific prompt with retry context
+                if _round == 1:
+                    _current_prompt = prompt
+                else:
+                    # Wrap output with explicit retry directive + failure context
+                    _failure_summary = "\n".join(
+                        f"  • {r[:200]}" for r in all_failure_reasons[-3:]
+                    ) if all_failure_reasons else "Reason unclear"
+                    _current_prompt = (
+                        f"[AUTO-RETRY ROUND {_round}/{_MAX_AUTO_ROUNDS}]\n\n"
+                        f"Original goal: {prompt}\n\n"
+                        f"Previous round failed. Here's what went wrong:\n{_failure_summary}\n\n"
+                        f"CRITICAL: You MUST try a COMPLETELY DIFFERENT approach this round.\n"
+                        f"- Different provider (e.g. Stepfun → MiniMax → edge-tts)\n"
+                        f"- Different method (e.g. curl → Python SDK → subprocess)\n"
+                        f"- Different tool (e.g. pip → apt → container)\n"
+                        f"- Auto-install missing packages before attempting\n"
+                        f"- Research root cause from error message and fix it\n\n"
+                        f"Do NOT repeat the same approach that just failed.\n"
+                        f"Execute the full plan silently. Report only the final result."
+                    )
 
                 # Refresh typing indicator each round
                 if chat_id and _round > 1:
@@ -1471,22 +1491,64 @@ class BaseConnector(ABC):
                 if info and info.get("plan_recap"):
                     all_plan_recaps.append(info["plan_recap"])
 
+                # Collect failure reasons for diagnosis
+                if info and info.get("failure_reasons"):
+                    for _fr in info["failure_reasons"]:
+                        if _fr not in all_failure_reasons:
+                            all_failure_reasons.append(_fr)
+
                 # ── Auto-continue if goal NOT achieved ──
                 goal_achieved = info.get("goal_achieved", True) if info else True
                 if goal_achieved:
                     break
-                # Goal not achieved — auto-continue to next round
-                if _round >= _MAX_AUTO_ROUNDS:
-                    output += (
-                        f"\n\n⚠️ Tried {_round} different approach(es) without reaching goal. "
-                        f"Common fixes: check API key validity/region/plan (e.g. step-plan vs standard, "
-                        f"international vs mainland), install missing packages, or use a different provider."
-                    )
-                    break
                 if self._cancel_event.is_set():
                     break
 
-                # Feed into next round
+                # Last round: attach diagnosis before giving up
+                if _round >= _MAX_AUTO_ROUNDS:
+                    # Run diagnosis: analyse all failures and suggest actionable solutions
+                    _diag_prompt = (
+                        f"[DIAGNOSIS] Task failed after {_round} round(s).\n\n"
+                        f"Original goal: {prompt}\n\n"
+                        f"Failure reasons collected across all rounds:\n"
+                        + ("\n".join(f"  • {r[:300]}" for r in all_failure_reasons) if all_failure_reasons else "  (No structured failure data)")
+                        + "\n\n"
+                        f"Analyse the FAILURE PATTERNS above. Produce a DIAGNOSIS with:\n"
+                        f"1. What was tried: summarise the {_round} different approaches briefly\n"
+                        f"2. Root cause: what actually failed (specific API error, missing package, quota, etc.)\n"
+                        f"3. Actionable fix: what the user can DO right now to unblock this\n"
+                        f"   (e.g. 'pip install edge-tts', 'top up MiniMax credits', 'switch to Step Plan endpoint', 'use curl instead of Python SDK')\n"
+                        f"4. Alternative path: what BAW could try next if the fix is applied\n"
+                        f"\nFormat:\n"
+                        f"📋 Diagnosis ({_round} rounds)\n"
+                        f"• Tried: ...\n"
+                        f"• Root cause: ...\n"
+                        f"• 🔧 Fix: ...\n"
+                        f"• Next: ...\n"
+                        f"\nDo NOT apologise. Do NOT ask questions. Be specific and actionable."
+                    )
+                    try:
+                        from ..llm import get_model as _get_diag_model, call_llm_with_fallback as _diag_llm
+                        from ..context import Context as _DiagCtx
+                        _diag_cfg = config
+                        _diag_model = _get_diag_model(_diag_cfg, config.get("model", {}).get("default", "deepseek-v4-flash"))
+                        _diag_ctx = _DiagCtx(system_prompt="You are BAW's failure diagnosis agent. Be specific and actionable, not apologetic.", temperature=0.3)
+                        _diag_ctx.add_user(_diag_prompt)
+                        _diag_fb = _diag_llm(_diag_cfg, _diag_ctx.to_openai_messages(), temperature=0.3)
+                        _diagnosis = _diag_fb.response.content or ""
+                        if _diagnosis.strip():
+                            output += f"\n\n{_diagnosis.strip()}"
+                    except Exception as _diag_e:
+                        # Fallback: list failure reasons directly
+                        output += (
+                            f"\n\n⚠️ Tried {_round} approaches without reaching goal.\n"
+                            + ("\n".join(f"  • {r[:200]}" for r in all_failure_reasons) if all_failure_reasons else "")
+                            + "\n\nTo unblock: check API keys, quotas, and installed packages. "
+                            "Or try `pip install edge-tts` if audio generation failed."
+                        )
+                    break
+
+                # Feed into next round with clear context
                 conv_history = None  # Clear context for auto-continuation
 
             # ── Prepend plan recap to output (single message, no delay) ──
