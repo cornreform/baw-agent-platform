@@ -532,9 +532,39 @@ def call_llm_with_fallback(
         )
     except Exception as e:
         _record_circuit_failure(fallback_id)
+        # ── Second-tier fallback: scan all providers for any working model ──
+        _providers = config.get("providers", {})
+        _tried = {primary_id, fallback_id}
+        _tried_providers = set()
+        for _m in _tried:
+            try:
+                _tried_providers.add(get_model(config, _m).provider)
+            except Exception:
+                pass
+        for _pname, _pcfg in _providers.items():
+            if _pname in _tried_providers:
+                continue
+            for _m in _pcfg.get("models", []):
+                _mid = _m.get("id", "")
+                if not _mid or _mid in _tried:
+                    continue
+                if "chat" not in _m.get("capabilities", []):
+                    continue
+                _tried.add(_mid)
+                try:
+                    _fb2 = get_model(config, _mid)
+                    _resp = _call_with_timeout(_fb2, messages, tools, _fb2.temperature, max_tokens)
+                    _record_circuit_success(_pname)
+                    return FallbackResult(
+                        response=_resp,
+                        model_used=f"fallback2:{_mid}",
+                        primary_model=primary_id,
+                    )
+                except Exception:
+                    continue
         raise RuntimeError(
-            f"Both primary ({primary_id}) and fallback ({fallback_id}) failed.\n"
-            f"Primary error: {error_msg}\nFallback error: {e}"
+            f"All models failed. Primary: {error_msg}\nFallback: {e}\n"
+            f"Tried: {sorted(_tried)}"
         )
 
 
