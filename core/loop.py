@@ -309,7 +309,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
 MAX_STEP_RETRIES = 3
 MAX_CONSECUTIVE_FAILURES = 3
-MAX_STEP_SECONDS = 60  # individual step timeout (was 30 — API calls + sub-agent spawn need more time)
+MAX_STEP_SECONDS = 300  # individual step timeout (was 60 — TTS/API calls + edge-tts install need 2-5 min)
 
 
 def run_agent(
