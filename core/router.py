@@ -165,22 +165,50 @@ def tier_of(score: int) -> str:
 
 
 # ── Model assignment by tier ──
+# IMPORTANT: These are PLACEHOLDERS / DEFAULTS, not authoritative rankings.
+# Routing picks a model for a tier purely based on availability and
+# configured preference order. The USER decides which model is "best"
+# for a given tier — by editing `router.tier_preferences` in config.yaml
+# or via the CLI (`baw router set <tier> <model_id>`).
+#
+# Defaults below are conservative and follow a fast→powerful gradient
+# inside each tier so that if the first choice is unavailable we have
+# a fallback. The real "tier vs model" mapping is CONFIG-DRIVEN, not
+# hardcoded in code.
 
-# Models preferred per tier. Picked by latency/cost/quality.
-# - trivial:   step-3.5-flash-2603  (fast, cheap)
-# - moderate:  step-3.7-flash       (current default)
-# - complex:   kimi-k2.6            (strong reasoning, big context)
-# - expert:    MiniMax-M3            (vision + chat + 262k context, top tier)
-TIER_MODELS = {
+DEFAULT_TIER_PREFERENCES: dict[str, list[str]] = {
     TIER_TRIVIAL: ["step-3.5-flash-2603", "step-3.5-flash", "MiniMax-M2.5"],
     TIER_MODERATE: ["step-3.7-flash", "step-3.5-flash-2603", "MiniMax-M3"],
     TIER_COMPLEX: ["kimi-k2.6", "step-3.7-flash", "MiniMax-M3"],
-    TIER_EXPERT: ["MiniMax-M3", "kimi-k2.6", "step-3.7-flash"],
+    TIER_EXPERT: ["kimi-k2.6", "MiniMax-M3", "step-3.7-flash"],
 }
 
 
+def get_tier_preferences(config: dict) -> dict[str, list[str]]:
+    """Get tier → model preference list.
+
+    Precedence (highest first):
+    1. config['router']['tier_preferences'][<tier>]   ← user override
+    2. DEFAULT_TIER_PREFERENCES[<tier>]              ← hardcoded default
+    """
+    user_prefs = (
+        config.get("router", {}).get("tier_preferences", {}) or {}
+    )
+    merged = {}
+    for tier in (TIER_TRIVIAL, TIER_MODERATE, TIER_COMPLEX, TIER_EXPERT):
+        merged[tier] = list(user_prefs.get(tier) or DEFAULT_TIER_PREFERENCES.get(tier, []))
+    return merged
+
+
 def pick_model_for_tier(tier: str, config: dict) -> str:
-    """Pick the first available model for the tier from config."""
+    """Pick the first AVAILABLE model for the tier.
+
+    The tier→model mapping is config-driven. If the user hasn't
+    configured anything, falls back to DEFAULT_TIER_PREFERENCES.
+    This function makes NO quality judgement — it just picks the
+    first model in the preference list that's configured and
+    has chat capability.
+    """
     available = set()
     for pname, pcfg in config.get("providers", {}).items():
         for m in pcfg.get("models", []):
@@ -188,7 +216,9 @@ def pick_model_for_tier(tier: str, config: dict) -> str:
             caps = m.get("capabilities", [])
             if "chat" in caps and mid:
                 available.add(mid)
-    for candidate in TIER_MODELS.get(tier, TIER_MODELS[TIER_MODERATE]):
+
+    preferences = get_tier_preferences(config)
+    for candidate in preferences.get(tier, preferences.get(TIER_MODERATE, [])):
         if candidate in available:
             return candidate
     # Last resort: any chat model
