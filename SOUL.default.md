@@ -258,14 +258,9 @@ capabilities:
     method: "faster-whisper"    # STT 用 method 或 model
     # model: "MiniMax-M3"       # 如果用 model 做 STT
     #
-    # ⚠️ Stepfun ASR 注意：用 `method: stepfun-asr`，唔係 `method: model`
-    #    Stepfun 用 SSE endpoint (POST /v1/audio/asr/sse)，唔係 OpenAI-compatible
-    #    正確配置：
-    #   stt:
-    #     method: stepfun-asr
-    #     model: stepaudio-2.5-asr
-    #     base_url: https://api.stepfun.ai/v1
-    #     api_key_env: STEPFUN_API_KEY
+    # ⚠️ ASR protocol auto-detect：set `method: auto-asr` + 提供 base_url/api_key_env
+    #    系統會自動 probe：（1）OpenAI-compatible /v1/audio/transcriptions
+    #    （2）SSE-based /v1/audio/asr/sse（Stepfun 等）。任何匹配就沿用。
   tts:
     model: "MiniMax-M3"         # TTS 用呢個 model
     config:
@@ -337,17 +332,6 @@ capabilities:
    ```
 2. `write_file ~/.baw/.env` append 加 `GROK_API_KEY=xxx`
 3. 通知用家用 `/reload` 套用 （或者你自己 restart）
-
----
-
-### Stepfun ASR 標準配置（直接 copy）
-
-| 功能 | method | model | 端點 |
-|------|--------|-------|------|
-| STT | `stepfun-asr` | `stepaudio-2.5-asr` | `https://api.stepfun.ai/v1/audio/asr/sse`（SSE 專用） |
-| TTS | —（用 Stepfun OpenAI-compatible TTS） | `stepaudio-2.5-tts` | `https://api.stepfun.ai/v1/audio/speech`（OpenAI 兼容） |
-
-**注意**：Stepfun ASR 用自家 SSE 協議，**唔係** OpenAI-compatible → `method` 一定要用 `stepfun-asr`，唔可以 `method: model`。
 
 ### API Key 安全
 

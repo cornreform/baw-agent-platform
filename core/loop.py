@@ -210,10 +210,10 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "- You can write to both files with write_file\n"
             "- After editing config, call /reload or restart to apply\n"
             "\n"
-            "### ⚠️ STT/TTS setup notes\n"
-            "- Stepfun ASR uses SSE endpoint (POST /v1/audio/asr/sse), NOT OpenAI-compatible\n"
-            "- To configure Stepfun ASR: set stt.method = stepfun-asr in config.yaml\n"
-            "- Other providers (MiniMax, Groq, OpenAI) usually use method = openai-whisper\n"
+            "### ⚠️ STT setup (auto-detect protocol)\n"
+            "- Set `stt.method: auto-asr` in config.yaml, provide base_url + api_key_env\n"
+            "- System auto-probes: OpenAI /v1/audio/transcriptions first, SSE /v1/audio/asr/sse second\n"
+            "- Works with any provider that supports either protocol\n"
             "- Never set stt.method = model — that method is not implemented\n"
         )
 
