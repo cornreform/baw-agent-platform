@@ -1359,6 +1359,23 @@ def run_agent(
         if verbose:
             print(f"  ⚠️ Goal not fully achieved after {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit attempts — synthesising partial results")
 
+    # ── Collect failure reasons for round-level diagnosis ──
+    _failure_reasons = []
+    if not _goal_achieved:
+        for _fr_i, _fr_r in enumerate(_delegation_results):
+            _fr_stripped = _fr_r.strip()
+            if _fr_stripped.startswith("[FAILED]") or _fr_stripped.startswith("[SKIPPED") or "error" in _fr_stripped.lower()[:80]:
+                _failure_reasons.append(_fr_stripped[:300])
+        # Also extract timeout/permission/API errors from any delegation result
+        for _fr_r in _delegation_results:
+            _fr_lower = _fr_r.lower()
+            for _fr_kw in ("timeout", "permission", "denied", "quota", "401", "402", "403",
+                          "404", "429", "500", "502", "503", "unreachable", "not installed",
+                          "import error", "module not found", "no module", "pip install"):
+                if _fr_kw in _fr_lower:
+                    _failure_reasons.append(_fr_r[:300])
+                    break
+
     # ── Phase 3c: Synthesise delegation results into a conclusion ──
     if _delegation_results:
         _step_count = len(_delegation_results)
@@ -1515,5 +1532,6 @@ def run_agent(
         "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
         "plan_recap": plan_recap.strip(),
         "goal_achieved": _goal_achieved or (steps_completed > 0 and steps_completed == len(_execution_plan)),
+        "failure_reasons": _failure_reasons[:5] if _failure_reasons else [],
     }
     return findings, info
