@@ -934,10 +934,17 @@ def run_agent(
         for _pat in _INLINE_PATTERNS_C:
             if _pat.search(goal):
                 return True
-        # Also check: single tool call described
-        if goal.count(" ") < 15 and not any(
-            kw in goal.lower() for kw in ("write", "modify", "create", "install", "delete", "generate", "build")
-        ):
+        # Also check: single tool call described — REJECT research/config steps
+        _research_kw = ("search", "research", "web", "browse", "browser", "docs", "documentation",
+                        "官網", "官網", "查", "調查", "查詢", " online ", "internet",
+                        "api", "endpoint", "model", "provider",
+                        "config", "update", "update", "configure", "設定", "改",
+                        "write_file", "patch", "read_file", "bash", "yaml")
+        if any(kw in goal.lower() for kw in ("write", "modify", "create", "install", "delete", "generate", "build",
+                                              "search", "research", "config", "configure", "設定",
+                                              "docs", "documentation", "查", "調査")):
+            return False
+        if goal.count(" ") < 15:
             return True
         return False
 
@@ -1105,7 +1112,8 @@ def run_agent(
                         else:
                             _result = _result[:2000]
                     except Exception as _ie:
-                        _result = f"[Inline error: {_ie}]"
+                        # Inline execution failed — re-raise so it falls through to step failure/recalculate path
+                        raise RuntimeError(f"Inline execution failed: {_ie}") from _ie
                 else:
                     # ── Step timeout: prevent silent hangs from stuck sub-agents ──
                     _step_exc = [None]
