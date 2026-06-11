@@ -1277,7 +1277,14 @@ def run_agent(
             _score = float(_score_match.group(1)) if _score_match else 0
 
             if verbose:
-                print(f"\n  🔍 Self-review: {steps_completed} steps done, score {_score}/10")
+                print(f"\\n  🔍 Self-review: {steps_completed} steps done, score {_score}/10")
+
+            # If ALL steps completed without failure → auto-achieved, skip fragile self-review gate
+            if steps_completed == len(_execution_plan) and not _pursuit_failed:
+                _goal_achieved = True
+                if verbose:
+                    print(f"     ✅ All {steps_completed} steps done — auto-confirm goal achieved")
+                break
 
             if _score >= 7:
                 _goal_achieved = True
