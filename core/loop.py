@@ -741,26 +741,17 @@ def run_agent(
     _execution_progress: list[str] = []
 
     plan_prompt = (
-        f"[ORCHESTRATOR] Goal: {prompt}\n\n"
-        f"Write a step-by-step execution plan.\n"
-        f"Each step must be SMALL (max 1-2 tool calls).\n"
-        f"MUST have at LEAST 2 steps — break complex tasks into sub-steps.\n"
-        f"If the task is trivial (1 tool call), mark it as [TRIVIAL].\n"
-        f"Describe each step in human language — "
-        f"NOT raw commands.\n"
-        f"GROUP steps into logical phases. Each phase gets a letter (A, B, C...).\n"
-        f"Format:\n"
-        f"  ## Group A — <phase name>\n"
-        f"  Step A-1: <description>\n"
-        f"  Step A-2: <description>\n"
-        f"  ## Group B — <phase name>\n"
-        f"  Step B-1: <description>\n\n"
-        f"Reply with ONLY the plan, using this grouped format.\n"
-        f"Max 5 groups. Each group: 1-5 steps.\n"
-        f"MACRO-STEP RULE: Each group should represent a single unified action.\n"
-        f"- Group A (Research): one step reads config+env, one step tests API — NOT 4 micro-steps.\n"
-        f"- Group B (Execute): one step applies all changes, one step verifies — NOT 6 micro-steps.\n"
-        f"- NEVER split a single curl/test/config-write into multiple steps. Batch related work."
+        "[ORCHESTRATOR] Goal: " + prompt + "\n\n"
+        "Write a minimal execution plan.\n"
+        "A 1-step plan is fine for trivial tasks. Combine related tool calls into one step.\n"
+        "NEVER create more than 2 steps unless the task truly requires distinct phases.\n"
+        "Describe each step in human language — NOT raw commands.\n"
+        "Format:\n"
+        "  Step 1: <description>\n"
+        "  Step 2: <description> (only if needed)\n\n"
+        "Simple grouping with numbered steps only — NO letter prefixes (A, B, C).\n"
+        "Reply with ONLY the plan, using flat numbered steps.\n"
+        "RULE: If the task is a simple read/check/status query — plan 1 step only."
     )
     _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": plan_prompt}]
     plan_fb = call_llm_with_fallback(
@@ -937,8 +928,8 @@ def run_agent(
     # ── Phase 3b: Goal-pursuit loop ──
     # Route recalculation: wrong turn → silently recalculates new route from current position
     # No retries, no skipping — just instant re-route from where you are.
-    _GOAL_PURSUIT_MAX_ATTEMPTS = 2  # Max full from-scratch re-plans (was 3)
-    _MAX_RECALCULATES = 2           # Max micro re-routes per pursuit (was 3)
+    _GOAL_PURSUIT_MAX_ATTEMPTS = 1  # Single pass only — no re-pursuit (was 2)
+    _MAX_RECALCULATES = 1           # Max one micro re-route per step (was 2)
     steps_completed = 0
     _delegation_results: list[str] = []
     _synthesis_results: list[str] = []  # Successful step results for final synthesis
