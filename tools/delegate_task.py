@@ -162,7 +162,9 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "") -> str:
             "4) NEVER describe what you will do — JUST DO IT. "
             "5) Only report after every tool call returned. "
             "6) If stuck, try a different approach, don't re-describe. "
-            "7) No questions. No confirmations. No explanations mid-task. Execute silently."
+            "7) No questions. No confirmations. No explanations mid-task. Execute silently. "
+            "8) NEVER fabricate model names or test results. If API fails, report the error. If a model name is unknown, say so. "
+            "9) After modifying config, read it back to confirm the change was applied. Report the before/after."
         ),
         temperature=0.3,
     )
