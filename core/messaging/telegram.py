@@ -711,6 +711,22 @@ class TelegramConnector(BaseConnector):
                         logger.error(f"[Telegram] faster-whisper error: {e}")
                         self.send(chat_id, f"❌ faster-whisper 辨識失敗: {e}")
                         return
+                elif stt_method == "faster-whisper" and not fw_available:
+                    # Auto-install missing faster-whisper
+                    self.send(chat_id, "⬇️ 正在安裝 faster-whisper 語音辨識引擎...")
+                    import subprocess as _sp
+                    _r = _sp.run(
+                        [sys.executable, "-m", "pip", "install", "faster-whisper", "--quiet"],
+                        capture_output=True, text=True, timeout=120,
+                    )
+                    if _r.returncode == 0:
+                        fw_model = stt_config.get("model", "base")
+                        self.send(chat_id, f"✅ 安裝成功。使用 faster-whisper（{fw_model}）...")
+                        from faster_whisper import WhisperModel
+                        model = WhisperModel(fw_model, device="cpu", compute_type="int8")
+                        segments, info = model.transcribe(local_path, language=None, beam_size=3)
+                        text = " ".join(seg.text.strip() for seg in segments)
+                        used_method = "faster-whisper"
                 elif stt_method == "openai-whisper":
                     api_key_env = stt_config.get("api_key_env", "OPENAI_API_KEY")
                     api_key = os.environ.get(api_key_env, "")
