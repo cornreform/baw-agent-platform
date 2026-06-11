@@ -122,9 +122,11 @@ def _find_model(config: dict, model_id: str) -> Optional[dict]:
                         **m}
 
     # ── Auto-discovery: try to add the model if we can detect its provider ──
-    from .model_discovery import auto_discover_model
+    from .model_discovery import auto_discover_model, auto_discover_all_models
     discovered = auto_discover_model(config, model_id)
     if discovered:
+        # Also scan all providers for any additional models via /v1/models
+        auto_discover_all_models(config)
         return discovered
 
     return None

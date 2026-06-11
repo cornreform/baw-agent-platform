@@ -205,6 +205,13 @@ KNOWN_PROVIDERS: dict[str, dict] = {
         "protocol": "openai-chat",
         "model_patterns": [r"^agnes-", r"^agnes/"],
     },
+    # StepFun
+    "stepfun": {
+        "env_var": "STEPFUN_API_KEY",
+        "base_url": "https://api.stepfun.ai/v1",
+        "protocol": "openai-chat",
+        "model_patterns": [r"^step-", r"^stp"],
+    },
 }
 
 # ── Model ID → provider hints (common models) ──
@@ -257,6 +264,7 @@ MODEL_HINTS: dict[str, str] = {
     # StepFun
     "step-2": "stepfun",
     "step-1.5v": "stepfun",
+    "step-3.7-flash": "stepfun",
     # Groq
     "llama-3.3-70b": "groq",
     "llama-3.1-8b": "groq",
@@ -365,6 +373,62 @@ def auto_discover_model(config: dict, model_id: str, data_dir: Path | None = Non
                 logger.info(f"[Discover] Provider '{provider_name}' detected for '{model_id}' but {env_var} not found")
 
     return None
+
+
+def auto_discover_all_models(config: dict) -> int:
+    """Query /v1/models for every configured provider and add any missing models.
+    
+    Returns number of new models added.
+    """
+    import urllib.request
+    import json
+    
+    added = 0
+    for pname, pcfg in config.get("providers", {}).items():
+        base_url = pcfg.get("base_url", "").rstrip("/")
+        env_var = pcfg.get("api_key_env", "")
+        api_key = ""
+        if env_var:
+            api_key = os.environ.get(env_var, "")
+            if not api_key:
+                env_path = Path.home() / ".baw" / ".env"
+                if env_path.exists():
+                    for line in env_path.read_text().splitlines():
+                        if line.startswith(f"{env_var}=") and "=" in line:
+                            api_key = line.split("=", 1)[1].strip().strip("\"'")
+                            break
+        if not base_url or not api_key:
+            continue
+        
+        models_url = f"{base_url}/models"
+        try:
+            req = urllib.request.Request(
+                models_url,
+                headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            raw = data.get("data", [])
+            if not raw or not isinstance(raw, list):
+                continue
+            
+            existing_ids = {m["id"] for p in config.get("providers", {}).values()
+                           for m in p.get("models", [])}
+            for m in raw:
+                mid = m.get("id", "")
+                if mid and mid not in existing_ids:
+                    config.setdefault("providers", {}).setdefault(pname, {}).setdefault("models", []).append({
+                        "id": mid,
+                        "capabilities": ["chat"],
+                        "context_window": _guess_context_window(mid),
+                    })
+                    added += 1
+            if added:
+                _save_config(config, None)
+                logger.info(f"[Discover] Auto-added {added} new models from {pname} /v1/models")
+        except Exception as e:
+            logger.debug(f"[Discover] /v1/models failed for {pname}: {e}")
+    return added
 
 
 def _get_configured_providers(config: dict) -> set[str]:
