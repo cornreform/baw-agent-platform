@@ -227,7 +227,16 @@ def tts_generate(text: str, voice: str = "", output_path: str = "",
         voice = voice_map.get(provider, "Cantonese_GentleLady")
     if not output_path:
         safe_voice = voice.replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")
-        output_path = f"/tmp/baw_tts_{provider}_{safe_voice}.mp3"
+        # Default to a path inside BAW's persistent dir so the file
+        # is visible to the host (Docker volume mount) and survives
+        # container restarts. Falls back to /tmp if .baw/media doesn't exist.
+        from pathlib import Path as _TtsPath
+        _shared_dir = _TtsPath("/home/baw/.baw/media/tts")
+        try:
+            _shared_dir.mkdir(parents=True, exist_ok=True)
+            output_path = str(_shared_dir / f"baw_tts_{provider}_{safe_voice}.mp3")
+        except Exception:
+            output_path = f"/tmp/baw_tts_{provider}_{safe_voice}.mp3"
     gen = {"minimax": _tts_minimax, "stepfun": _tts_stepfun, "edge": _tts_edge}
     fn = gen.get(provider)
     if not fn:
@@ -253,7 +262,7 @@ TOOL_DEF = {
         "properties": {
             "text": {"type": "string", "description": "Cantonese text to convert to speech (max 500 chars)."},
             "voice": {"type": "string", "description": "Voice ID. Leave empty for default. Use tts_list_voices() to list."},
-            "output_path": {"type": "string", "description": "Output mp3 path. Default: /tmp/baw_tts_<provider>_<voice>.mp3"},
+            "output_path": {"type": "string", "description": "Output mp3 path. Default: /tmp/baw_tts_<provider>_<voice>.mp3 — DO NOT invent other paths. Use the exact path the tool returns."},
             "speed": {"type": "number", "description": "Speech speed (0.5-2.0)", "default": 1.0},
             "provider": {"type": "string", "description": "Override provider: minimax, stepfun, or edge. Auto-detected if empty."},
         },

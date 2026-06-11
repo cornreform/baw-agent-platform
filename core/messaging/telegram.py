@@ -187,12 +187,42 @@ class TelegramConnector(BaseConnector):
             # ── Send media files ──
             for fpath in media_files:
                 fpath = fpath.strip()
+                # ── Container→host file resolution ──
+                fpath = self._resolve_media_path(fpath)
+                if not fpath:
+                    continue
                 self._send_media(chat_id, fpath)
 
             return msg_id or ""
         except Exception as e:
             logger.error(f"[Telegram] send error: {e}")
             return ""
+
+    def _resolve_media_path(self, fpath: str) -> str:
+        """Resolve a MEDIA file path. Verifies the file actually exists
+        and is readable. If not, logs and returns empty string so the
+        caller can skip the attachment (instead of sending 'File not found'
+        error to the user)."""
+        from pathlib import Path
+        fpath_obj = Path(fpath)
+        if fpath_obj.exists() and fpath_obj.is_file():
+            return str(fpath_obj.resolve())
+
+        # Last-ditch: try /tmp/<basename> and /home/baw/.baw/media/tts/<basename>
+        # in case the path was hallucinated by sub-agent planning
+        basename = fpath_obj.name
+        for _candidate in [
+            Path(f"/tmp/{basename}"),
+            Path(f"/home/baw/.baw/media/tts/{basename}"),
+            Path(f"/home/baw/.baw/{basename}"),
+        ]:
+            if _candidate.exists() and _candidate.is_file():
+                logger.info(f"[Telegram] MEDIA path fallback: {fpath} → {_candidate}")
+                return str(_candidate.resolve())
+
+        # File genuinely not found — log clearly so the diagnostic shows up
+        logger.warning(f"[Telegram] MEDIA file not found anywhere: {fpath}")
+        return ""
 
     def _send_text(self, chat_id: str, text: str) -> str:
         """Send a plain text message. Returns message_id string or empty on failure."""
