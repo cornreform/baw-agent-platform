@@ -1395,6 +1395,47 @@ def run_agent(
                         _pursuit_failed = True
                     continue
 
+                # ── FILE-EXISTENCE VERIFICATION: catch fake "done" claims ──
+                # If step was about generating/creating files, verify they exist.
+                # Otherwise treat as failure even if step "completed" without error.
+                if any(_k in _step_goal.lower() for _k in (
+                    "generate", "create", "tts", "voice", "audio", "file", "send",
+                    "生", "做", "生成", "整", "send", "write"
+                )):
+                    # Look for any file paths mentioned in result or goal
+                    import re as _vrf_re
+                    _expected_files = set()
+                    for _src in (_result or "", _step_goal):
+                        for _m in _vrf_re.findall(r'(/(?:tmp|home|var|usr)/[^\s:,"\']+\.\w+)', _src):
+                            _expected_files.add(_m)
+                    # Verify each file actually exists
+                    from pathlib import Path as _VrfPath
+                    _missing = [f for f in _expected_files if not _VrfPath(f).exists()]
+                    # Also check default TTS path if step was about TTS
+                    if "tts" in _step_goal.lower() or "voice" in _step_goal.lower() or "audio" in _step_goal.lower():
+                        _default_tts = _VrfPath("/home/baw/.baw/media/tts")
+                        if _default_tts.exists():
+                            _tts_files = list(_default_tts.glob("*.mp3"))
+                            if not _tts_files:
+                                _missing.append("No mp3 in /home/baw/.baw/media/tts/")
+                    if _missing:
+                        # Files claimed to exist but don't — fail loudly
+                        _delegation_results[_step_idx] = (
+                            f"[FAILED-VERIFICATION] {_step_desc_short}: "
+                            f"missing files: {_missing[:3]}"
+                        )
+                        _synthesis_results.append(_delegation_results[_step_idx])
+                        if verbose:
+                            print(
+                                f"  ❌ Step {_g} {_si}/{_gt} claimed done but files missing: "
+                                f"{_missing[:3]}"
+                            )
+                        # Trigger route recalc — orchestrator will pick up or retry
+                        _recalc_count += 1
+                        if _recalc_count > _MAX_RECALCULATES:
+                            _pursuit_failed = True
+                        continue
+
                 # Position-based: if position fails 3+ times → skip ANYTHING here + ban across pursuits
                 if _position_fails.get(_step_idx, 0) >= 3:
                     _permanent_skip.add(_step_idx)  # ban this position for all future pursuits
