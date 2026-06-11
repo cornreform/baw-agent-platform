@@ -176,11 +176,16 @@ def tier_of(score: int) -> str:
 # a fallback. The real "tier vs model" mapping is CONFIG-DRIVEN, not
 # hardcoded in code.
 
+# P0-3 (Opus 4.8 audit): defaults must reference models that ACTUALLY exist
+# in the default config.yaml providers (deepseek-v4-flash / deepseek-reasoner /
+# MiniMax-M3 / MiniMax-M2.5). Previously referenced step-3.5-flash-2603 etc.
+# don't exist in providers, so routing always fell through to the random
+# "last resort" branch and silently picked an arbitrary chat model.
 DEFAULT_TIER_PREFERENCES: dict[str, list[str]] = {
-    TIER_TRIVIAL: ["step-3.5-flash-2603", "step-3.5-flash", "MiniMax-M2.5"],
-    TIER_MODERATE: ["step-3.7-flash", "step-3.5-flash-2603", "MiniMax-M3"],
-    TIER_COMPLEX: ["kimi-k2.6", "step-3.7-flash", "MiniMax-M3"],
-    TIER_EXPERT: ["kimi-k2.6", "MiniMax-M3", "step-3.7-flash"],
+    TIER_TRIVIAL: ["deepseek-v4-flash", "MiniMax-M2.5", "MiniMax-M3"],
+    TIER_MODERATE: ["deepseek-v4-flash", "MiniMax-M3", "deepseek-reasoner"],
+    TIER_COMPLEX: ["deepseek-reasoner", "MiniMax-M3", "MiniMax-M2.5"],
+    TIER_EXPERT: ["deepseek-reasoner", "MiniMax-M3"],
 }
 
 

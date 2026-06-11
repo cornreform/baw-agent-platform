@@ -123,8 +123,15 @@ def _on_shutdown(signum, frame):
 def is_shutdown_requested() -> bool:
     return _shutdown_requested
 
-signal.signal(signal.SIGTERM, _on_shutdown)
-signal.signal(signal.SIGINT, _on_shutdown)
+# P1-5 (Opus 4.8 audit): wrap signal.signal in try/except — it can only be
+# called from the main thread. Subprocess / ThreadPoolExecutor / Textual TUI
+# contexts would otherwise raise ValueError on import.
+try:
+    signal.signal(signal.SIGTERM, _on_shutdown)
+    signal.signal(signal.SIGINT, _on_shutdown)
+except (ValueError, OSError):
+    # Not in main thread, or signal not available (e.g. Windows constrained runtimes).
+    pass
 
 
 @dataclass
