@@ -20,6 +20,7 @@ COPY --chown=baw:baw . .
 
 USER baw
 ENV HOME=/home/baw
+# Default log level: INFO. Override with BAW_LOG_LEVEL=DEBUG for verbose.
+ENV BAW_LOG_LEVEL=INFO
 
 ENTRYPOINT ["python3", "-u", "baw-bot", "--platform", "telegram"]
-CMD ["--debug"]

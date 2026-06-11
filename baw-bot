@@ -93,8 +93,15 @@ Examples:
 
     args = parser.parse_args()
 
-    if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
+    # ── Logging level: --debug > BAW_LOG_LEVEL > INFO ──
+    log_level_name = "DEBUG" if args.debug else os.environ.get("BAW_LOG_LEVEL", "INFO")
+    log_level = getattr(logging, log_level_name.upper(), logging.INFO)
+    logging.getLogger().setLevel(log_level)
+    # Quiet down extremely chatty libraries unless explicitly DEBUG
+    if log_level > logging.DEBUG:
+        for _noisy in ("httpcore", "httpx", "urllib3"):
+            logging.getLogger(_noisy).setLevel(logging.WARNING)
+    logging.info(f"[baw-bot] log level: {log_level_name.upper()}")
 
     # Load messaging connectors
     from core.messaging import list_connectors, get_connector
