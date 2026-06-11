@@ -1319,17 +1319,24 @@ def run_agent(
                 _same_step_fails[_same_key] = _same_step_fails.get(_same_key, 0) + 1
                 _position_fails[_step_idx] = _position_fails.get(_step_idx, 0) + 1
 
-                # ── Zero-tool-call failure: sub-agent can't execute this step → skip immediately ──
-                _err_str = str(_e)
-                _zero_tool = "0 tool calls" in _err_str or "no execution" in _err_str.lower()
+                # ── Zero-tool-call failure: REAL failure — must NOT mark as done ──
+                # Only triggers on EXACT signature "0 tool calls" (not "no execution" which
+                # appears in many unrelated contexts). Mark as FAILED so synthesis
+                # cannot falsely claim success.
+                _err_str = str(_e).lower()
+                _zero_tool = "0 tool calls" in _err_str  # very specific
                 if _zero_tool:
+                    # Don't increment step_idx — retry this step with a different
+                    # approach (route recalculation will pick up on next iteration).
+                    # Mark as [FAILED-NO-EXEC] so synthesis can flag it.
+                    _delegation_results[_step_idx] = f"[FAILED-NO-EXEC] {_step_desc_short}: LLM returned 0 tool calls"
                     if verbose:
-                        print(f"  ⏭️ Step {_g} {_si}/{_gt} can't execute (0 tool calls) — skipping")
-                    _synthesis_results.append(f"[SKIPPED] {_step_desc_short}")
-                    _dsp = f"  ⏭️ Step {_g} {_si}/{_gt}: {_step_desc_short} — sub-agent can't execute"
-                    _display_log.append(_dsp)
-                    _step_idx += 1
-                    _recalc_count = 0
+                        print(f"  ❌ Step {_g} {_si}/{_gt} returned 0 tool calls — NOT marking as done")
+                    _synthesis_results.append(f"[FAILED-NO-EXEC] {_step_desc_short}")
+                    # Recalculate immediately — this step needs a real action plan
+                    _recalc_count += 1
+                    if _recalc_count > _MAX_RECALCULATES:
+                        _pursuit_failed = True
                     continue
 
                 # Position-based: if position fails 3+ times → skip ANYTHING here + ban across pursuits
@@ -1532,6 +1539,7 @@ def run_agent(
             "- This is a CONCLUSION, not a verification. Don't say 'goal achieved' or 'score'. Just deliver the answer.\n"
             "- If results are thin or incomplete, say what's known honestly — don't fabricate.\n"
             "- ⚠️ UNCERTAINTY FLAG: If any result contains error patterns, missing data, or unverifiable claims, flag them with ⚠️ in the response. Do NOT pretend uncertain results are certain.\n"
+            "- 🚨 ZERO-EXECUTION FLAG: If any step result contains '[FAILED-NO-EXEC]' or '[SKIPPED]', the LLM did NOT actually execute the step — it just wrote a plan/summary. You MUST tell the user 'I did not actually run this — it was a plan, not an action'. Do NOT claim files were sent or actions were taken.\n"
             "- NEVER end with a question. NEVER ask for permission. NEVER promise future action.\n"
             "- Output format: no markdown headers, just plain paragraphs. Lead with the answer.\n"
             "- PRESERVE any MEDIA: or MEDIA:/path lines from sub-agent results verbatim — do not strip or summarise them.\n"
