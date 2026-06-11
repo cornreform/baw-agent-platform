@@ -81,6 +81,24 @@ COMMANDS: dict[str, dict] = {
         "usage": "baw config [show|edit|get <k>|set <k> <v>]",
         "subcommands": ["show", "edit", "get", "set"],
     },
+    "router": {
+        "short": "🎯  View/edit tier → model routing preferences",
+        "long": (
+            "Decide which model handles each complexity tier (trivial,\n"
+            "moderate, complex, expert). The router picks the FIRST model\n"
+            "in your preference list that's available. You make the call —\n"
+            "the code does not judge which model is 'best'.\n"
+            "  show — display current preferences + availability\n"
+            "  set <tier> <model> — replace the tier's preference list\n"
+            "  append <tier> <model> — add a fallback model to a tier\n"
+            "  reset — revert to defaults"
+        ),
+        "example": "baw router set expert kimi-k2.6",
+        "category": "manage",
+        "aliases": ["tier", "routing"],
+        "usage": "baw router [show|set|append|reset]",
+        "subcommands": ["show", "set", "append", "reset"],
+    },
     "soul": {
         "short": "🧠  Read/edit BAW's core identity",
         "long": (
@@ -361,6 +379,9 @@ def main():
         elif canonical == "config":
             from cli.commands.config_cmd import cmd_config
             cmd_config(subcommand, args)
+        elif canonical == "router":
+            from cli.commands.router_cmd import cmd_router
+            cmd_router(subcommand, args)
         elif canonical == "soul":
             from cli.commands.soul import cmd_soul
             cmd_soul(subcommand)
