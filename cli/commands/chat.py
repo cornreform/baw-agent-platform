@@ -30,21 +30,15 @@ def _soul() -> str:
     return p.read_text() if p.exists() else ""
 
 def _cfg():
-    import yaml
-    c = {}
-    for p in [BAW_ROOT / "config.yaml", BAW_HOME / "config.yaml"]:
-        if p.exists():
-            c = _merge(c, yaml.safe_load(p.read_text()) or {})
-    return c
-
-def _merge(a, b):
-    r = dict(a)
-    for k, v in b.items():
-        if k in r and isinstance(r[k], dict) and isinstance(v, dict):
-            r[k] = _merge(r[k], v)
-        else:
-            r[k] = v
-    return r
+    # P1-3 (Opus 4.8 audit): use the unified config loader so CLI chat,
+    # core.llm, and tools.delegate_task all see the same merged view.
+    # Previously this function did its own BAW_ROOT + BAW_HOME merge with
+    # a local _merge helper; the merge order matched load_config's, so
+    # behavior is identical for callers. Centralising here means any
+    # future change to the merge order (e.g. adding a third config file)
+    # only needs to be made once.
+    from core.config import load_config as _unified_load
+    return _unified_load()
 
 def _resolve_provider(cfg, model_id: str):
     """Find which provider has this model, return (pname, pinfo)."""

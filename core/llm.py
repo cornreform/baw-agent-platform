@@ -170,28 +170,17 @@ def calculate_cost(model: ModelDef, input_tokens: int, output_tokens: int) -> fl
 
 
 def load_config(config_path: Optional[Path] = None) -> dict:
-    """Load BAW config from yaml or dict, and auto-load .env for API keys."""
-    import yaml
+    """Load BAW config from yaml or dict, and auto-load .env for API keys.
 
-    # Auto-load .env (try Hermes profile first, then BAW's own)
-    for env_path in [
-        Path.home() / ".baw" / ".env",
-    ]:
-        if env_path.exists():
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                if "=" in line and not line.startswith("#"):
-                    k, v = line.split("=", 1)
-                    v = v.strip().strip('"').strip("'")
-                    if v:
-                        os.environ.setdefault(k.strip(), v)
-
-    if config_path and (p := Path(config_path)).exists():
-        return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-
-    baw_config = Path.home() / ".baw" / "config.yaml"
-    if baw_config.exists():
-        return yaml.safe_load(baw_config.read_text(encoding="utf-8")) or {}
-    return {}
+    P1-3 (Opus 4.8 audit): delegates to core.config.load_config so all
+    callers see the same merged view. Maintained as a thin wrapper for
+    backward compatibility — it also continues to populate os.environ
+    from ~/.baw/.env (load_config already does that, but keeping the
+    behavior here means older callers stay safe even if they pre-import
+    load_config before core.config is initialized).
+    """
+    from .config import load_config as _unified_load
+    return _unified_load(reload=False, config_path=config_path)
 
 
 def get_model(config: dict, model_id: Optional[str] = None) -> ModelDef:
