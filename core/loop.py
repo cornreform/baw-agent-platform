@@ -759,29 +759,30 @@ def run_agent(
                     final_content = content
 
         # ── Post-LLM honesty gate: catch fake-completion in LLM's own final reply ──
-        # If synthesis_results contain [FAILED-*] or [SKIPPED-*] tags but LLM's final
-        # content claims "5/5 done" or "100%" without acknowledging them, override
-        # with the actual failed steps. This is the last line of defense against
-        # LLM training-bias-driven fabrication.
-        if _synthesis_results:
-            _has_failures = any(
-                tag in s for s in _synthesis_results
-                for tag in ("[FAILED", "[SKIPPED", "Traceback", "Error: ")
+        # If delegation_results contain errors OR synthesis_results contain failures,
+        # but LLM's final content claims "5/5 done" or "100%", override with actual
+        # errors. This is the LAST line of defense against LLM fabrication.
+        _has_fake_success = any(
+            fake in (final_content or "")
+            for fake in ("5/5 (100%)", "5/5 done", "100% done", "✅ Done —",
+                         "Done — ", "completed all", "tested all", "Done 1/1 (100%)")
+        )
+        if _has_fake_success:
+            # Check BOTH delegation_results (all steps) and synthesis_results (successful only)
+            _all_results = (_delegation_results or []) + (_synthesis_results or [])
+            _has_errors = any(
+                tag in s for s in _all_results
+                for tag in ("[FAILED", "[SKIPPED", "Traceback", "Error: ",
+                            "Errno", "FileNotFoundError", "No such file")
             )
-            _has_fake_success = any(
-                fake in (final_content or "")
-                for fake in ("5/5 (100%)", "5/5 done", "100% done", "✅ Done —",
-                             "Done — ", "completed all", "tested all")
-            )
-            if _has_failures and _has_fake_success:
-                _failed_lines = [
-                    s for s in _synthesis_results
-                    if any(t in s for t in ("[FAILED", "[SKIPPED", "Traceback"))
-                ]
+            if _has_errors:
+                _error_lines = [s for s in _all_results[:10]
+                                if any(t in s for t in ("[FAILED", "[SKIPPED", "Traceback",
+                                                        "Errno", "FileNotFoundError", "No such file"))]
                 final_content = (
                     "🚨 **Fabrication detected** — LLM reported success but "
-                    f"{len(_failed_lines)} step(s) actually failed:\n\n"
-                    + "\n".join(f"  • {line[:200]}" for line in _failed_lines[:5])
+                    f"{len(_error_lines)} step(s) actually failed:\n\n"
+                    + "\n".join(f"  • {line[:200]}" for line in _error_lines[:5])
                     + "\n\nHonest status: see synthesis results above."
                 )
 
@@ -1532,14 +1533,17 @@ def run_agent(
                                 "Generate and execute Python code to complete this step.\n\n"
                                 "Available:\n"
                                 f"- Path.home() = {Path.home()}\n"
-                                f"- Project root = {Path.home() / 'baw'}\n"
                                 f"- Config = {Path.home() / '.baw' / 'config.yaml'}\n"
                                 f"- .env = {Path.home() / '.baw' / '.env'}\n"
                                 f"- SOUL.md = {Path.home() / '.baw' / 'SOUL.md'}\n"
-                                f"- TTS tool = {Path.home() / 'baw' / 'tools' / 'tts.py'}\n"
-                                f"- Docker TTS tool = /app/tools/tts.py\n"
-                                f"- Memory = {Path.home() / '.baw' / 'memory' / 'store.md'}\n"
+                                f"- Memory = {Path.home() / '.baw' / 'store.md'}\n"
                                 f"- Sessions = {Path.home() / '.baw' / 'sessions'}\n\n"
+                                "CRITICAL: Do NOT hardcode /home/baw/baw or ~/baw as project root.\n"
+                                "Use Python's built-in path detection:\n"
+                                "  import sys, pathlib\n"
+                                "  # The running script is at /app/ inside Docker or ~/baw/ on host\n"
+                                "  _candidates = ['/app', str(pathlib.Path.home() / 'baw')]\n"
+                                "  BAW_ROOT = next((p for p in _candidates if (pathlib.Path(p) / 'core' / 'paths.py').exists()), None)\n"
                                 "Available imports:\n"
                                 "- import subprocess, os, json, yaml, re, sys\n"
                                 "- from pathlib import Path\n"
