@@ -426,8 +426,13 @@ class BaseConnector(ABC):
                 return self._run_baw(f'--btw "{arg}"')
 
             if cmd in ("court", "ct"):
+                # M2 (Fable 5 spec): 4 sub-commands:
+                #   /court              → recent 5
+                #   /court <id>         → full record
+                #   /court live         → toggle per-step push
+                #   /court stats        → weekly metrics
                 from ..commands import _cmd_court
-                return _cmd_court()
+                return _cmd_court(arg)
 
             if cmd in ("memory", "remember", "r") and arg:
                 return self._run_baw(f'--remember "{arg}"')
@@ -1636,7 +1641,10 @@ class BaseConnector(ABC):
             "/status — BAW system status + sessions\n"
             "/btw `<text>` — Quick answer (no court, no plan)\n"
             "/fresh `<prompt>` — Raw model — no soul, no memories\n"
-            "/court — Show last Angel/Devil verdict\n"
+            "/court — 最近 5 單案件 (id+verdict+score+elapsed)\n"
+            "/court `<id>` — 查全卷 (起訴/答辯/證物/判決)\n"
+            "/court stats — 本週 metrics (核准率/平均 latency/tier 分流)\n"
+            "/court live — 訂閱逐步推送 (M3 wire-in)\n"
             "/stop — Cancel running request\n"
             "/restart — Restart BAW engine\n\n"
             "**📋 Sessions:**\n"
