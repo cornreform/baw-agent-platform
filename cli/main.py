@@ -152,6 +152,21 @@ COMMANDS: dict[str, dict] = {
         "aliases": ["mem"],
         "usage": "baw memory",
     },
+    "todo": {
+        "short": "📋  Persistent todos, thoughts, and follow-ups",
+        "long": (
+            "Manage the persistent todo / thought / follow-up system.\n"
+            "Three item types: task (checklist), thought (self-reflection,\n"
+            "always visible), followup (scheduled for a future session,\n"
+            "surfaced at boot). Persists across restarts and sessions."
+        ),
+        "example": "baw todo surface",
+        "category": "monitor",
+        "aliases": ["todos"],
+        "usage": "baw todo [list|surface|add|thought|followup|done|cancel|remove|stats]",
+        "subcommands": ["list", "surface", "add", "thought", "followup",
+                        "done", "cancel", "remove", "stats"],
+    },
     "sessions": {
         "short": "📋  Browse past chat sessions",
         "long": (
@@ -424,6 +439,9 @@ def main():
         elif canonical == "memory":
             from cli.commands.memory_cmd import cmd_memory
             cmd_memory()
+        elif canonical == "todo":
+            from cli.commands.todo_cmd import main as _todo_main
+            _todo_main([subcommand] + args if subcommand else [])
         elif canonical == "sessions":
             from cli.commands.sessions_cmd import cmd_sessions
             cmd_sessions(subcommand, args)
