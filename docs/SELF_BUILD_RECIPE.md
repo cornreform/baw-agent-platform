@@ -1,0 +1,195 @@
+# BAW Self-Build Recipe
+
+> 當任務係「幫我 scrape XXX 網站 / 整個 tool / register 落 BAW」，
+> **必須**跟呢個 recipe 跑。唔好 freestyle — freestyle 嘅 sub-agent
+> 100% 會撞 path 錯、curl missing、verify skip 嘅陷阱。
+
+## TL;DR — 5 個 step
+
+```
+1. PLAN    — 讀 source、定 fields
+2. FETCH   — python3 -c "import urllib.request; ..."  (NEVER curl binary)
+3. PARSE   — BeautifulSoup or regex on raw HTML
+4. STORE   — write to ~/baw/data/<thing>.json
+5. TOOL    — create ~/baw/tools/<thing>.py + register
+```
+
+每 step 完成後**必須**用對應嘅 verify command 確認，唔可以用「I think it
+worked」做收工依據。Sub-agent 嘅 system prompt 入面已經寫咗：
+> *NEVER mark a step as 'done' unless you have evidence (file exists, API
+> returned 200, config read back).*
+
+呢個 recipe 將「evidence 係咩」具體化。
+
+---
+
+## Step 1 — PLAN
+
+**做咩**：寫低要 fetch 邊個 URL、要抽咩 fields、最終 user 想問咩 query。
+
+**Path 安全**：
+- 用 `from core.paths import data_dir, tools_dir` 攞 path
+- **唔好用** `~/baw/` hardcode
+- **唔好用** `/home/baw/baw/` 喺 host side（呢個係個 sub-agent 上次撞嘅坑）
+
+**Verify**：plan 寫低喺 todo list 上面，`baw todo list` 見到。
+
+---
+
+## Step 2 — FETCH
+
+**做咩**：用 Python stdlib 攞 HTML。
+
+**唯一推薦方法**：
+```python
+import urllib.request
+req = urllib.request.Request(url, headers={"User-Agent": "BAW/1.0"})
+with urllib.request.urlopen(req, timeout=30) as r:
+    html = r.read().decode("utf-8", errors="replace")
+```
+
+**禁止**：
+- `subprocess.run(["curl", ...])` — `curl` binary 喺 Python venv 唔存在
+- `os.system("wget ...")` — 同一問題
+- `requests.get(...)` — 要 pip install，先用 stdlib
+
+**Verify**：
+```bash
+python3 -c "import json; d=json.load(open('/home/radxa/baw/data/<thing>.json')); print('rows:', len(d.get('restaurants', d.get('items', []))))"
+```
+個 file 要存在、size > 0、有至少 1 條 record。
+
+---
+
+## Step 3 — PARSE
+
+**做咩**：抽 fields 出嚟。
+
+**推薦**：
+```python
+from html.parser import HTMLParser
+# or
+import re
+# or
+try:
+    from bs4 import BeautifulSoup  # optional dep, fall back to regex
+except ImportError:
+    pass
+```
+
+**禁忌**：
+- 唔好用 JavaScript-rendered page（urllib 攞唔到 React/Vue 嘅 output）
+- 唔好假設 HTML 結構穩定 — 寫 tolerant parser，每個 field 都要 handle missing
+
+**Verify**：print 抽到嘅 sample records，confirm 結構正確。
+
+---
+
+## Step 4 — STORE
+
+**做咩**：將 parsed records 寫成 JSON dataset。
+
+**Path**：`data_dir() / "<thing>.json"` （**唔好** hardcode）
+
+**Schema 推薦**：
+```json
+{
+  "source_url": "https://...",
+  "scraped_at": "2026-06-12T21:30:00+08:00",
+  "total_announced": 1000,
+  "available_in_dataset": 50,
+  "note": "Only 50 published as of scrape. Re-run when upstream updates.",
+  "schema": { "fields": ["name", "district", ...] },
+  "items": [ {"id": "PR-0001", "name": "...", ...} ]
+}
+```
+
+**Verify**：
+```bash
+python3 -c "import json; d=json.load(open(<path>)); assert d['items']; print('OK', len(d['items']))"
+```
+
+---
+
+## Step 5 — TOOL + REGISTER
+
+**做咩**：將 dataset 變成可 query 嘅 tool + CLI command。
+
+### 5a) Tool file
+
+`tools/<thing>.py` 必須有：
+```python
+"""BAW built-in: <thing> — <one-line description>"""
+from core.paths import data_dir
+# ... 邏輯 ...
+
+TOOL_DEF = {
+    "name": "<thing>",
+    "description": "...",
+    "handler": <entry_fn>,
+    "parameters": { ... JSON Schema ... },
+    "risk_level": "low",
+}
+```
+
+### 5b) Register at boot
+
+`tools/__init__.py`：
+```python
+from . import bash, read_file, ..., <thing>  # 加 import
+
+def register_all():
+    register(**bash.TOOL_DEF)
+    ...
+    register(**<thing>.TOOL_DEF)  # 加一行
+```
+
+### 5c) CLI command (optional but recommended)
+
+`cli/commands/<thing>_cmd.py` + `cli/main.py` router entry。
+
+**Verify — 全部 4 個都 run**：
+```bash
+cd ~/baw
+python3 -c "from tools.<thing> import TOOL_DEF; print(TOOL_DEF['name'])"
+python3 -c "import tools; tools.register_all(); from core.tools import get_tool; t=get_tool('<thing>'); print('OK' if t else 'NOT REGISTERED')"
+python3 -c "from cli.commands.<thing>_cmd import main; main(['list'])"
+baw <thing> --help
+```
+
+**5/5 pass 先算 done**。任何一個 fail → fix → 再 verify。
+
+---
+
+## 常見坑（從 2026-06-12 pet-restaurant sub-agent 學到）
+
+| 坑 | 點解 | 點 fix |
+|---|---|---|
+| 用 `/home/baw/baw/` | 喺 host 唔存在（呢個係 Docker container 入面嘅 path） | 用 `from core.paths import repo_root, data_dir` |
+| `subprocess.run(["curl", ...])` | BAW Python venv 冇 `curl` binary | 用 `urllib.request` stdlib |
+| `len(text) > 0` 就當 fetch 成功 | 攞咗 0KB HTML 都當 pass | `assert len(html) > 1000` + parse 抽樣 5 條 |
+| 「Done」冇 evidence | 紙上完工 | Step 5 verify 5 個命令全部 pass |
+| Syntax error in tool file | 冇 import-test 就 ship | 寫完即 `python3 -c "import ast; ast.parse(open('tools/<thing>.py').read())"` |
+| NYC 預設座標 | IP geolocation 假設失敗 | 用 Hong Kong 已知 district centroid，或者直接 query by district name |
+| 永遠 NYC IP | 冇 retry 唔同 geolocation service | 加 fallback：Cloudflare headers > ipinfo.io > 預設 HK |
+
+---
+
+## 何時用呢個 recipe
+
+**用**：
+- 「幫我 scrape 呢個 URL」
+- 「整個 tool 嚟 query <dataset>」
+- 「Build me a 餐廳 / 餐牌 / 巴士 / 天氣 tool」
+
+**唔好用**（用其他 pattern）：
+- 純粹 debug 現有 code
+- 純粹改 config
+- 純粹查 / 讀 file
+
+---
+
+## Self-test
+
+跑 `baw self-test` 自動行 recipe 嘅 Step 2+3+4 喺一個 sample URL 上面（eg. 一個
+公開 Wikipedia page），verify end-to-end 通。失敗嘅話 BAW 而家會講得出邊 step 死。
