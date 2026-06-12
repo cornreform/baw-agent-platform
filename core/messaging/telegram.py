@@ -1298,20 +1298,41 @@ class TelegramConnector(BaseConnector):
                 f"⚖️ 立案: {text[:60]}{'…' if len(text) > 60 else ''}\n_(庭審中…)_",
             )
 
-        # Typing indicator heartbeat (respects cancel event)
+        # Typing indicator heartbeat (respects cancel event).
+        # Send a typing action every 4s — Telegram typing indicator
+        # expires after 5s, so 4s refresh keeps it continuously
+        # visible for the entire duration of the agent run.
         _typing_stop = threading.Event()
+        _typing_count = [0]  # mutable counter for debug
+        _typing_start = [time.time()]  # mutable timestamp for elapsed calc
+
         def _typing_heartbeat():
             while not _typing_stop.is_set() and not self._cancel_event.is_set():
-                try:
-                    self._client.post(
-                        f"{self._api_base}/sendChatAction",
-                        json={"chat_id": chat_id, "action": "typing"},
-                        timeout=5,
-                    )
-                except Exception:
-                    pass
+                # Try up to 3 times per cycle. Telegram's sendChatAction
+                # can intermittently 429 or fail during message edits
+                # (the progress callback fires on the same client), so
+                # a single retry covers the gap and keeps the indicator
+                # visible for the whole agent run.
+                for _retry in range(3):
+                    try:
+                        self._client.post(
+                            f"{self._api_base}/sendChatAction",
+                            json={"chat_id": chat_id, "action": "typing"},
+                            timeout=5,
+                        )
+                        _typing_count[0] += 1
+                        break  # success
+                    except Exception as _te:
+                        logger.debug(
+                            f"[Telegram] typing heartbeat retry {_retry + 1} "
+                            f"(#{_typing_count[0]}): {_te}"
+                        )
+                        _typing_stop.wait(0.5)  # brief backoff
+                # Wait 3s — comfortably inside Telegram's 5s typing expiry.
                 _typing_stop.wait(3.0)
-        _hb = threading.Thread(target=_typing_heartbeat, daemon=True)
+        _hb = threading.Thread(
+            target=_typing_heartbeat, daemon=True, name=f"typing-hb-{chat_id}",
+        )
         _hb.start()
 
         try:
@@ -1326,9 +1347,18 @@ class TelegramConnector(BaseConnector):
                 text=text,
                 raw=msg,
             )
+            logger.info(
+                f"[Telegram] typing heartbeat started "
+                f"(chat_id={chat_id}, message='{text[:40]}…')"
+            )
             response = self.route(msg_obj)
             _typing_stop.set()
             _reaction_stop.set()
+            logger.info(
+                f"[Telegram] typing heartbeat stopped "
+                f"(chat_id={chat_id}, fired {_typing_count[0]} times, "
+                f"elapsed={time.time() - _typing_start[0]:.1f}s)"
+            )
 
             # Set reaction: ✅ success
             if _msg_id:
