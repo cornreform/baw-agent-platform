@@ -164,6 +164,36 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     Structure (cache-aware): [STATIC SOUL CORE] + [DYNAMIC CONFIG]
     Static prefix stays identical across turns → DeepSeek prefix cache hit.
     """
+    # Bright-line META-RULE: no fake completion. Injected FIRST in the
+    # system prompt (above everything else) so it's the first thing the
+    # LLM sees, in BOTH quick and full mode. This rule is more
+    # important than any task-specific guidance.
+    #
+    # 2026-06-12 incident: Telegram bot LLM received
+    # `/baw self-test --no-fetch`, made a 5-checkbox plan, ran ONE bash
+    # call that failed (path error), then marked all 5 checkboxes done
+    # and reported "5/5 (100%)" — pure fabrication. This rule exists
+    # because the LLM otherwise defaults to "plan completion" optimism.
+    evidence_rule = (
+        "\n\n## ⚠️  META-RULE — No Fake Completion (READ FIRST)\n"
+        "If the user asks you to RUN a command (e.g. `baw self-test --no-fetch`,\n"
+        "`baw petrestaurants district 灣仔`, `baw preflight --url <url>`), you MUST:\n"
+        "  1. Use the `bash` tool to invoke the command EXACTLY as the user typed it.\n"
+        "  2. Wait for the actual exit code + stdout + stderr.\n"
+        "  3. Report the real output to the user.\n"
+        "You MUST NOT:\n"
+        "  ✗ Mark a step as 'done' before the tool actually returned success.\n"
+        "  ✗ Run 'diagnostic' Python scripts instead of the actual command.\n"
+        "  ✗ Fabricate a 5/5 or 100% 'done' summary when steps were skipped or failed.\n"
+        "  ✗ Treat planning checkboxes as completed just because you wrote them down.\n"
+        "If the command fails: report the real error verbatim. Don't 'investigate'\n"
+        "by spawning more shell commands — surface the failure and ask the user.\n"
+        "Every 'done' claim must be backed by tool output showing the work happened.\n"
+        "This rule applies EVEN WHEN your plan has 5 checkboxes and the bash call\n"
+        "returned an error. **3/5 done, 2 failed** is honest. **5/5 done** when the\n"
+        "command actually failed is fabrication.\n"
+    )
+
     if fresh_start:
         return (
             "You are an AI assistant. No prior context, no memories, no soul profile.\n"
@@ -188,6 +218,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                         trimmed.append(inner)
                     break
             system_prompt = "\n".join(trimmed)
+            system_prompt = evidence_rule + system_prompt
             system_prompt += (
                 "\n\n## Quick mode\n"
                 "- Respond in Traditional Chinese (Cantonese)\n"
@@ -199,7 +230,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "- 🔴 NO Plan/Step output in response. Just do it and report the result."
             )
         else:
-            system_prompt = soul_text
+            system_prompt = evidence_rule + soul_text
     else:
         system_prompt = (
             "You are BAW (Black And White), Sunny's agent platform.\n"
@@ -217,8 +248,9 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "- Set `stt.method: auto-asr` in config.yaml, provide base_url + api_key_env\n"
             "- System auto-probes: OpenAI /v1/audio/transcriptions first, SSE /v1/audio/asr/sse second\n"
             "- Works with any provider that supports either protocol\n"
-            "- Never set stt.method = model — that method is not implemented\n"
+            "- Never set stt.method = model — that method is not implemented"
         )
+        system_prompt = evidence_rule + system_prompt
 
     # ── Static core ends here — everything below is dynamic context ──
     # DeepSeek prefix cache: first N tokens (SOUL.md) are cacheable across turns.
@@ -393,8 +425,34 @@ def _build_todo_block(data_dir: Path) -> str:
     except Exception:
         pass
 
+    # Bright-line META-RULE: no fake completion. This bit the 2026-06-12
+    # Telegram bot — the LLM marked 5/5 steps "done" without ever running
+    # the actual command, just diagnostic Python that probed the filesystem.
+    # Injected FIRST in the system prompt so it's the first thing the LLM
+    # sees. This rule is more important than any task-specific guidance.
+    evidence_rule = (
+        "\n\n## ⚠️  META-RULE — No Fake Completion (READ FIRST)\n"
+        "If the user asks you to RUN a command (e.g. `baw self-test --no-fetch`,\n"
+        "`baw petrestaurants district 灣仔`, `baw preflight --url <url>`), you MUST:\n"
+        "  1. Use the `bash` tool to invoke the command EXACTLY as the user typed it.\n"
+        "  2. Wait for the actual exit code + stdout + stderr.\n"
+        "  3. Report the real output to the user.\n"
+        "You MUST NOT:\n"
+        "  ✗ Mark a step as 'done' before the tool actually returned success.\n"
+        "  ✗ Run 'diagnostic' Python scripts instead of the actual command.\n"
+        "  ✗ Fabricate a 5/5 or 100% 'done' summary when steps were skipped or failed.\n"
+        "  ✗ Treat planning checkboxes as completed just because you wrote them down.\n"
+        "If the command fails: report the real error verbatim. Don't 'investigate'\n"
+        "by spawning more shell commands — surface the failure and ask the user.\n"
+        "Every 'done' claim must be backed by tool output showing the work happened.\n"
+        "This rule applies EVEN WHEN your plan has 5 checkboxes and the bash call\n"
+        "returned an error. **3/5 done, 2 failed** is honest. **5/5 done** when the\n"
+        "command actually failed is fabrication.\n"
+    )
+
     block = (
-        "\n\n## Todo / Thought / Follow-up System\n"
+        evidence_rule
+        + "\n\n## Todo / Thought / Follow-up System\n"
         "You have a persistent task system. Use the `todo` tool aggressively:\n"
         "- For any multi-step task, create `task` items and mark in_progress/completed.\n"
         "- When you notice something worth thinking about, capture it as a `thought`\n"
