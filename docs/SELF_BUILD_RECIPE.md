@@ -4,14 +4,16 @@
 > **必須**跟呢個 recipe 跑。唔好 freestyle — freestyle 嘅 sub-agent
 > 100% 會撞 path 錯、curl missing、verify skip 嘅陷阱。
 
-## TL;DR — 5 個 step
+## TL;DR — 6 個 step
 
 ```
-1. PLAN    — 讀 source、定 fields
-2. FETCH   — python3 -c "import urllib.request; ..."  (NEVER curl binary)
-3. PARSE   — BeautifulSoup or regex on raw HTML
-4. STORE   — write to ~/baw/data/<thing>.json
-5. TOOL    — create ~/baw/tools/<thing>.py + register
+0. PRE-FLIGHT — python -m core.preflight <url>  (refuse if BLOCKED)
+1. PLAN       — 讀 source、定 fields
+2. FETCH      — tools.http_fetch.http_fetch(url)  (auto-detects SPA)
+3. PARSE      — BeautifulSoup or regex on raw HTML
+4. STORE      — write to data_dir() / "<thing>.json"
+5. TOOL       — create tools/<thing>.py + register
+6. VERIFY     — run `baw self-test` + 5 verify commands
 ```
 
 每 step 完成後**必須**用對應嘅 verify command 確認，唔可以用「I think it
@@ -20,6 +22,40 @@ worked」做收工依據。Sub-agent 嘅 system prompt 入面已經寫咗：
 > returned 200, config read back).*
 
 呢個 recipe 將「evidence 係咩」具體化。
+
+---
+
+## Step 0 — PRE-FLIGHT (新增，2026-06-12)
+
+**做咩**：開工前先 verify BAW 嘅 capability 夠唔夠做呢個 task。
+
+**點解要加呢個 step**：2026-06-12 個 sub-agent 撞兩次牆：
+1. 用 `urllib` 撞 Next.js SPA → 攞到 0KB empty shell → 假裝 50/1000 係 upstream limit
+2. 用 `subprocess.run(["curl"])` → curl binary 唔存在 → ImportError
+
+兩個都係 **capability 唔夠但照開工**。Pre-flight 將呢類 trap 喺 Step 0 揭出嚟。
+
+**跑**：
+```bash
+cd ~/baw && python -m core.preflight https://example.com
+```
+
+**4 個 check 自動行**：
+| Check | 查咩 | BLOCK 條件 |
+|---|---|---|
+| `tool_availability` | `urllib` / `requests` / `bs4` / `yaml` / Hermes `web_extract` | 任何一個 critical tool missing |
+| `network` | URL 個 host 解唔解決 | DNS failure |
+| `disk` | `data_dir()` 仲有幾多 free space | < 50 MB |
+| `path_resolution` | `core.paths.repo_root()` 係咪指到真嘅 BAW root | repo root 冇 `cli/main.py` |
+
+**Verdict**：
+- `PASS` — 直接開工
+- `WARN` — 開得工但要留意（例如 URL 喺 vercel.app 上面，**預期**要 mirror）
+- `BLOCK` — 唔開工，`next_steps` 寫低點 fix
+
+**自動 SPA 預警**：如果 URL host 結尾係 `vercel.app` / `netlify.app` / `github.io` / `herokuapp.com` / `pages.dev`，pre-flight 直接 warn：「呢個 host 係 known SPA，記住要用 mirror pattern」。
+
+**Verify**：output 入面 `verdict == "PASS"` 或 `"WARN"`，冇 `"BLOCK"`。
 
 ---
 

@@ -180,6 +180,19 @@ COMMANDS: dict[str, dict] = {
         "aliases": ["smoke", "selftest"],
         "usage": "baw self-test [--url URL] [--paths-only] [--no-fetch]",
     },
+    "preflight": {
+        "short": "🛫  Capability pre-flight check (run BEFORE any scrape task)",
+        "long": (
+            "Step 0 of SELF_BUILD_RECIPE. Verifies BAW has the tools, network,\n"
+            "disk, and path resolution it needs to start a 'scrape / build me\n"
+            "a tool' task. Warns about known SPA hosts. Refuses to start\n"
+            "(exits 1) when any check is BLOCKED. Run before any self-build."
+        ),
+        "example": "baw preflight https://example.com",
+        "category": "monitor",
+        "aliases": ["check"],
+        "usage": "baw preflight [url]",
+    },
     "petrestaurants": {
         "short": "🐾  HK FEHD pet-friendly restaurant query (49/1000)",
         "long": (
@@ -487,7 +500,14 @@ def main():
             _todo_main([subcommand] + args if subcommand else [])
         elif canonical == "self-test":
             from cli.commands.self_test_cmd import main as _selftest_main
-            _selftest_main(args if args else None)
+            # self-test uses --url / --paths-only / --no-fetch flags, not a
+            # positional subcommand, so pass the raw tail for argparse to parse.
+            _selftest_main(([subcommand] if subcommand else []) + (args or []))
+        elif canonical == "preflight":
+            from cli.commands.preflight_cmd import main as _preflight_main
+            # preflight uses --url flag, not positional subcommand, so pass
+            # the raw tail (subcommand + args) for argparse to parse.
+            _preflight_main(([subcommand] if subcommand else []) + (args or []))
         elif canonical == "petrestaurants":
             from cli.commands.petrestaurants_cmd import main as _pet_main
             _pet_main([subcommand] + args if subcommand else [])
