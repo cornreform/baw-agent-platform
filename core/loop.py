@@ -305,7 +305,57 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- NEVER say 'let me know if you want me to configure it'. Just DO it."
         )
 
+    # ── Todo / thought / follow-up system (persistent) ───────
+    todo_block = _build_todo_block(base_path)
+    if todo_block:
+        system_prompt += todo_block
+
     return system_prompt
+
+
+def _build_todo_block(data_dir: Path) -> str:
+    """Build the todo-system reminder + carry-over follow-ups block.
+
+    Injected at the end of the system prompt so BAW is reminded every turn
+    to think out loud, track work, and surface pending follow-ups.
+    """
+    try:
+        from .todo_state import TodoState
+    except Exception:
+        return ""
+
+    try:
+        # Carry-over follow-ups from any previous session
+        ts = TodoState(data_dir=data_dir, session_id="__probe__")
+        carried = ts.load_pending_followups()
+    except Exception:
+        carried = []
+
+    block = (
+        "\n\n## Todo / Thought / Follow-up System\n"
+        "You have a persistent task system. Use the `todo` tool aggressively:\n"
+        "- For any multi-step task, create `task` items and mark in_progress/completed.\n"
+        "- When you notice something worth thinking about, capture it as a `thought`\n"
+        "  (action: add_thought). Thoughts are never auto-closed — they stay visible.\n"
+        "- When something needs to happen LATER (next turn, next session, or whenever),\n"
+        "  schedule it as a `followup` (action: add_followup). It will be surfaced at\n"
+        "  every future boot until you mark it done.\n"
+        "- At the start of any non-trivial request, surface pending items (action: surface)\n"
+        "  to remind the user (and yourself) what's outstanding.\n"
+        "- Lead with the todo when in doubt — it's how you show your work and stay\n"
+        "  accountable across turns."
+    )
+    if carried:
+        block += "\n\n### ⚠️ Pending follow-ups carried over from previous sessions:\n"
+        for it in carried[:8]:
+            tag = f" (from {it.session_id})" if it.session_id else ""
+            block += f"- 📌 [{it.id[-6:]}]{tag} {it.content}"
+            if it.note:
+                block += f" — {it.note}"
+            block += "\n"
+        if len(carried) > 8:
+            block += f"- …and {len(carried) - 8} more (run `baw todo surface`)\n"
+    return block
 
 
 # ── Main agent loop ────────────────────────────────────────────
