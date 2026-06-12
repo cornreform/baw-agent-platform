@@ -1,0 +1,68 @@
+{
+  "source_url": "https://en.wikipedia.org/api/rest_v1/page/summary/Hong_Kong",
+  "scraped_at": "2026-06-12",
+  "schema": {
+    "fields": [
+      "type",
+      "title",
+      "displaytitle",
+      "namespace",
+      "wikibase_item"
+    ]
+  },
+  "items": [
+    {
+      "type": "standard",
+      "title": "Hong Kong",
+      "displaytitle": "<span lang=\"en\" dir=\"ltr\"><span class=\"mw-page-title-main\">Hong Kong</span></span>",
+      "namespace": {
+        "id": 0,
+        "text": ""
+      },
+      "wikibase_item": "Q8646",
+      "titles": {
+        "canonical": "Hong_Kong",
+        "normalized": "Hong Kong",
+        "display": "<span lang=\"en\" dir=\"ltr\"><span class=\"mw-page-title-main\">Hong Kong</span></span>"
+      },
+      "pageid": 13404,
+      "thumbnail": {
+        "source": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Flag_of_Hong_Kong.svg/330px-Flag_of_Hong_Kong.svg.png",
+        "width": 330,
+        "height": 220
+      },
+      "originalimage": {
+        "source": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Flag_of_Hong_Kong.svg/960px-Flag_of_Hong_Kong.svg.png",
+        "width": 900,
+        "height": 600
+      },
+      "lang": "en",
+      "dir": "ltr",
+      "revision": "1358874213",
+      "tid": "000c2699-65a5-11f1-9ee7-680fb750e6ad",
+      "timestamp": "2026-06-11T14:51:17Z",
+      "description": "Special administrative region of China",
+      "description_source": "local",
+      "coordinates": {
+        "lat": 22.3,
+        "lon": 114.2
+      },
+      "content_urls": {
+        "desktop": {
+          "page": "https://en.wikipedia.org/wiki/Hong_Kong",
+          "revisions": "https://en.wikipedia.org/wiki/Hong_Kong?action=history",
+          "edit": "https://en.wikipedia.org/wiki/Hong_Kong?action=edit",
+          "talk": "https://en.wikipedia.org/wiki/Talk:Hong_Kong"
+        },
+        "mobile": {
+          "page": "https://en.wikipedia.org/wiki/Hong_Kong",
+          "revisions": "https://en.wikipedia.org/wiki/Special:History/Hong_Kong",
+          "edit": "https://en.wikipedia.org/wiki/Hong_Kong?action=edit",
+          "talk": "https://en.wikipedia.org/wiki/Talk:Hong_Kong"
+        }
+      },
+      "extract": "Hong Kong is a special administrative region of China. Situated on China's southern coast just south of Shenzhen, it consists of Hong Kong Island, Kowloon, and the New Territories. With 7.5 million residents in a 1,114-square-kilometre (430 sq mi) territory, Hong Kong is the fourth-most densely populated region in the world.",
+      "extract_html": "<p><b>Hong Kong</b> is a special administrative region of China. Situated on China's southern coast just south of Shenzhen, it consists of Hong Kong Island, Kowloon, and the New Territories. With 7.5 million residents in a 1,114-square-kilometre (430 sq mi) territory, Hong Kong is the fourth-most densely populated region in the world.</p>"
+    }
+  ]
+}

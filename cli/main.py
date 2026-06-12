@@ -167,6 +167,32 @@ COMMANDS: dict[str, dict] = {
         "subcommands": ["list", "surface", "add", "thought", "followup",
                         "done", "cancel", "remove", "stats"],
     },
+    "self-test": {
+        "short": "🧪  End-to-end smoke test of self-build pipeline",
+        "long": (
+            "Exercise BAW's self-build recipe end-to-end: path resolution,\n"
+            "tool registry, HTTP fetch, dataset write, read-back. Use this\n"
+            "after any self-build task to confirm BAW can still locate its\n"
+            "own files, register tools, and reach the network."
+        ),
+        "example": "baw self-test",
+        "category": "monitor",
+        "aliases": ["smoke", "selftest"],
+        "usage": "baw self-test [--url URL] [--paths-only] [--no-fetch]",
+    },
+    "petrestaurants": {
+        "short": "🐾  HK FEHD pet-friendly restaurant query (49/1000)",
+        "long": (
+            "Query the 2026-06-12 FEHD lottery result for HK pet-friendly\n"
+            "restaurants. Built 2026-06-12 as proof of SELF_BUILD_RECIPE.\n"
+            "Subcommands: list, stats, district, region, nearest, search."
+        ),
+        "example": "baw petrestaurants district 灣仔",
+        "category": "data",
+        "aliases": ["pet"],
+        "usage": "baw petrestaurants [list|stats|district|region|nearest|search]",
+        "subcommands": ["list", "stats", "district", "region", "nearest", "search"],
+    },
     "tools": {
         "short": "🔧  Tool scaffolder / verifier",
         "long": (
@@ -459,6 +485,12 @@ def main():
         elif canonical == "todo":
             from cli.commands.todo_cmd import main as _todo_main
             _todo_main([subcommand] + args if subcommand else [])
+        elif canonical == "self-test":
+            from cli.commands.self_test_cmd import main as _selftest_main
+            _selftest_main(args if args else None)
+        elif canonical == "petrestaurants":
+            from cli.commands.petrestaurants_cmd import main as _pet_main
+            _pet_main([subcommand] + args if subcommand else [])
         elif canonical == "tools":
             from cli.commands.tools_cmd import main as _tools_main
             _tools_main([subcommand] + args if subcommand else [])

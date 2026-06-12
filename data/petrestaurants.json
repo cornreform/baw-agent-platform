@@ -1,0 +1,586 @@
+{
+  "source_url": "https://petwellhk.com/hk-fehd-pet-friendly-restaurants-1000-list",
+  "scraped_at": "2026-06-12",
+  "total_announced": 1000,
+  "available_in_dataset": 49,
+  "note": "50/1000 published as of scrape. Re-run SELF_BUILD_RECIPE for updates.",
+  "districts": {
+    "灣仔": [
+      "港島區",
+      22.277,
+      114.173
+    ],
+    "中西區": [
+      "港島區",
+      22.283,
+      114.158
+    ],
+    "南區": [
+      "港島區",
+      22.247,
+      114.19
+    ],
+    "東區": [
+      "港島區",
+      22.284,
+      114.22
+    ],
+    "油尖區": [
+      "九龍區",
+      22.3,
+      114.172
+    ],
+    "深水埗": [
+      "九龍區",
+      22.33,
+      114.165
+    ],
+    "九龍城": [
+      "九龍區",
+      22.32,
+      114.188
+    ],
+    "旺角": [
+      "九龍區",
+      22.318,
+      114.17
+    ],
+    "黃大仙": [
+      "九龍區",
+      22.345,
+      114.195
+    ],
+    "觀塘": [
+      "九龍區",
+      22.31,
+      114.225
+    ],
+    "元朗": [
+      "新界區",
+      22.445,
+      114.025
+    ],
+    "荃灣": [
+      "新界區",
+      22.371,
+      114.11
+    ],
+    "屯門": [
+      "新界區",
+      22.39,
+      113.97
+    ],
+    "大埔": [
+      "新界區",
+      22.45,
+      114.165
+    ],
+    "西貢": [
+      "新界區",
+      22.38,
+      114.27
+    ],
+    "沙田": [
+      "新界區",
+      22.38,
+      114.19
+    ],
+    "離島": [
+      "新界區",
+      22.26,
+      113.94
+    ]
+  },
+  "restaurants": [
+    {
+      "id": "PR-0001",
+      "name": "DIVINO PATIO RISTORANTE, BAR & PIZZERIA",
+      "district": "灣仔",
+      "region": "港島區",
+      "address": "香港灣仔港灣道28號灣景中心1樓11號舖及舖前行人路的座位間",
+      "lat": 22.277,
+      "lon": 114.173,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0002",
+      "name": "Classy Le Carré",
+      "district": "中西區",
+      "region": "港島區",
+      "address": "香港堅彌地城新海旁1B-1C號同發大廈地下A至E號鋪",
+      "lat": 22.283,
+      "lon": 114.158,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0003",
+      "name": "火車頭越南餐室",
+      "district": "灣仔",
+      "region": "港島區",
+      "address": "香港大坑浣紗街11號地下",
+      "lat": 22.277,
+      "lon": 114.173,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0004",
+      "name": "露台餐廳",
+      "district": "南區",
+      "region": "港島區",
+      "address": "香港淺水灣道109號A期商場1樓(部分)",
+      "lat": 22.247,
+      "lon": 114.19,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0005",
+      "name": "A BASIC COFFEE PRODUCTION",
+      "district": "灣仔",
+      "region": "港島區",
+      "address": "香港灣仔皇后大道東156-164號,明仁里3-4號, 大王東街2-4號,安興大廈地下2號舖",
+      "lat": 22.277,
+      "lon": 114.173,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0006",
+      "name": "Starbucks Coffee",
+      "district": "南區",
+      "region": "港島區",
+      "address": "香港赤柱佳美道23號赤柱廣場地下G01號舖",
+      "lat": 22.247,
+      "lon": 114.19,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0007",
+      "name": "星嵐",
+      "district": "灣仔",
+      "region": "港島區",
+      "address": "香港北角興發街62,64,66,70,72及74號 永興街2A-2E號及清風街1A-1B號 美城花園大廈地下KL-3鋪",
+      "lat": 22.277,
+      "lon": 114.173,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0008",
+      "name": "鍾菜館",
+      "district": "南區",
+      "region": "港島區",
+      "address": "香港赤柱佳美道23號赤柱廣場3樓308號鋪及鋪側平台的露天座位",
+      "lat": 22.247,
+      "lon": 114.19,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0009",
+      "name": "太平洋酒吧",
+      "district": "中西區",
+      "region": "港島區",
+      "address": "香港皇后大道西330-336號新昇大廈地下A舖",
+      "lat": 22.283,
+      "lon": 114.158,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0010",
+      "name": "古今 Premium",
+      "district": "灣仔",
+      "region": "港島區",
+      "address": "香港銅鑼灣軒尼詩道525號澳門逸園中心21樓",
+      "lat": 22.277,
+      "lon": 114.173,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0011",
+      "name": "總部美食屋",
+      "district": "南區",
+      "region": "港島區",
+      "address": "香港田灣嘉和街14-22號嘉和大廈地下3B鋪",
+      "lat": 22.247,
+      "lon": 114.19,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0012",
+      "name": "THE PEAK LOOKOUT",
+      "district": "中西區",
+      "region": "港島區",
+      "address": "香港中環山頂道121號地下旁邊及後面的露天座位地方",
+      "lat": 22.283,
+      "lon": 114.158,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0013",
+      "name": "Fineprint",
+      "district": "灣仔",
+      "region": "港島區",
+      "address": "香港跑馬地藍塘道4號地下",
+      "lat": 22.277,
+      "lon": 114.173,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0014",
+      "name": "翠華",
+      "district": "中西區",
+      "region": "港島區",
+      "address": "香港中環威靈頓街1號荊威廣場地下高層",
+      "lat": 22.283,
+      "lon": 114.158,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0015",
+      "name": "MOTI PALACE RESTAURANT",
+      "district": "油尖區",
+      "region": "九龍區",
+      "address": "九龍尖沙咀彌敦道36-44號重慶大廈1樓96及97號舖",
+      "lat": 22.3,
+      "lon": 114.172,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0016",
+      "name": "TSANG FAI LOUNGE",
+      "district": "深水埗",
+      "region": "九龍區",
+      "address": "九龍深水埗石硤尾街31-33號閣樓",
+      "lat": 22.33,
+      "lon": 114.165,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0017",
+      "name": "金枝玉葉",
+      "district": "油尖區",
+      "region": "九龍區",
+      "address": "九龍尖沙咀梳士巴利道18號 VICTORIA DOCKSIDE K11 MUSEA 第四層 401及401A號舖",
+      "lat": 22.3,
+      "lon": 114.172,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0018",
+      "name": "船長炸魚長薯條",
+      "district": "九龍城",
+      "region": "九龍區",
+      "address": "九龍啟德協調道2號AIRSIDE地下G014號鋪",
+      "lat": 22.32,
+      "lon": 114.188,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0019",
+      "name": "QUE",
+      "district": "旺角",
+      "region": "九龍區",
+      "address": "九龍旺角太子道西193號新世紀廣場第4層453號舖",
+      "lat": 22.318,
+      "lon": 114.17,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0020",
+      "name": "文記車仔麵",
+      "district": "深水埗",
+      "region": "九龍區",
+      "address": "九龍深水埗福榮街119-125號及桂林街42-44號恆誠大廈地下C鋪",
+      "lat": 22.33,
+      "lon": 114.165,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0021",
+      "name": "JIN BO LAW",
+      "district": "九龍城",
+      "region": "九龍區",
+      "address": "九龍啟德承啟道43號香港啟德帝盛酒店15樓(部份)",
+      "lat": 22.32,
+      "lon": 114.188,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0022",
+      "name": "穴藏",
+      "district": "深水埗",
+      "region": "九龍區",
+      "address": "九龍九龍塘達之路80號又一城UG35號鋪",
+      "lat": 22.33,
+      "lon": 114.165,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0023",
+      "name": "TABLESPOON",
+      "district": "觀塘",
+      "region": "九龍區",
+      "address": "九龍觀塘駿業街44號銀八1樓",
+      "lat": 22.31,
+      "lon": 114.225,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0024",
+      "name": "當吉",
+      "district": "深水埗",
+      "region": "九龍區",
+      "address": "九龍達之路80號又一城UG-19單位",
+      "lat": 22.33,
+      "lon": 114.165,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0025",
+      "name": "Antoshimo Cafe & Bakery",
+      "district": "黃大仙",
+      "region": "九龍區",
+      "address": "九龍鑽石山荷里活廣場1樓182號舖",
+      "lat": 22.345,
+      "lon": 114.195,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0026",
+      "name": "Moon Ocean",
+      "district": "觀塘",
+      "region": "九龍區",
+      "address": "九龍牛頭角道77號淘大花園第四期淘大商場2樓S190號鋪",
+      "lat": 22.31,
+      "lon": 114.225,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0027",
+      "name": "念川居",
+      "district": "旺角",
+      "region": "九龍區",
+      "address": "九龍旺角太子道西193號 MOKO 第5層501號舖",
+      "lat": 22.318,
+      "lon": 114.17,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0028",
+      "name": "六合海南雞飯",
+      "district": "黃大仙",
+      "region": "九龍區",
+      "address": "九龍黃大仙慈雲山毓華里18號慈華大廈地下4號鋪",
+      "lat": 22.345,
+      "lon": 114.195,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0029",
+      "name": "Mountain Coffee",
+      "district": "旺角",
+      "region": "九龍區",
+      "address": "九龍旺角太子道西193號新世紀廣場4樓433號鋪",
+      "lat": 22.318,
+      "lon": 114.17,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0030",
+      "name": "LA VACHE!",
+      "district": "油尖區",
+      "region": "九龍區",
+      "address": "九龍尖沙咀赫德道12-14號赫德大廈地下B舖",
+      "lat": 22.3,
+      "lon": 114.172,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0031",
+      "name": "合發茶餐廳",
+      "district": "旺角",
+      "region": "九龍區",
+      "address": "九龍旺角廣東道981號地下",
+      "lat": 22.318,
+      "lon": 114.17,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0032",
+      "name": "SORA CAFE",
+      "district": "元朗",
+      "region": "新界區",
+      "address": "新界元朗5-7鳳攸北街順豐大廈地下37號鋪",
+      "lat": 22.445,
+      "lon": 114.025,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0033",
+      "name": "Big Fish",
+      "district": "西貢",
+      "region": "新界區",
+      "address": "新界西貢灣景街18號地下及閣樓及鋪前露天座位",
+      "lat": 22.38,
+      "lon": 114.27,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0034",
+      "name": "SAMMI #000000",
+      "district": "荃灣",
+      "region": "新界區",
+      "address": "新界荃灣青山公路荃灣段117-121號蘊崇大廈地下C,E號鋪",
+      "lat": 22.371,
+      "lon": 114.11,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0035",
+      "name": "牛奶冰室",
+      "district": "大埔",
+      "region": "新界區",
+      "address": "新界大埔優景里63號SILICON LANE地下3號鋪",
+      "lat": 22.45,
+      "lon": 114.165,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0036",
+      "name": "辣將軍",
+      "district": "元朗",
+      "region": "新界區",
+      "address": "新界元朗天水圍天湖路1號嘉湖新北江商場1樓B13C,B14A及B14B號鋪",
+      "lat": 22.445,
+      "lon": 114.025,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0037",
+      "name": "THE SHACK",
+      "district": "荃灣",
+      "region": "新界區",
+      "address": "新界荃灣馬灣地段編號684號 馬灣公園二期馬灣大街42A-42B號16-17號屋 地下G16-17號鋪部份",
+      "lat": 22.371,
+      "lon": 114.11,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0038",
+      "name": "FIRST STEP CAFE",
+      "district": "屯門",
+      "region": "新界區",
+      "address": "新界屯門屯門市地段509號良德街8號珀御坊地下G07號鋪",
+      "lat": 22.39,
+      "lon": 113.97,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0039",
+      "name": "TERA PANCAKE HOUSE 寺",
+      "district": "元朗",
+      "region": "新界區",
+      "address": "新界元朗元朗市地段504號元龍街9號形點I一樓1075號鋪",
+      "lat": 22.445,
+      "lon": 114.025,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0040",
+      "name": "天喜居酒屋",
+      "district": "西貢",
+      "region": "新界區",
+      "address": "新界西貢沙咀街15號地下及閣樓",
+      "lat": 22.38,
+      "lon": 114.27,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0041",
+      "name": "感味思路",
+      "district": "沙田",
+      "region": "新界區",
+      "address": "新界沙田新城市廣場第一期第七層706鋪",
+      "lat": 22.38,
+      "lon": 114.19,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0042",
+      "name": "喜多郎日本料理",
+      "district": "西貢",
+      "region": "新界區",
+      "address": "新界西貢普通道10號地下A及B鋪及鋪前露天茶座",
+      "lat": 22.38,
+      "lon": 114.27,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0043",
+      "name": "泰國廚子",
+      "district": "沙田",
+      "region": "新界區",
+      "address": "新界沙田馬鞍山烏溪沙路8號迎海薈商場二樓5號鋪",
+      "lat": 22.38,
+      "lon": 114.19,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0044",
+      "name": "寶寶屋食堂",
+      "district": "荃灣",
+      "region": "新界區",
+      "address": "新界荃灣馬灣地段392珀麗灣珀麗灣碼頭第一層P8號鋪",
+      "lat": 22.371,
+      "lon": 114.11,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0045",
+      "name": "BLUE BOTTLE CAFE",
+      "district": "離島",
+      "region": "新界區",
+      "address": "香港大嶼山東涌達東路18-20號東薈城2樓243號舖",
+      "lat": 22.26,
+      "lon": 113.94,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0046",
+      "name": "錦田餐廳菜館",
+      "district": "元朗",
+      "region": "新界區",
+      "address": "新界元朗錦田大馬路40號(後部份)及41至43號地下",
+      "lat": 22.445,
+      "lon": 114.025,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0047",
+      "name": "韓樂",
+      "district": "元朗",
+      "region": "新界區",
+      "address": "新界元朗元點一樓B148-149號鋪",
+      "lat": 22.445,
+      "lon": 114.025,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0048",
+      "name": "牛奶冰室",
+      "district": "大埔",
+      "region": "新界區",
+      "address": "新界大埔海映路9號 GO PARK 1樓108-109號鋪",
+      "lat": 22.45,
+      "lon": 114.165,
+      "source": "FEHD 2026-06-12 lottery"
+    },
+    {
+      "id": "PR-0049",
+      "name": "想說咖啡室",
+      "district": "離島",
+      "region": "新界區",
+      "address": "新界坪洲永興街27號地下",
+      "lat": 22.26,
+      "lon": 113.94,
+      "source": "FEHD 2026-06-12 lottery"
+    }
+  ]
+}

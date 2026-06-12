@@ -343,6 +343,29 @@ def _build_todo_block(data_dir: Path) -> str:
     except Exception:
         carried = []
 
+    # Check for SELF_BUILD_RECIPE — if present, point BAW at it for any
+    # 'scrape this URL / build me a tool' task. This is the missing link
+    # that caused the 2026-06-12 pet-restaurant sub-agent to fail.
+    recipe_block = ""
+    try:
+        from . import paths as _paths
+        recipe_path = _paths.docs_dir() / "SELF_BUILD_RECIPE.md"
+        if recipe_path.exists():
+            recipe_block = (
+                "\n\n## Self-Build Recipe (READ BEFORE any 'scrape / build me a tool' task)\n"
+                "A 5-step workflow lives at `~/baw/docs/SELF_BUILD_RECIPE.md`:\n"
+                "  1. PLAN — read source, define fields, write todos\n"
+                "  2. FETCH — `urllib.request` stdlib ONLY. Never `curl` binary (not in venv).\n"
+                "  3. PARSE — BeautifulSoup or regex, tolerant of missing fields\n"
+                "  4. STORE — write to `data_dir() / '<thing>.json'` (via `core.paths`)\n"
+                "  5. TOOL — create `tools/<thing>.py` with TOOL_DEF + register in `tools/__init__.py`\n"
+                "After steps 2-5, run `baw self-test` to confirm. NEVER hardcode `/home/baw/baw/`\n"
+                "or `~/baw/` paths — use `from core.paths import ...` for everything.\n"
+                "The 2026-06-12 pet-restaurant sub-agent failed because it skipped this protocol.\n"
+            )
+    except Exception:
+        pass
+
     block = (
         "\n\n## Todo / Thought / Follow-up System\n"
         "You have a persistent task system. Use the `todo` tool aggressively:\n"
@@ -367,7 +390,7 @@ def _build_todo_block(data_dir: Path) -> str:
             block += "\n"
         if len(carried) > 8:
             block += f"- …and {len(carried) - 8} more (run `baw todo surface`)\n"
-    return block
+    return block + recipe_block
 
 
 # ── Main agent loop ────────────────────────────────────────────
