@@ -18,6 +18,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Code copy with inline chown (single layer, no trailing chown -R)
 COPY --chown=baw:baw . .
 
+# Create baw CLI wrapper inside the container
+RUN mkdir -p /home/baw/.local/bin && \
+    echo '#!/usr/bin/env bash' > /home/baw/.local/bin/baw && \
+    echo 'set -e' >> /home/baw/.local/bin/baw && \
+    echo 'exec python3 -m cli.main "$@"' >> /home/baw/.local/bin/baw && \
+    chmod +x /home/baw/.local/bin/baw && \
+    chown baw:baw /home/baw/.local/bin/baw
+
 USER baw
 ENV HOME=/home/baw
 # Default log level: INFO. Override with BAW_LOG_LEVEL=DEBUG for verbose.
