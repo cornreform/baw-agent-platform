@@ -114,10 +114,17 @@ def _get_minimax_config(goal: str = "", model_override: str = "") -> dict:
         goal: Used to match model.task_rules for keyword-based routing.
         model_override: If non-empty, forces this model (P0-1 fix — respects
                         caller/router decision instead of silently dropping it).
+
+    P1-3 (Opus 4.8 audit): now uses core.config.load_config so the merged
+    view (repo + ~/.baw) matches what core.llm and cli chat see. Previously
+    this function only read ~/.baw/config.yaml, which could cause P0-1's
+    model_override to be rejected by the existence check if the model was
+    only declared in repo/config.yaml.
     """
-    import yaml
-    data_dir = Path.home() / ".baw"
-    cfg = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
+    # P1-3: unified loader, no manual yaml/env plumbing here.
+    from core.config import load_config as _unified_load, model_exists
+    import copy
+    cfg = copy.deepcopy(_unified_load())  # deep-copy: we mutate cfg["model"] below; must not poison the shared cache.
 
     model_cfg = cfg.get("model", {})
 
@@ -127,14 +134,10 @@ def _get_minimax_config(goal: str = "", model_override: str = "") -> dict:
     else:
         executor_model = _resolve_executor_model(cfg, goal)
 
-    # Verify executor model actually exists in providers
-    providers = cfg.get("providers", {})
-    model_exists = any(
-        m["id"] == executor_model
-        for p in providers.values()
-        for m in p.get("models", [])
-    )
-    if not model_exists:
+    # P1-3: existence check now uses the unified helper, so the same set
+    # of providers is consulted regardless of which file the model was
+    # declared in.
+    if not model_exists(cfg, executor_model):
         # Fall back to default model
         executor_model = model_cfg.get("default", "deepseek-v4-flash")
 
@@ -142,17 +145,6 @@ def _get_minimax_config(goal: str = "", model_override: str = "") -> dict:
         "default": executor_model,
         "fallback": model_cfg.get("fallback", executor_model),
     }
-
-    # Load env vars
-    env_file = data_dir / ".env"
-    if env_file.exists():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            if "=" in line and not line.startswith("#"):
-                k, v = line.split("=", 1)
-                v = v.strip().strip('"').strip("'")
-                if v:
-                    import os
-                    os.environ.setdefault(k.strip(), v)
 
     return cfg
 
