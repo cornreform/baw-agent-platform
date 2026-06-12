@@ -245,6 +245,7 @@ TOOL_DEF = {
         },
         "required": ["url"],
     },
+    "risk_level": "low",
 }
 
 

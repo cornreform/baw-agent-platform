@@ -353,7 +353,7 @@ def _build_todo_block(data_dir: Path) -> str:
         if recipe_path.exists():
             recipe_block = (
                 "\n\n## Self-Build Recipe (READ BEFORE any 'scrape / build me a tool' task)\n"
-                "A 5-step workflow lives at `~/baw/docs/SELF_BUILD_RECIPE.md`:\n"
+                "A 6-step workflow lives at `~/baw/docs/SELF_BUILD_RECIPE.md`:\n"
                 "  0. **PRE-FLIGHT** — `python -m core.preflight <url>`. Refuse to start if BLOCKED.\n"
                 "  1. PLAN — read source, define fields, write todos\n"
                 "  2. FETCH — call `tools.http_fetch.http_fetch(url)`. If it returns\n"
@@ -361,14 +361,35 @@ def _build_todo_block(data_dir: Path) -> str:
                 "     React SPA — mirror it to the suggested `mirror_path` via Hermes\n"
                 "     `web_extract` (which renders JS), then call `read_mirror(mirror_path)`\n"
                 "     to get the parse input. **Never** use `urllib` against an SPA and\n"
-                "     declare the result valid.\n"
+                "     declare the result valid. **Never** `subprocess.run([\"curl\", ...])`\n"
+                "     — `curl` is not in the venv.\n"
                 "  3. PARSE — BeautifulSoup or regex, tolerant of missing fields\n"
                 "  4. STORE — write to `data_dir() / '<thing>.json'` (via `core.paths`)\n"
-                "  5. TOOL — create `tools/<thing>.py` with TOOL_DEF + register in `tools/__init__.py`\n"
+                "  5. TOOL — create `tools/<thing>.py` with TOOL_DEF (`name`, `description`,\n"
+                "     `handler`, `parameters`, `risk_level` ALL required — see\n"
+                "     `core/tool_schema.py`) + register in `tools/__init__.py`\n"
+                "  6. VERIFY — `baw self-test` (now also validates TOOL_DEF schema,\n"
+                "     data source registry, and recipe consistency)\n"
                 "After steps 2-5, run `baw self-test` to confirm. NEVER hardcode `/home/baw/baw/`\n"
                 "or `~/baw/` paths — use `from core.paths import ...` for everything.\n"
                 "The 2026-06-12 pet-restaurant sub-agent failed because it skipped this protocol.\n"
             )
+    except Exception:
+        pass
+
+    # System defaults block — what BAW defaults to, in one place
+    defaults_block = ""
+    try:
+        from . import system_defaults as _sd
+        defaults_block = "\n\n" + _sd.summary_block()
+    except Exception:
+        pass
+
+    # Data source registry — free + no-key + stdlib first
+    data_sources_block = ""
+    try:
+        from . import data_sources as _ds
+        data_sources_block = "\n\n" + _ds.summary_block()
     except Exception:
         pass
 
@@ -396,7 +417,7 @@ def _build_todo_block(data_dir: Path) -> str:
             block += "\n"
         if len(carried) > 8:
             block += f"- …and {len(carried) - 8} more (run `baw todo surface`)\n"
-    return block + recipe_block
+    return block + recipe_block + defaults_block + data_sources_block
 
 
 # ── Main agent loop ────────────────────────────────────────────

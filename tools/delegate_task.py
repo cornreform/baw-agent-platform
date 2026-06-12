@@ -395,4 +395,5 @@ TOOL_DEF = {
         },
         "required": ["goal"],
     },
+    "risk_level": "high",
 }

@@ -242,7 +242,7 @@ def search(
     if pet_friendly:
         try:
             from tools import petrestaurants as _pet
-            ds, _src = _pet._ensure_fresh()
+            ds = _pet._ensure_fresh()
             if isinstance(ds, dict):
                 pet_items = ds.get("items", [])
                 pet_names = {p["name"].lower() for p in pet_items}
@@ -304,4 +304,5 @@ TOOL_DEF = {
         },
         "required": [],
     },
+    "risk_level": "low",
 }
