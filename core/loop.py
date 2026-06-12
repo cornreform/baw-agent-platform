@@ -631,7 +631,65 @@ def run_agent(
     )
     court_enabled = config.get("adversarial", {}).get("enabled", True) and _mode == "tight"
 
-    if court_enabled:
+    # M5-D7: opt-in court v2 path. When enabled in config, run the
+    # black-and-white court (file_case_sync) BEFORE Phase 1 and inject
+    # its prosecutor critique + angel plan + verdict into the context.
+    # Falls through to the legacy AdversarialCourt path on any failure
+    # (so existing behavior is preserved).
+    use_court_v2 = config.get("court", {}).get("v2_enabled", False) and _mode == "tight"
+    court_v2_briefing = None
+    if use_court_v2 and not court_enabled:
+        court_enabled = True  # v2 subsumes the inline path below
+    if use_court_v2:
+        try:
+            from .court import file_case_sync, CourtTier
+            # Estimate tier from prompt length; for now route to tier 2
+            # (the major court) which is where the parallel Devil/Angel
+            # logic lives. Tier 0/1 don't need court v2.
+            _v2_score = len(prompt or "")
+            _v2_tier = CourtTier.TIER_2_MAJOR if _v2_score > 40 else CourtTier.TIER_1_MINOR
+            _v2_case = file_case_sync(
+                goal=prompt,
+                user_id=str(config.get("_user_id", "default")),
+                caller_model_id=model_id or "",
+                force_tier=_v2_tier,
+            )
+            court_v2_briefing = {
+                "case_id": _v2_case.case_id,
+                "tier": _v2_case.tier.value if _v2_case.tier else None,
+                "verdict": _v2_case.verdict.value if _v2_case.verdict else None,
+                "score": _v2_case.score,
+                "elapsed_sec": getattr(_v2_case, "elapsed_sec", 0.0),
+            }
+            # Pull prosecutor / angel evidence to inject into context.
+            _v2_pros = ""
+            _v2_angel = ""
+            for ev in (_v2_case.evidence or []):
+                _role = ev.get("role", "")
+                if _role == "PROSECUTOR" and not _v2_pros:
+                    _v2_pros = ev.get("content", "")
+                if _role == "ANGEL" and not _v2_angel:
+                    _v2_angel = ev.get("content", "")
+            court_result = {
+                "devil": {"content": _v2_pros, "score": _v2_case.score or 7,
+                          "tokens_in": 0, "tokens_out": 0, "cost": 0.0},
+                "angel": {"content": _v2_angel, "score": _v2_case.score or 7,
+                          "tokens_in": 0, "tokens_out": 0, "cost": 0.0},
+                "devil_score": _v2_case.score or 7,
+                "angel_score": _v2_case.score or 7,
+                "score_gap": 0,
+                "agreement_level": "court-v2",
+            }
+            logger.info(
+                f"[loop] court v2: {_v2_case.case_id} tier={_v2_case.tier.value if _v2_case.tier else '?'} "
+                f"verdict={_v2_case.verdict.value if _v2_case.verdict else '?'} "
+                f"score={_v2_case.score}"
+            )
+        except Exception as _ce:
+            logger.warning(f"[loop] court v2 init failed ({_ce}); falling back to inline path")
+            use_court_v2 = False
+
+    if court_enabled and not use_court_v2:
         if verbose:
             print("\n  ⚖️ Court: Devil + Angel analyzing independently...")
         if progress_callback:

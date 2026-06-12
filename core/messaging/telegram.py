@@ -1720,6 +1720,68 @@ class TelegramConnector(BaseConnector):
             if result:
                 self.send(chat_id, result)
 
+        elif data.startswith("court:"):
+            # M5-D8: STAY-verdict inline keyboard callback. Re-derive
+            # case_id + action from "court:{case_id}:{action}". Route
+            # to /court resume which the dispatcher understands.
+            try:
+                _, case_id, action = data.split(":", 2)
+            except ValueError:
+                logger.warning(f"[Telegram] malformed court callback: {data!r}")
+                return
+            # Persist the user's decision on the case file (annotate the
+            # archive JSON) so the agent can read it on resume. The
+            # agent itself decides what to do with the action; here we
+            # just acknowledge to Telegram and edit the original STAY
+            # message to show "你揀咗: {action}".
+            try:
+                from pathlib import Path
+                import json
+                import time
+                _case_path = Path.home() / ".baw" / "court" / "cases" / f"{case_id}.json"
+                if _case_path.exists():
+                    _case = json.loads(_case_path.read_text(encoding="utf-8"))
+                    _case.setdefault("stay_decisions", []).append({
+                        "action": action,
+                        "user_id": str(cb.get("from", {}).get("id", "")),
+                        "at": time.time(),
+                    })
+                    _case_path.write_text(
+                        json.dumps(_case, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+            except Exception as _ce:
+                logger.warning(f"[Telegram] could not persist stay decision: {_ce}")
+
+            _labels = {
+                "approve": "✅ 已批准執行",
+                "backup":  "💾 將先備份再執行",
+                "dismiss": "🚫 已撤案",
+            }
+            _ack_text = _labels.get(action, f"已選擇: {action}")
+            self._client.post(
+                f"{self._api_base}/answerCallbackQuery",
+                json={"callback_query_id": cb_id, "text": _ack_text},
+                timeout=5,
+            )
+            # Edit the original message to reflect the decision.
+            if msg_id:
+                try:
+                    self._client.post(
+                        f"{self._api_base}/editMessageText",
+                        json={
+                            "chat_id": chat_id,
+                            "message_id": msg_id,
+                            "text": f"⏸️ #{case_id} │ {_ack_text}\n"
+                                     f"用戶 ID: `{cb.get('from', {}).get('id', '?')}`\n"
+                                     f"決策已記錄。下一個 agent 回合會讀取呢個決定。",
+                            "parse_mode": "Markdown",
+                        },
+                        timeout=5,
+                    )
+                except Exception as _ee:
+                    logger.warning(f"[Telegram] edit after STAY error: {_ee}")
+
         else:
             self._client.post(
                 f"{self._api_base}/answerCallbackQuery",
