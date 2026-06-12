@@ -20,6 +20,11 @@ Thumbs.db
 # BAW user config (stored in ~/.baw/)
 config.yaml
 
+# Caches (regenerable from API; keep small datasets in git, big caches out)
+data/*_cache.json
+data/*_source.md
+data/restaurant_cache.json
+
 # Logs
 *.log
 dream-log.md
