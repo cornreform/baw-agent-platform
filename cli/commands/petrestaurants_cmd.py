@@ -17,7 +17,7 @@ from rich.panel import Panel
 
 from tools.petrestaurants import (
     stats, search_by_district, search_by_region, nearest, search,
-    _load,
+    refresh as _refresh, _load,
 )
 
 
@@ -56,6 +56,10 @@ def cmd_search(args):
     console.print(search(args.query, region=args.region, district=args.district, k=args.k))
 
 
+def cmd_refresh(args):
+    console.print(_refresh())
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="baw petrestaurants",
                                 description="Query the HK FEHD pet-friendly restaurant list.")
@@ -87,6 +91,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--district")
     sp.add_argument("--k", type=int, default=10)
     sp.set_defaults(func=cmd_search)
+
+    sp = sub.add_parser("refresh", help="Force re-fetch from petwellhk.com")
+    sp.set_defaults(func=cmd_refresh)
 
     return p
 
