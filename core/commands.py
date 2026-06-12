@@ -405,25 +405,125 @@ def _cmd_rethink(args: list[str], config: dict, data_dir: Path, verbose: bool) -
         return f"Rethink failed: {e}"
 
 
-def _cmd_court() -> str:
-    """Show the last court verdict — both voices, independent."""
-    global LAST_COURT_VERDICT
-    if not LAST_COURT_VERDICT:
-        return "No previous court verdict. Run a prompt with adversarial enabled first."
+def _cmd_court(arg: str = "") -> str:
+    """Show court case info.
 
-    d = LAST_COURT_VERDICT
-    return (
-        f"⚖️ **BAW Court — Independent Analysis**\n\n"
-        f"👿 **Devil (Independent Critique)** — Risk: {d.get('devil_score', '?')}/10\n"
-        f"{d.get('devil', {}).get('content', 'N/A')}\n\n"
-        f"😇 **Angel (Independent Support)** — Feasibility: {d.get('angel_score', '?')}/10\n"
-        f"{d.get('angel', {}).get('content', 'N/A')}\n\n"
-        f"━━━ **Assessment** ───\n"
-        f"Agreement level: {d.get('agreement_level', '?')} "
-        f"(gap: {d.get('score_gap', '?')} pts)\n"
-        f"Neither voice has execution power in court. "
-        f"BAW synthesizes both perspectives neutrally."
-    )
+    Sub-commands (M2, Fable 5 spec):
+      /court            → recent 5 cases (id + verdict + score + elapsed)
+      /court <id>       → full case record (prosecutor, defendant, judge, evidence)
+      /court live       → toggle per-step push notifications for current case
+      /court stats      → this week: count, approval rate, avg latency, appeal rate
+    """
+    arg = (arg or "").strip()
+    try:
+        from .court import recent_cases, get_case
+    except ImportError as e:
+        return f"⚖️ court module unavailable: {e}"
+
+    # /court stats — aggregate metrics from the archive
+    if arg == "stats":
+        archive_dir = Path.home() / ".baw" / "court" / "cases"
+        if not archive_dir.exists():
+            return "⚖️ 黑白法庭狀態\n仲未審過案。問嘢就會自動開庭。"
+        cases = []
+        for p in sorted(archive_dir.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+            try:
+                cases.append(json.loads(p.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+        if not cases:
+            return "⚖️ 黑白法庭狀態\n仲未審過案。問嘢就會自動開庭。"
+        # Last 7 days
+        cutoff = time.time() - 7 * 86400
+        week = [c for c in cases if c.get("created_at", 0) >= cutoff]
+        total = len(week)
+        approved = sum(1 for c in week if c.get("verdict") == "approved")
+        retry = sum(1 for c in week if c.get("verdict") == "retry")
+        appeal = sum(1 for c in week if c.get("verdict") == "appeal")
+        dismissed = sum(1 for c in week if c.get("verdict") == "dismissed")
+        avg_score = sum(c.get("score", 0) for c in week) / max(total, 1)
+        avg_elapsed = sum(c.get("elapsed_sec", 0) for c in week) / max(total, 1)
+        # Tier breakdown
+        by_tier = {}
+        for c in week:
+            t = c.get("tier", 0)
+            by_tier[t] = by_tier.get(t, 0) + 1
+        lines = [
+            "⚖️ 黑白法庭狀態 (last 7 days)",
+            f"審案: {total} 單",
+            f"核准率: {100*approved/max(total,1):.0f}% ({approved}/{total})",
+            f"🔁 RETRY: {retry}  ·  📤 APPEAL: {appeal}  ·  🚫 DISMISSED: {dismissed}",
+            f"平均 verdict: {avg_score:.1f}/10",
+            f"平均 latency: {avg_elapsed:.1f}s",
+            "",
+            "Tier 分流:",
+            f"  Tier 0 (琐事): {by_tier.get(0, 0)}",
+            f"  Tier 1 (judge only): {by_tier.get(1, 0)}",
+            f"  Tier 2 (+檢察官): {by_tier.get(2, 0)}",
+            f"  Tier 3 (全院): {by_tier.get(3, 0)}",
+        ]
+        return "\n".join(lines)
+
+    # /court live — toggle per-step push for current case
+    if arg == "live":
+        # This is a session-scoped toggle; we don't have a user-session store
+        # here, so the closest we can do is acknowledge and instruct.
+        return "🔔 /court live 訂閱功能尚未 session-bind(等 M2 wire-in)。\n暫時:每個 verdict 出時會自動 update in-place。"
+
+    # /court <id> — full case record
+    if arg and arg.upper().startswith("C") and len(arg) >= 5:
+        full = get_case(arg.upper())
+        if not full:
+            return f"⚖️ 搵唔到案件 {arg}。試 /court 睇最近 5 單。"
+        verdict_emoji = {
+            "approved": "✅", "retry": "🔁", "appeal": "📤",
+            "dismissed": "🚫", "stay": "⏸️",
+        }.get(full.get("verdict"), "?")
+        lines = [
+            f"{verdict_emoji} 案件全卷: {full['case_id']}",
+            f"📅 {time.strftime('%Y-%m-%d %H:%M', time.localtime(full.get('created_at', 0)))}",
+            f"⏱️ {full.get('elapsed_sec', 0):.1f}s · Tier {full.get('tier', '?')} · "
+            f"Score {full.get('score', '?')}/10",
+            f"📋 案由: {full.get('goal', '')[:200]}",
+            "",
+            f"🤖 角色:",
+            f"  被告: {full.get('defendant_model', '?')}",
+            f"  法官: {full.get('judge_model', '?')}",
+            f"  檢察官: {full.get('prosecutor_model', '?')}",
+            "",
+            f"📎 證物 ({len(full.get('evidence', []))} 件):",
+        ]
+        for i, ev in enumerate(full.get("evidence", [])[:8], 1):
+            role = ev.get("role", "?")
+            content = ev.get("content", "")[:150].replace("\n", " ")
+            ts = time.strftime("%H:%M:%S", time.localtime(ev.get("ts", 0)))
+            lines.append(f"  {i}. [{ts}] {role}: {content}")
+        if len(full.get("evidence", [])) > 8:
+            lines.append(f"  ... ({len(full['evidence']) - 8} more)")
+        if full.get("reason"):
+            lines.append(f"\n👨‍⚖️ 法官 reason: {full['reason'][:200]}")
+        if full.get("final_summary"):
+            lines.append(f"\n📝 結果: {full['final_summary'][:300]}")
+        return "\n".join(lines)
+
+    # /court (no arg) — recent 5
+    recent = recent_cases(limit=5)
+    if not recent:
+        return "⚖️ 黑白法庭\n仲未審過案。問嘢就會自動開庭。"
+    verdict_emoji = {
+        "approved": "✅", "retry": "🔁", "appeal": "📤",
+        "dismissed": "🚫", "stay": "⏸️",
+    }
+    lines = ["⚖️ 最近 5 單案:"]
+    for c in recent:
+        emoji = verdict_emoji.get(c.get("verdict"), "⏳")
+        score = c.get("score", "?")
+        elapsed = c.get("elapsed_sec", 0)
+        tier = c.get("tier", "?")
+        goal = (c.get("goal") or "")[:40]
+        lines.append(f"  {emoji} {c['case_id']} │ T{tier} │ {score}/10 │ {elapsed:.0f}s │ {goal}")
+    lines.append("\n/court <id> 查全卷 · /court stats 睇本週")
+    return "\n".join(lines)
 
 
 def _cmd_fresh(args: list[str], config: dict, data_dir: Path, verbose: bool) -> str:
