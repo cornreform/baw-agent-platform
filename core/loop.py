@@ -765,7 +765,10 @@ def run_agent(
         _has_fake_success = any(
             fake in (final_content or "")
             for fake in ("5/5 (100%)", "5/5 done", "100% done", "✅ Done —",
-                         "Done — ", "completed all", "tested all", "Done 1/1 (100%)")
+                         "Done — ", "completed all", "tested all", "Done 1/1 (100%)",
+                         "Done 3/3 (100%)", "Done 2/2 (100%)",
+                         "我而家", "我現在", "I'll run", "I'll execute",
+                         "I will run", "I will execute")
         )
         if _has_fake_success:
             # Check BOTH delegation_results (all steps) and synthesis_results (successful only)
