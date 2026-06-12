@@ -99,6 +99,21 @@ COMMANDS: dict[str, dict] = {
         "usage": "baw router [show|set|append|reset]",
         "subcommands": ["show", "set", "append", "reset"],
     },
+    "court": {
+        "short": "⚖️  黑白法庭 — 查案件、status、夜報",
+        "long": (
+            "黑白法庭係 BAW 嘅核心 metaphor — 每單任務都係一單案,\n"
+            "由檢察官(Devil)挑剔、被告執行、法官評分。\n"
+            "  nightly  — 上一日 24h 嘅審案摘要 (Telegram 推送)\n"
+            "  docket   — 現時排程狀態 (queue / running / done)\n"
+            "  pickup   — 恢復因 crash 殘留嘅 running case"
+        ),
+        "example": "baw court nightly",
+        "category": "manage",
+        "aliases": [],
+        "usage": "baw court [nightly|docket|pickup]",
+        "subcommands": ["nightly", "docket", "pickup"],
+    },
     "soul": {
         "short": "🧠  Read/edit BAW's core identity",
         "long": (
@@ -412,6 +427,9 @@ def main():
         elif canonical == "sessions":
             from cli.commands.sessions_cmd import cmd_sessions
             cmd_sessions(subcommand, args)
+        elif canonical == "court":
+            from cli.commands.court_cmd import main as _court_main
+            _court_main([subcommand] + args if subcommand else [])
     except KeyboardInterrupt:
         console.print("\n[baw.dim]👋 Bye.[/baw.dim]")
     except Exception as e:

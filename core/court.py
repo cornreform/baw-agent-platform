@@ -482,6 +482,29 @@ async def file_case(
         f"judge={case.judge_model} prosecutor={case.prosecutor_model}"
     ))
 
+    # M4: docket the case (no-op for tier 0, queues the rest).
+    # For now we don't actually block on docket slots — the agent loop
+    # polls docket.get_next_ready() to decide what to run. file_case()
+    # still runs the case synchronously so callers get the result; the
+    # docket is the source of truth for status reporting.
+    try:
+        from .docket import enqueue, mark_running, mark_done, get_queue_position
+        from .docket import Priority as _Priority
+        _priority = _Priority.CRON if force_tier is not None else _Priority.USER_INTERACTIVE
+        entry = enqueue(case.case_id, user_id, case.tier.value, case.goal, _priority)
+        pos = get_queue_position(case.case_id)
+        case.add_evidence("DOCKET", (
+            f"queue_id={entry.queue_id} priority={entry.priority.value} "
+            f"position={pos if pos is not None else 'running'}"
+        ))
+        if pos is not None and pos > 1:
+            # Tell the caller they're queued. Real implementation would
+            # actually wait; for now we proceed and log the queue depth.
+            logger.info(f"[court {case.case_id}] queued at position {pos}")
+        mark_running(entry.queue_id)
+    except Exception as _de:
+        logger.debug(f"[court {case.case_id}] docket enqueue failed ({_de}); proceeding inline")
+
     # ── Run the appropriate court ──
     if case.tier == CourtTier.TIER_0_FAST_LANE:
         case = await _run_fast_lane(case)
@@ -494,6 +517,26 @@ async def file_case(
 
     # ── Archive ──
     _archive_case(case)
+
+    # M4: mark the docket entry as done (if docket integration succeeded).
+    try:
+        from .docket import get_status
+        st = get_status()
+        # Find the most recent running entry for this case and mark done.
+        from .docket import _load_snapshot
+        from .docket import _save_snapshot, _append_log
+        state = _load_snapshot()
+        for e in state.get("entries", []):
+            if e["case_id"] == case.case_id and e["status"] == "running":
+                e["status"] = "done" if case.verdict and case.verdict.value == "approved" else "failed"
+                e["completed_at"] = time.time()
+                state["running"] = [r for r in state.get("running", []) if r["queue_id"] != e["queue_id"]]
+                _save_snapshot(state)
+                _append_log({"event": "done" if e["status"] == "done" else "failed", "queue_id": e["queue_id"]})
+                break
+    except Exception as _de:
+        logger.debug(f"[court {case.case_id}] docket mark_done failed: {_de}")
+
     return case
 
 
