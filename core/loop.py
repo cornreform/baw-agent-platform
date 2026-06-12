@@ -758,6 +758,33 @@ def run_agent(
                 if role == "assistant" and content:
                     final_content = content
 
+        # ── Post-LLM honesty gate: catch fake-completion in LLM's own final reply ──
+        # If synthesis_results contain [FAILED-*] or [SKIPPED-*] tags but LLM's final
+        # content claims "5/5 done" or "100%" without acknowledging them, override
+        # with the actual failed steps. This is the last line of defense against
+        # LLM training-bias-driven fabrication.
+        if _synthesis_results:
+            _has_failures = any(
+                tag in s for s in _synthesis_results
+                for tag in ("[FAILED", "[SKIPPED", "Traceback", "Error: ")
+            )
+            _has_fake_success = any(
+                fake in (final_content or "")
+                for fake in ("5/5 (100%)", "5/5 done", "100% done", "✅ Done —",
+                             "Done — ", "completed all", "tested all")
+            )
+            if _has_failures and _has_fake_success:
+                _failed_lines = [
+                    s for s in _synthesis_results
+                    if any(t in s for t in ("[FAILED", "[SKIPPED", "Traceback"))
+                ]
+                final_content = (
+                    "🚨 **Fabrication detected** — LLM reported success but "
+                    f"{len(_failed_lines)} step(s) actually failed:\n\n"
+                    + "\n".join(f"  • {line[:200]}" for line in _failed_lines[:5])
+                    + "\n\nHonest status: see synthesis results above."
+                )
+
         output += final_content
         output += f"\n\n{format_cost_summary()}"
         try:
@@ -1305,6 +1332,9 @@ def run_agent(
         1. Sub-agent did not return a "plan" without execution
         2. Sub-agent did not return "[FAILED-*" or "[SKIPPED*"
         3. Step goal's expected output is present (e.g. MEDIA: tag if requested)
+        4. (NEW) Step goal asks to run a command → must have actual exit code/stdout
+        5. (NEW) Generic success markers (5/5 done, 100%, ✅ all done) require
+           evidence markers in same response (exit code, file path, or output block)
         """
         if not result or len(result) < 5:
             return False, "empty result"
@@ -1312,6 +1342,31 @@ def run_agent(
             return False, "sub-agent made 0 tool calls (just wrote a plan)"
         if result.startswith("[FAILED") or result.startswith("[SKIPPED"):
             return False, f"sub-agent marked step as {result[:20]}"
+
+        # ── Check 4: if step is "run a command", require real exit code/stdout ──
+        _run_command_kw = ("baw ", "run ", "execute ", "invoke ", "shell ", "cmd ")
+        _is_run_command = any(
+            kw + token in (step_goal + " " + result).lower()
+            for kw in _run_command_kw
+            for token in ("self-test", "preflight", "doctor", "test ", "check")
+        )
+        if _is_run_command:
+            # Real evidence: exit code, returncode, stdout block, or MEDIA: tag
+            _has_evidence = any(marker in result for marker in (
+                "exit code", "returncode", "stdout", "stderr",
+                "```\n", "MEDIA:",
+            )) or "Traceback" in result
+            # Generic success-only markers are NOT evidence
+            _has_fake = any(fake in result for fake in (
+                "5/5 (100%)", "5/5 done", "100% done", "all done",
+                "✅ Done", "completed successfully", "tested all",
+            )) and not _has_evidence
+            if _has_fake:
+                return False, (
+                    "FAKE COMPLETION: result claims '5/5 done' or '100%' but contains "
+                    "no exit code, stdout, or actual command output. Rejecting."
+                )
+
         # If step goal mentions sending files, check for MEDIA: tag
         if any(kw in step_goal.lower() for kw in ("send", "media:", "deliver", "attach")):
             if "MEDIA:" not in result and "media:" not in result.lower():
