@@ -206,6 +206,21 @@ COMMANDS: dict[str, dict] = {
         "usage": "baw petrestaurants [list|stats|district|region|nearest|search]",
         "subcommands": ["list", "stats", "district", "region", "nearest", "search"],
     },
+    "restaurant": {
+        "short": "🍴  Restaurant finder via OpenStreetMap (free, no API key)",
+        "long": (
+            "Find restaurants via OpenStreetMap Overpass API. Free, no API key,\n"
+            "no signup. Filter by location (lat/lon + max_km), cuisine (OSM tag),\n"
+            "amenity, or name query. Set --pet-friendly to intersect with the\n"
+            "FEHD 50-restaurant pet-friendly dataset. Sub-agents default to\n"
+            "Google Places; this exists because OSM is the better default for\n"
+            "BAW (no key, no rate limit, no cost, 24h cache)."
+        ),
+        "example": "baw restaurant search --lat 22.28 --lon 114.17 --max-km 1.5",
+        "category": "data",
+        "aliases": ["food", "eat"],
+        "usage": "baw restaurant search [--bbox S W N E] [--lat LAT --lon LON --max-km KM] [--cuisine TAG] [--query NAME] [--pet-friendly] [--amenity TAG]",
+    },
     "tools": {
         "short": "🔧  Tool scaffolder / verifier",
         "long": (
@@ -511,6 +526,9 @@ def main():
         elif canonical == "petrestaurants":
             from cli.commands.petrestaurants_cmd import main as _pet_main
             _pet_main([subcommand] + args if subcommand else [])
+        elif canonical == "restaurant":
+            from cli.commands.restaurant_cmd import main as _restaurant_main
+            _restaurant_main(([subcommand] if subcommand else []) + (args or []))
         elif canonical == "tools":
             from cli.commands.tools_cmd import main as _tools_main
             _tools_main([subcommand] + args if subcommand else [])
