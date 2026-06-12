@@ -40,7 +40,18 @@ from typing import Any, Optional
 
 from .config import load_config
 
+import asyncio as _asyncio
+
 logger = logging.getLogger(__name__)
+
+# ── Sync wrapper + docket blocking ──────────────────────────────
+# M5-D6: file_case() is async (uses delegate_task which may call asyncio
+# internally). The agent loop (run_agent) is sync, so we expose
+# file_case_sync() that wraps asyncio.run. This wrapper also handles
+# the docket blocking case: if file_case_sync is called for a tier-2/3
+# case and the per-user/system docket is full, it polls the docket
+# until a slot opens up, then runs the case. Tier-0 always runs
+# immediately (TIER0_NEVER_QUEUED in docket.py).
 
 
 # ── Court tiers ─────────────────────────────────────────────────────
@@ -106,6 +117,36 @@ VERDICT_TEMPLATES = {
         "[ 批准執行 ] [ 先 backup 再做 ] [ 撤案 ]"
     ),
 }
+
+# ── STAY inline keyboard (M5-D8) ──────────────────────────────────
+# When a case ends with Verdict.STAY, the agent (or Telegram connector)
+# renders an inline keyboard with three actions:
+#   approve  → resume execution
+#   backup   → snapshot first, then resume
+#   dismiss  → drop the case
+# Callback data is "court:{case_id}:{action}" so the bot can route it.
+
+STAY_INLINE_KEYBOARD = {
+    "approve":  ("✅ 批准執行",      "court:{case_id}:approve"),
+    "backup":   ("💾 先 backup 再做", "court:{case_id}:backup"),
+    "dismiss":  ("🚫 撤案",          "court:{case_id}:dismiss"),
+}
+
+
+def build_stay_inline_keyboard(case_id: str) -> list[list[dict]]:
+    """Build a Telegram-compatible inline_keyboard for a STAY verdict.
+
+    Returns a list of rows; each row is a list of button dicts with
+    "text" and "callback_data". Three buttons laid out in one row.
+
+    For non-Telegram connectors (CLI, dashboard), the same shape is
+    trivially adapted. The downstream handler reads the callback_data
+    suffix after "court:{case_id}:" to decide what to do.
+    """
+    return [[{
+        "text": text,
+        "callback_data": cb.format(case_id=case_id),
+    } for (text, cb) in STAY_INLINE_KEYBOARD.values()]]
 
 # Emoji glossary (Fable 5 spec, single source of truth)
 COURT_EMOJI = {
@@ -319,26 +360,31 @@ async def _run_major_court(case: CourtCase) -> CourtCase:
                 break
         case.add_evidence("PROSECUTOR", f"[cached, prior case {reusable.get('case_id')}] {prev_critique[:200]}")
         critique = prev_critique
+        plan_text = ""  # cached path skips Angel plan-draft
     else:
-        # M3-1: parallel prosecution + plan-draft (the latter is just a noop
-        # placeholder for now since delegate_task does the actual planning; in
-        # future milestones the Angel will draft an explicit plan that the
-        # defendant follows). For now we parallelize Devil + a "plan echo" that
-        # adds an "consider X" hint to the defendant's context. Net effect:
-        # Devil's critique becomes available in the same wall-time as the
-        # defendant's first tool call.
-        async def _devil():
+        # M5-D9: real Angel plan-draft runs in parallel with the Devil
+        # prosecutor (asyncio.gather). The plan becomes part of the
+        # defendant's hearing context, so the defendant sees both:
+        #   1. The Devil's critique (risks to mitigate)
+        #   2. The Angel's plan (constructive path to follow)
+        # The "consider X" hint is replaced by a concrete plan section.
+        async def _devil() -> str:
             return await _run_prosecutor(case, config)
 
-        async def _plan():
-            return ""
+        async def _plan() -> str:
+            return await _run_angel(case, config)
 
-        critique, _plan_text = await _asyncio.gather(_devil(), _plan())
+        critique, plan_text = await _asyncio.gather(_devil(), _plan())
         case.add_evidence("PROSECUTOR", critique)
+        if plan_text:
+            case.add_evidence("ANGEL", plan_text)
 
-    # Phase 2: Hearing (defendant sees the critique)
+    # Phase 2: Hearing (defendant sees critique + plan)
     case.transition(CourtState.HEARING)
-    enhanced_context = f"[Prosecutor's critique]\n{critique}"
+    _ctx_parts = [f"[Prosecutor's critique]\n{critique}"]
+    if plan_text:
+        _ctx_parts.append(f"[Angel's plan]\n{plan_text}")
+    enhanced_context = "\n\n".join(_ctx_parts)
 
     # Phase 3: Execution
     case.transition(CourtState.EXECUTION)
@@ -434,6 +480,47 @@ async def _run_prosecutor(case: CourtCase, config: dict) -> str:
         return fb.response.content or "(no critique)"
 
 
+# ── Helper: angel (M5-D9) ───────────────────────────────────────
+
+async def _run_angel(case: CourtCase, config: dict) -> str:
+    """Run the Angel voice to draft a constructive plan. Returns plan text.
+
+    M5-D9: real Angel counterpart to the prosecutor. The Angel is
+    constructive (devil is destructive). Uses AngelVoice from
+    core.adversarial if available; falls back to a raw LLM call.
+    """
+    from .llm import call_llm_with_fallback
+    try:
+        from .adversarial import AngelVoice  # type: ignore
+        from .llm import get_model
+        # The Angel uses the same model as the judge (the case's "good
+        # voice"). We could also pull a dedicated angel_model from
+        # config; for now mirror the prosecutor pattern (use the
+        # tier-resolved model).
+        angel_model_def = get_model(config, case.prosecutor_model)
+        angel = AngelVoice(
+            model=angel_model_def, devil_persona="(default)", config=config,
+        )
+        out = angel.speak(case.goal)
+        if isinstance(out, dict):
+            return out.get("content") or out.get("text") or str(out)
+        return str(out)
+    except (ImportError, AttributeError, Exception) as _e:
+        logger.debug(
+            f"[court {case.case_id}] AngelVoice unavailable ({_e}); "
+            "using fallback LLM"
+        )
+        messages = [
+            {"role": "system", "content": (
+                "你係法庭嘅守護天使(Angel)。你要為用戶嘅任務設計一個清晰、"
+                "循序漸進嘅執行計劃。用繁體中文,3-5 個步驟,每步 1 句。"
+            )},
+            {"role": "user", "content": f"為呢個任務設計執行計劃:\n{case.goal}"},
+        ]
+        fb = call_llm_with_fallback(config, messages, tools=[], temperature=0.7)
+        return fb.response.content or ""
+
+
 # ── Public entry: file_case() ─────────────────────────────────────
 
 async def file_case(
@@ -482,28 +569,41 @@ async def file_case(
         f"judge={case.judge_model} prosecutor={case.prosecutor_model}"
     ))
 
-    # M4: docket the case (no-op for tier 0, queues the rest).
-    # For now we don't actually block on docket slots — the agent loop
-    # polls docket.get_next_ready() to decide what to run. file_case()
-    # still runs the case synchronously so callers get the result; the
-    # docket is the source of truth for status reporting.
+    # M5-D6: docket blocking — if the docket is full, wait for a slot
+    # (poll every 2s, max 5 minutes). Tier-0 always short-circuits.
+    _queue_id = None
     try:
-        from .docket import enqueue, mark_running, mark_done, get_queue_position
+        from .docket import enqueue, mark_running, get_queue_position, get_status
         from .docket import Priority as _Priority
         _priority = _Priority.CRON if force_tier is not None else _Priority.USER_INTERACTIVE
         entry = enqueue(case.case_id, user_id, case.tier.value, case.goal, _priority)
+        _queue_id = entry.queue_id
         pos = get_queue_position(case.case_id)
         case.add_evidence("DOCKET", (
             f"queue_id={entry.queue_id} priority={entry.priority.value} "
             f"position={pos if pos is not None else 'running'}"
         ))
+
+        # If the case was queued (not auto-running), poll until it's our
+        # turn. Bail out after 5 min to avoid hanging the agent loop.
         if pos is not None and pos > 1:
-            # Tell the caller they're queued. Real implementation would
-            # actually wait; for now we proceed and log the queue depth.
-            logger.info(f"[court {case.case_id}] queued at position {pos}")
-        mark_running(entry.queue_id)
+            _poll_deadline = time.time() + 300
+            while pos is not None and pos > 1 and time.time() < _poll_deadline:
+                _st = get_status()
+                _running_for_user = _st.get("users_currently_running", [])
+                if user_id in _running_for_user:
+                    break  # slot opened up for us
+                await _asyncio.sleep(2.0)
+                pos = get_queue_position(case.case_id)
+            if pos is not None and pos > 1:
+                logger.warning(
+                    f"[court {case.case_id}] docket wait timed out "
+                    f"(position={pos}); running anyway"
+                )
+        mark_running(_queue_id)
     except Exception as _de:
         logger.debug(f"[court {case.case_id}] docket enqueue failed ({_de}); proceeding inline")
+        _queue_id = None
 
     # ── Run the appropriate court ──
     if case.tier == CourtTier.TIER_0_FAST_LANE:
@@ -518,26 +618,55 @@ async def file_case(
     # ── Archive ──
     _archive_case(case)
 
-    # M4: mark the docket entry as done (if docket integration succeeded).
-    try:
-        from .docket import get_status
-        st = get_status()
-        # Find the most recent running entry for this case and mark done.
-        from .docket import _load_snapshot
-        from .docket import _save_snapshot, _append_log
-        state = _load_snapshot()
-        for e in state.get("entries", []):
-            if e["case_id"] == case.case_id and e["status"] == "running":
-                e["status"] = "done" if case.verdict and case.verdict.value == "approved" else "failed"
-                e["completed_at"] = time.time()
-                state["running"] = [r for r in state.get("running", []) if r["queue_id"] != e["queue_id"]]
-                _save_snapshot(state)
-                _append_log({"event": "done" if e["status"] == "done" else "failed", "queue_id": e["queue_id"]})
-                break
-    except Exception as _de:
-        logger.debug(f"[court {case.case_id}] docket mark_done failed: {_de}")
+    # M5-D6: clean docket bookkeeping using the public mark_done() entry.
+    if _queue_id is not None:
+        try:
+            from .docket import mark_done
+            _v = case.verdict
+            _success = bool(_v is not None and _v.value == "approved")
+            mark_done(_queue_id, success=_success)
+        except Exception as _de:
+            logger.debug(f"[court {case.case_id}] docket mark_done failed: {_de}")
 
     return case
+
+
+# ── Sync wrapper (M5-D6) ─────────────────────────────────────────
+
+def file_case_sync(
+    goal: str,
+    user_id: str = "default",
+    caller_model_id: str = "",
+    force_tier: Optional[CourtTier] = None,
+) -> CourtCase:
+    """Synchronous entry point. Wraps file_case() in asyncio.run().
+
+    Use this from sync call sites (run_agent, CLI chat). The async
+    file_case() is still available for callers that already have an
+    event loop (e.g. inside a coroutine).
+    """
+    try:
+        _loop = _asyncio.get_event_loop()
+        if _loop.is_running():
+            # We're already inside an event loop (e.g. test). Fall back
+            # to a thread-pool run so we don't block the existing loop.
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+                return _ex.submit(
+                    _asyncio.run,
+                    file_case(
+                        goal=goal, user_id=user_id,
+                        caller_model_id=caller_model_id, force_tier=force_tier,
+                    ),
+                ).result()
+    except RuntimeError:
+        pass
+    return _asyncio.run(
+        file_case(
+            goal=goal, user_id=user_id,
+            caller_model_id=caller_model_id, force_tier=force_tier,
+        )
+    )
 
 
 # ── Case archiving ───────────────────────────────────────────────
