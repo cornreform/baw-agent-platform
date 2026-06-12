@@ -1,161 +1,202 @@
-# BAW Agent Platform Configuration (Sample)
-# Copy to ~/.baw/config.yaml and fill in your API keys
-
-model:
-  default: "kimi-k2.6"
-  fallback: "deepseek-v4-flash"
-
-providers:
-  # ── Kimi (Moonshot AI) — Primary ──────────────────────────────
-  kimi:
-    base_url: "https://api.moonshot.ai/v1"
-    api_key_env: "MOONSHOT_API_KEY"
-    models:
-      - id: "kimi-k2.6"
-        context_window: 262144
-        vision: true
-        audio_input: false
-        cost_per_1m_input: 0.95
-        cost_per_1m_output: 4.00
-
-  # ── DeepSeek — Fallback ───────────────────────────────────────
-  deepseek:
-    base_url: "https://api.deepseek.com/v1"
-    api_key_env: "DEEPSEEK_API_KEY"
-    models:
-      - id: "deepseek-v4-flash"
-        context_window: 65536
-        vision: false
-        audio_input: false
-        cost_per_1m_input: 0.30
-        cost_per_1m_output: 1.20
-
-  minimax:
-    base_url: "https://api.minimax.io/v1"
-    api_key_env: "MINIMAX_API_KEY"
-    models:
-      - id: "MiniMax-M3"
-        context_window: 1048576
-        vision: true
-        audio_input: true
-        cost_per_1m_input: 2.00
-        cost_per_1m_output: 8.00
-
-# ── Speech-to-Text ─────────────────────────────────────────────
-# STT method: models with `audio_input: true` use their native audio API.
-# If no model supports audio input, configure one of these methods:
-#
-# Option A: faster-whisper (local, free, no API key)
-#   pip install faster-whisper
-#   stt:
-#     method: "faster-whisper"
-#     model: "base"       # tiny / base / small / medium / large-v3
-#
-# Option B: OpenAI Whisper API (paid, requires API key)
-#   stt:
-#     method: "openai-whisper"
-#     api_key_env: "OPENAI_API_KEY"
-#     model: "whisper-1"
-#
-# Option C: Google Cloud Speech-to-Text
-#   stt:
-#     method: "google-speech"
-#     credentials_path: "/path/to/service-account.json"
-#     language: "yue-Hant-HK"  # Cantonese
-#
-# If no STT is configured and no model has audio_input, BAW will
-# tell you what's missing and suggest installation steps.
-# stt:
-
-# ── Capability Routing ──────────────────────────────────────────
-# Assign which model/provider handles each function.
-# Model must exist in the providers section above.
-# capabilities:
-#   chat:
-#     model: "deepseek-v4-flash"
-#   stt:
-#     model: "MiniMax-M3"
-#     # OR use a named method instead of a model:
-#     # method: "faster-whisper"
-#   tts:
-#     model: "MiniMax-M3"
-#     config:
-#       api_model: "speech-2.8-hd"
-#       voice: "male-tone-1"
-# 
-# Per-model capability tags (add to model definitions):
-#   models:
-#     - id: "grok-3"
-#       capabilities: ["stt", "tts"]    # Only speech, no chat
-#     - id: "MiniMax-M3"
-#       capabilities: ["chat", "stt"]   # Chat + STT, not TTS
-
-permissions:
-  risk_levels:
-    high:
-      - path: "/etc/*"
-      - path: "/usr/*"
-      - cmd_prefix: "rm -rf"
-      - cmd_prefix: "sudo"
-      - cmd_prefix: "dd if="
-    medium:
-      - tool: "write_file"
-      - tool: "bash"
-      - path: ".env"
-      - path: "config.yaml"
-    low:
-      - tool: "read_file"
-      - tool: "web_search"
-
-tone:
-  default: "casual"
-  profiles:
-    casual:
-      description: "日常粵語口語、短句、emoji OK"
-    business:
-      description: "客戶文件 — 合作邀約 tone"
-    client-doc:
-      description: "Client facing — 零 comment、直接出 artifact"
-    teaching:
-      description: "教學模式 — 直接俾 .md"
-    ot-rt:
-      description: "快速執行 — 做完先報"
-    stepwise:
-      description: "逐步執行 — 每步 confirm"
-
-fact_check:
-  mode: "normal"
+# BAW Agent Platform Configuration (SAMPLE — generated 2026-06-12 from active config)
+# Copy to ~/.baw/config.yaml and adjust as needed.
+# All sensitive values use env-var references (e.g. ${DEEPSEEK_API_KEY}),
+# never inline keys.
 
 adversarial:
+  angel_model: step-3.7-flash
+  devil_model: kimi-k2.6
   enabled: true
-  # angel_model: "kimi-k2.6"    # Optional: override Angel's model (default: uses model.default)
-  # devil_model: "kimi-k2.6"    # Optional: override Devil's model (default: uses model.default)
   flag_threshold: 0
   warn_threshold: 2
-
-# ── Messaging Platforms (for baw-bot) ─────────────────────────
-# Uncomment and configure the platforms you want BAW to connect to.
-
-# telegram:
-#   token: "***"                    # Bot token from @BotFather
-#   allowed_users: []               # Optional: restrict to specific user IDs
-
-# discord:
-#   token: "***"                    # Bot token from Discord Developer Portal
-#   allowed_channels: []            # Optional: restrict to specific channel IDs
-#   prefix: "baw "                  # Command prefix in Discord
-
-# signal:
-#   phone: "+155****4567"           # Signal phone number
-#   signal_cli_path: "signal-cli"   # Path to signal-cli binary
-
-# whatsapp:
-#   token: "***"                    # WhatsApp Cloud API token
-#   phone_number_id: "***"          # WhatsApp Business phone number ID
-
-# matrix:
-#   homeserver: "https://matrix.org"
-#   username: "@baw:matrix.org"
-#   password: "***"
-#   # Or use access_token instead of password:
-#   # access_token: "***"
+capabilities:
+  chat:
+    model: step-3.7-flash
+  image_generation:
+    model: MiniMax-M3
+  stt:
+    api_key_env: STEPFUN_API_KEY
+    base_url: https://api.stepfun.ai/v1
+    method: auto-asr
+    model: stepaudio-2.5-asr
+  tts:
+    config:
+      api_model: stepaudio-2.5-tts
+      base_url: https://api.stepfun.ai/v1
+    method: model
+    model: stepaudio-2.5-tts
+    voice: Cantonese_GentleLady
+  vision:
+    model: MiniMax-M3
+executor:
+  model: step-3.7-flash
+fact_check:
+  mode: normal
+max_concurrency: 10
+max_tokens:
+  default: 8192
+  reasoning: 16384
+mode: hybrid
+model:
+  default: step-3.7-flash
+  fallback: MiniMax-M3
+  route:
+    enabled: true
+    long_model: step-3.7-flash
+    short_model: step-3.7-flash
+    threshold_tokens: 8000
+  task_rules:
+  - match: search|product|購買|售價|價格|shop|商店|查詢|research|find|lookup
+    model: step-3.7-flash
+  - match: code|debug|fix|bug|error|program|script|python|node|測試|修復
+    model: step-3.7-flash
+  - match: vision|image|photo|圖片|相片|screenshot|截圖
+    model: MiniMax-M3
+  - match: write|create|build|製作|建立|generate|生成|設計
+    model: step-3.7-flash
+permissions:
+  risk_levels:
+    low:
+    - tool: read_file
+    - tool: web_search
+    medium:
+    - tool: write_file
+    - tool: bash
+providers:
+  Azure:
+    api_key_env: AZURE_SPEECH_KEY
+    base_url: https://eastus.tts.speech.microsoft.com/cognitiveservices/v1
+    models:
+    - capabilities:
+      - tts
+      context_window: 4096
+      id: zh-HK-HiuMaanNeural
+      voice_id: zh-HK-HiuMaanNeural
+  MiniMax:
+    api_key_env: MINIMAX_API_KEY
+    base_url: https://api.minimax.io/v1
+    models:
+    - capabilities:
+      - chat
+      - tts
+      context_window: 262144
+      id: MiniMax-M3
+    - capabilities:
+      - chat
+      context_window: 262144
+      id: MiniMax-M2.5
+  agnes:
+    api_key_env: AGNES_API_KEY
+    base_url: https://apihub.agnes-ai.com/v1
+    models:
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: agnes-2.0-flash
+    - capabilities:
+      - image_generation
+      context_window: 4096
+      id: agnes-image-2.1-flash
+    - capabilities:
+      - video_generation
+      context_window: 4096
+      id: agnes-video-v2.0
+  deepseek:
+    api_key_env: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com/v1
+    models:
+    - capabilities:
+      - chat
+      context_window: 65536
+      cost_per_1m_input: 0.3
+      cost_per_1m_output: 1.2
+      id: deepseek-v4-flash
+  kimi:
+    api_key_env: MOONSHOT_API_KEY
+    base_url: https://api.moonshot.ai/v1
+    models:
+    - capabilities:
+      - chat
+      context_window: 262144
+      cost_per_1m_input: 0.95
+      cost_per_1m_output: 4.0
+      id: kimi-k2.6
+      temperature: 1.0
+      vision: true
+  openai:
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+    models:
+    - capabilities:
+      - image_generation
+      context_window: 4096
+      id: dall-e-3
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: gpt-4o
+  stepfun:
+    api_key_env: STEPFUN_API_KEY
+    base_url: https://api.stepfun.ai/v1
+    models:
+    - capabilities:
+      - chat
+      - vision
+      context_window: 65536
+      id: step-3.7-flash
+    - capabilities:
+      - chat
+      context_window: 65536
+      id: step-3.5-flash
+    - capabilities:
+      - chat
+      context_window: 65536
+      id: step-3.5-flash-2603
+    - capabilities:
+      - tts
+      context_window: 4096
+      id: step-tts-2
+    - capabilities:
+      - tts
+      context_window: 4096
+      id: stepaudio-2.5-tts
+    - capabilities:
+      - stt
+      context_window: 4096
+      id: stepaudio-2.5-asr
+    - capabilities:
+      - image_generation
+      context_window: 4096
+      id: step-image-edit-2
+tone:
+  default: casual
+  profiles:
+    business:
+      description: 正規商業文件 — 專用語
+    casual:
+      description: 日常聊天吹水 — 口語短句、emoji OK
+    client-doc:
+      description: 客戶面向文件 — 相接 artifact
+    stepwise:
+      description: 逐步確認模式 — 每步彙結論
+tools:
+  browser:
+    enabled: false
+  execute_code:
+    enabled: false
+  image_generate:
+    enabled: false
+  tts:
+    enabled: true
+tts:
+  voice: zh-HK-HiuMaanNeural
+dreaming:
+  schedule: 0 3 * * 0
+  enabled: true
+self_repair:
+  auto_clean_stuck: true
+  enabled: true
+on_hold_tasks:
+  stale_threshold_days: 7
+  auto_fail_stuck: true
