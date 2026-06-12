@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 import subprocess
 import time as _time
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -434,7 +435,7 @@ def _cmd_court(arg: str = "") -> str:
         if not cases:
             return "⚖️ 黑白法庭狀態\n仲未審過案。問嘢就會自動開庭。"
         # Last 7 days
-        cutoff = time.time() - 7 * 86400
+        cutoff = _time.time() - 7 * 86400
         week = [c for c in cases if c.get("created_at", 0) >= cutoff]
         total = len(week)
         approved = sum(1 for c in week if c.get("verdict") == "approved")
@@ -481,7 +482,7 @@ def _cmd_court(arg: str = "") -> str:
         }.get(full.get("verdict"), "?")
         lines = [
             f"{verdict_emoji} 案件全卷: {full['case_id']}",
-            f"📅 {time.strftime('%Y-%m-%d %H:%M', time.localtime(full.get('created_at', 0)))}",
+            f"📅 {_time.strftime('%Y-%m-%d %H:%M', _time.localtime(full.get('created_at', 0)))}",
             f"⏱️ {full.get('elapsed_sec', 0):.1f}s · Tier {full.get('tier', '?')} · "
             f"Score {full.get('score', '?')}/10",
             f"📋 案由: {full.get('goal', '')[:200]}",
@@ -496,7 +497,7 @@ def _cmd_court(arg: str = "") -> str:
         for i, ev in enumerate(full.get("evidence", [])[:8], 1):
             role = ev.get("role", "?")
             content = ev.get("content", "")[:150].replace("\n", " ")
-            ts = time.strftime("%H:%M:%S", time.localtime(ev.get("ts", 0)))
+            ts = _time.strftime("%H:%M:%S", _time.localtime(ev.get("ts", 0)))
             lines.append(f"  {i}. [{ts}] {role}: {content}")
         if len(full.get("evidence", [])) > 8:
             lines.append(f"  ... ({len(full['evidence']) - 8} more)")

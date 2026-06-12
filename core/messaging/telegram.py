@@ -1286,6 +1286,18 @@ class TelegramConnector(BaseConnector):
             _rh = threading.Thread(target=_reaction_delayed, daemon=True)
             _rh.start()
 
+        # M2 (Fable 5 spec): send a placeholder court message immediately, then
+        # edit-in-place as the case progresses. This gives the user instant
+        # "filed" feedback (TTFT < 500ms) instead of waiting silently for the
+        # full verdict. The placeholder is a single ⚖️ emoji + the user's
+        # question, which is overwritten in the success path below.
+        _placeholder_msg_id = ""
+        if not text.lstrip().startswith("/"):  # don't placeholder slash commands
+            _placeholder_msg_id = self.send(
+                chat_id,
+                f"⚖️ 立案: {text[:60]}{'…' if len(text) > 60 else ''}\n_(庭審中…)_",
+            )
+
         # Typing indicator heartbeat (respects cancel event)
         _typing_stop = threading.Event()
         def _typing_heartbeat():
@@ -1330,7 +1342,11 @@ class TelegramConnector(BaseConnector):
                 logger.warning(f"[Telegram] Empty response from BAW for: {text[:80]}")
                 response = "✅ Done. (No additional output.)"
             if response:
-                self.send(chat_id, response)
+                # M2: edit the placeholder in-place if we sent one, else send fresh.
+                if _placeholder_msg_id:
+                    self.send(chat_id, response, edit_msg_id=_placeholder_msg_id)
+                else:
+                    self.send(chat_id, response)
                 self._record_batch_result(chat_id, response[:200], "text")
                 # TTS: convert response to speech if enabled
                 if self._tts_enabled and response.strip():
@@ -1343,18 +1359,22 @@ class TelegramConnector(BaseConnector):
                 os._exit(0)
         except Exception as e:
             logger.error(f"[Telegram] Process error: {e}")
+            _typing_stop.set()
             _reaction_stop.set()
             # Set reaction: ❌ error
             if _msg_id:
                 self._set_reaction(chat_id, _msg_id, "❌")
             if not self._cancel_event.is_set():
                 try:
-                    self.send(chat_id, f"❌ Error: {e}")
+                    err_text = f"❌ Error: {e}"
+                    if _placeholder_msg_id:
+                        self.send(chat_id, err_text, edit_msg_id=_placeholder_msg_id)
+                    else:
+                        self.send(chat_id, err_text)
                 except Exception:
                     pass
         finally:
             self._release_slot()
-
     # ── Inline keyboard for model selection (hierarchical: provider → model) ──
 
     def _get_providers_config(self) -> dict:
