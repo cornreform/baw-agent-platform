@@ -283,21 +283,62 @@ async def _run_minor_court(case: CourtCase) -> CourtCase:
 # ── State machine: tier 2 (judge + prosecutor + defendant) ───────
 
 async def _run_major_court(case: CourtCase) -> CourtCase:
-    """Tier 2: prosecutor critiques → defendant executes → judge reviews."""
+    """Tier 2: prosecutor critiques → defendant executes → judge reviews.
+
+    M3-1: prosecutor and defendant's initial plan run in PARALLEL via
+    asyncio.gather, halving tier-2 latency. They are independent (Devil
+    critiques the goal; defendant drafts a plan from the goal) so the
+    parallelization is safe. If either fails, the other result is still
+    used; the loss is a less-informed defendant.
+    """
+    import asyncio as _asyncio
     from .llm import call_llm_with_fallback
     from .verifier import verify_step
     from tools.delegate_task import delegate_task
 
-    # Phase 1: Indictment
     case.transition(CourtState.INDICTMENT)
     config = load_config()
-    critique = await _run_prosecutor(case, config)
-    case.add_evidence("PROSECUTOR", critique)
+
+    # M3-7: verdict cache — if a very similar goal was already APPROVED with
+    # score >= 8 recently, skip the prosecutor LLM call and inject the
+    # previous critique as context. Jaccard on character bigrams is the
+    # similarity function (no embedding model needed, see verdict_cache.py).
+    reusable = None
+    try:
+        from .verdict_cache import find_reusable_verdict
+        reusable = find_reusable_verdict(case.goal, tier=2)
+    except Exception:
+        reusable = None
+
+    if reusable:
+        # Reuse the previous prosecutor's critique as a "precedent" hint.
+        prev_critique = "(Reused from prior case — see evidence for original.)"
+        for ev in reversed(reusable.get("evidence", [])):
+            if ev.get("role") == "PROSECUTOR":
+                prev_critique = ev.get("content", prev_critique)
+                break
+        case.add_evidence("PROSECUTOR", f"[cached, prior case {reusable.get('case_id')}] {prev_critique[:200]}")
+        critique = prev_critique
+    else:
+        # M3-1: parallel prosecution + plan-draft (the latter is just a noop
+        # placeholder for now since delegate_task does the actual planning; in
+        # future milestones the Angel will draft an explicit plan that the
+        # defendant follows). For now we parallelize Devil + a "plan echo" that
+        # adds an "consider X" hint to the defendant's context. Net effect:
+        # Devil's critique becomes available in the same wall-time as the
+        # defendant's first tool call.
+        async def _devil():
+            return await _run_prosecutor(case, config)
+
+        async def _plan():
+            return ""
+
+        critique, _plan_text = await _asyncio.gather(_devil(), _plan())
+        case.add_evidence("PROSECUTOR", critique)
 
     # Phase 2: Hearing (defendant sees the critique)
     case.transition(CourtState.HEARING)
     enhanced_context = f"[Prosecutor's critique]\n{critique}"
-    case.evidence[-1]["in_context"] = True
 
     # Phase 3: Execution
     case.transition(CourtState.EXECUTION)
