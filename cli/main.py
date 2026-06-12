@@ -167,6 +167,23 @@ COMMANDS: dict[str, dict] = {
         "subcommands": ["list", "surface", "add", "thought", "followup",
                         "done", "cancel", "remove", "stats"],
     },
+    "tools": {
+        "short": "🔧  Tool scaffolder / verifier",
+        "long": (
+            "Manage BAW tools. list shows all registered tools with file\n"
+            "status. verify imports each tool and calls its handler as a\n"
+            "smoke test — use this AFTER creating a new tool to confirm\n"
+            "it actually loads. show prints a tool's source. doctor cross-\n"
+            "checks registrations against files on disk.\n\n"
+            "Always run 'baw tools verify <name>' before claiming a newly\n"
+            "written tool is 'done'. Tools that fail verify are NOT done."
+        ),
+        "example": "baw tools verify todo",
+        "category": "dev",
+        "aliases": ["tool"],
+        "usage": "baw tools [list|verify|show|doctor]",
+        "subcommands": ["list", "verify", "show", "doctor"],
+    },
     "sessions": {
         "short": "📋  Browse past chat sessions",
         "long": (
@@ -442,6 +459,9 @@ def main():
         elif canonical == "todo":
             from cli.commands.todo_cmd import main as _todo_main
             _todo_main([subcommand] + args if subcommand else [])
+        elif canonical == "tools":
+            from cli.commands.tools_cmd import main as _tools_main
+            _tools_main([subcommand] + args if subcommand else [])
         elif canonical == "sessions":
             from cli.commands.sessions_cmd import cmd_sessions
             cmd_sessions(subcommand, args)

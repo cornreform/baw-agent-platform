@@ -17,6 +17,12 @@ Loaded by `tools/__init__.py::register_all()`, which is called by
 - `tts` — multi-provider text-to-speech (MiniMax / Stepfun / Edge). Low risk.
 - `todo` — persistent task / thought / follow-up list across sessions. Low risk.
 
+> **2026-06-12 update:** Tools are now scaffolded via `baw tools create <name>`
+> (see `cli/commands/tools_cmd.py`). The scaffolder writes the file, registers
+> it in `__init__.py`, and runs a smoke test. Always run
+> `baw tools verify <name>` before claiming a tool is "done" — a failed verify
+> means NOT DONE.
+
 ## Imported on demand
 
 Not in `register_all()` — imported directly by their consumer modules.
