@@ -25,6 +25,27 @@ worked」做收工依據。Sub-agent 嘅 system prompt 入面已經寫咗：
 
 ---
 
+## Golden Rules（2026-06-12 systemic fix）
+
+呢個 section 將「過去 sub-agent 撞過嘅 systemic problem」寫死。任何 sub-agent 開工前都必須 read 一次：
+
+| Rule | 點解 | 邊度 enforce |
+|---|---|---|
+| **Default data source = free + no-key + stdlib** | 2026-06-12 sub-agent default Google Places → 卡喺 fake API key | `core/data_sources.py` registry — 8 個 categories 全部有 free entry，sub-agent 必須先 consult |
+| **Fetch strategy = `core.http_fetch.http_fetch`** | `urllib` 撞 Next.js SPA → 0 bytes empty shell → 假裝 "upstream limit" | `tools/http_fetch.py` 自動 detect 9 種 SPA fingerprint |
+| **`curl` binary 唔存在** | 2026-06-12 sub-agent 用 `subprocess.run(["curl"])` → ImportError | `http_fetch` 唔需要 binary；`recipe` 講明 `urllib` stdlib ONLY |
+| **Path = `from core.paths import ...`** | Host `/home/baw/baw/` vs container `/app/` 撞 sub-agent | `core/paths.py` 用 `$BAW_HOME` + repo markers resolve |
+| **TOOL_DEF 必須有齊 5 個 key** | 4 個 tool 漏 `risk_level`，3 個 tool 漏 `handler` | `core/tool_schema.py` 喺 `register()` 自動 validate，hard fail 立刻 surface |
+| **Verify = `baw self-test`** | "Done" 冇 evidence → 紙上完工 | self-test 而家查 5 樣嘢：path / tool registry / TOOL_DEF schema / data sources / system defaults |
+| **Cache = `data/*_cache.json`，gitignore** | 2026-06-12 commit 落咗 576KB restaurant cache | `.gitignore` 寫低咗 |
+| **CLI subcommand 兩種 routing** | `baw self-test --no-fetch` 同 `baw pet district 灣仔` 唔同 shape | `cli/main.py` dispatch 用 `uses_argparse` flag |
+| **Tool count ≤ 20** | > 20 個 LLM 揀 tool accuracy 跌 | `self-test` 自動 warn |
+| **一個 tool 一個 risk_level** | 4 個 tool 漏咗，要 runtime 默認 "low" | `core/tool_schema.RISK_LEVELS = ("low","medium","high")` |
+
+**永遠唔好跳呢個 table。**
+
+---
+
 ## Step 0 — PRE-FLIGHT (新增，2026-06-12)
 
 **做咩**：開工前先 verify BAW 嘅 capability 夠唔夠做呢個 task。
@@ -75,6 +96,14 @@ cd ~/baw && python -m core.preflight https://example.com
 ## Step 2 — FETCH
 
 **做咩**：用 Python stdlib 攞 HTML。
+
+### Step 2a: 決定 data source（**唔好直接落 code**）
+
+**第一步：consult `core/data_sources.REGISTRY`**。用 `python -c "from core.data_sources import summary_block; print(summary_block())"` 睇下 8 個 categories 入面你嘅 data type 屬於邊個 entry。
+
+如果個 category 已經喺 registry 入面（例如 `restaurants` / `geocoding` / `weather`），**直接用個 default source** — 唔好自己揀 Google Places / 任何 paid service。如果係新 category，先**加新 entry 入 registry** 然後先用。
+
+**Step 2 入面就做呢個 check** — 唔好 plan 之後先做，否則寫低 paid service 之後又要 refactor。
 
 **唯一推薦方法**：
 ```python
@@ -153,20 +182,28 @@ python3 -c "import json; d=json.load(open(<path>)); assert d['items']; print('OK
 
 ### 5a) Tool file
 
-`tools/<thing>.py` 必須有：
+`tools/<thing>.py` 必須有齊 **5 個** required key（`core/tool_schema.py` 會喺 `register()` 自動 validate）：
+
 ```python
 """BAW built-in: <thing> — <one-line description>"""
 from core.paths import data_dir
 # ... 邏輯 ...
 
 TOOL_DEF = {
-    "name": "<thing>",
-    "description": "...",
-    "handler": <entry_fn>,
-    "parameters": { ... JSON Schema ... },
-    "risk_level": "low",
+    "name": "<thing>",                            # required
+    "description": "<one-line, <600 chars>",     # required
+    "handler": <entry_fn>,                        # required, callable
+    "parameters": { ... JSON Schema ... },        # required, {"type": "object", ...}
+    "risk_level": "low|medium|high",              # required — pick the lowest that fits
 }
 ```
+
+**Risk level guide**:
+- `low`: read-only (web_search, http_fetch, read_file, vision, memory read)
+- `medium`: writes local files / makes outbound stateful calls (write_file, tts, image_generate, restaurant cache writes)
+- `high`: runs code, mutates config, deletes, network-destructive (bash, execute_code, delegate_task, browser, restaurant with pet intersect)
+
+**唔可以加** `examples` / `category` / 任何 ALLOWED_KEYS 以外嘅 key — 會被 schema reject。
 
 ### 5b) Register at boot
 

@@ -179,6 +179,7 @@ COMMANDS: dict[str, dict] = {
         "category": "monitor",
         "aliases": ["smoke", "selftest"],
         "usage": "baw self-test [--url URL] [--paths-only] [--no-fetch]",
+        "uses_argparse": True,
     },
     "preflight": {
         "short": "🛫  Capability pre-flight check (run BEFORE any scrape task)",
@@ -191,7 +192,8 @@ COMMANDS: dict[str, dict] = {
         "example": "baw preflight https://example.com",
         "category": "monitor",
         "aliases": ["check"],
-        "usage": "baw preflight [url]",
+        "usage": "baw preflight [--url URL] [--json]",
+        "uses_argparse": True,
     },
     "petrestaurants": {
         "short": "🐾  HK FEHD pet-friendly restaurant query (49/1000)",
@@ -462,9 +464,18 @@ def main():
         console.print("[baw.dim]Run [baw.gold]baw --help[/baw.gold] to see available commands.[/baw.dim]")
         sys.exit(1)
 
-    # Extract subcommand and remaining args
-    subcommand = sys.argv[2] if len(sys.argv) > 2 else None
-    args = sys.argv[3:] if len(sys.argv) > 3 else []
+    # Extract subcommand and remaining args. Two routing styles coexist:
+    #   - "positional" (default): subcommand=argv[2], args=argv[3:]
+    #   - "argparse": pass argv[2:] as one list to a module that does its
+    #     own argparse (used by self-test, preflight, todo, etc.)
+    # The "uses_argparse" flag in each command's dict picks the style.
+    cmd_meta = COMMANDS.get(canonical, {}) if canonical else {}
+    if cmd_meta.get("uses_argparse"):
+        args = sys.argv[2:]
+        subcommand = None
+    else:
+        subcommand = sys.argv[2] if len(sys.argv) > 2 else None
+        args = sys.argv[3:] if len(sys.argv) > 3 else []
 
     # Route
     try:
@@ -512,23 +523,19 @@ def main():
             cmd_memory()
         elif canonical == "todo":
             from cli.commands.todo_cmd import main as _todo_main
-            _todo_main([subcommand] + args if subcommand else [])
+            _todo_main(args if subcommand is None else [subcommand] + args)
         elif canonical == "self-test":
             from cli.commands.self_test_cmd import main as _selftest_main
-            # self-test uses --url / --paths-only / --no-fetch flags, not a
-            # positional subcommand, so pass the raw tail for argparse to parse.
-            _selftest_main(([subcommand] if subcommand else []) + (args or []))
+            _selftest_main(args or None)
         elif canonical == "preflight":
             from cli.commands.preflight_cmd import main as _preflight_main
-            # preflight uses --url flag, not positional subcommand, so pass
-            # the raw tail (subcommand + args) for argparse to parse.
-            _preflight_main(([subcommand] if subcommand else []) + (args or []))
+            _preflight_main(args or None)
         elif canonical == "petrestaurants":
             from cli.commands.petrestaurants_cmd import main as _pet_main
             _pet_main([subcommand] + args if subcommand else [])
         elif canonical == "restaurant":
             from cli.commands.restaurant_cmd import main as _restaurant_main
-            _restaurant_main(([subcommand] if subcommand else []) + (args or []))
+            _restaurant_main([subcommand] + args if subcommand else [])
         elif canonical == "tools":
             from cli.commands.tools_cmd import main as _tools_main
             _tools_main([subcommand] + args if subcommand else [])

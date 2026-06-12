@@ -171,8 +171,24 @@ def refresh() -> str:
             f"   cache:     {DATA_FILE}")
 
 
-def _ensure_fresh() -> tuple[dict, str]:
-    """Load dataset, refreshing from local source.md if cache is stale or missing."""
+def _ensure_fresh() -> dict:
+    """Load dataset, refreshing from local source.md if cache is stale or missing.
+
+    **Returns** only the dataset dict (not a tuple). The "note" / source
+    attribution is exposed via :func:`_ensure_fresh_with_note` for tools
+    that need to display it.
+
+    Stable contract: always returns a dict, even on failure (empty
+    ``{"restaurants": [], "districts": {}}`` shape). Sub-agents can
+    safely ``ds = _ensure_fresh(); items = ds.get("items", [])`` without
+    destructure gymnastics that bit the 2026-06-12 restaurant tool.
+    """
+    ds, _note = _ensure_fresh_with_note()
+    return ds
+
+
+def _ensure_fresh_with_note() -> tuple[dict, str]:
+    """Back-compat: returns (dataset_dict, attribution_note)."""
     note = ""
     ds = None
     if DATA_FILE.exists():
@@ -197,8 +213,7 @@ def _ensure_fresh() -> tuple[dict, str]:
 
 def _load() -> dict:
     """Back-compat: ensure data is fresh, then return it."""
-    ds, _note = _ensure_fresh()
-    return ds
+    return _ensure_fresh()
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -221,7 +236,7 @@ def _format(r: dict, extra: Optional[dict] = None) -> str:
 
 def search_by_district(district: str) -> str:
     """Filter restaurants by district name (e.g. 灣仔, 油尖區, 離島)."""
-    ds, note = _ensure_fresh()
+    ds, note = _ensure_fresh_with_note()
     matches = [r for r in ds["restaurants"] if r["district"] == district]
     if not matches:
         all_d = sorted({r["district"] for r in ds["restaurants"]})
@@ -237,7 +252,7 @@ def search_by_district(district: str) -> str:
 
 def search_by_region(region: str) -> str:
     """Filter by region: 港島區 / 九龍區 / 新界區."""
-    ds, note = _ensure_fresh()
+    ds, note = _ensure_fresh_with_note()
     matches = [r for r in ds["restaurants"] if r["region"] == region]
     if not matches:
         all_r = sorted({r["region"] for r in ds["restaurants"]})
@@ -258,7 +273,7 @@ def search_by_region(region: str) -> str:
 
 def nearest(lat: float, lon: float, k: int = 10) -> str:
     """Return the k nearest pet-friendly restaurants to a lat/lon point."""
-    ds, note = _ensure_fresh()
+    ds, note = _ensure_fresh_with_note()
     with_loc = [r for r in ds["restaurants"] if r.get("lat") is not None]
     scored = []
     for r in with_loc:
@@ -275,7 +290,7 @@ def nearest(lat: float, lon: float, k: int = 10) -> str:
 def search(query: str, region: Optional[str] = None,
            district: Optional[str] = None, k: int = 10) -> str:
     """Fuzzy name search with optional region/district filter."""
-    ds, note = _ensure_fresh()
+    ds, note = _ensure_fresh_with_note()
     q = query.lower()
     matches = [r for r in ds["restaurants"]
                if q in r["name"].lower()
@@ -291,7 +306,7 @@ def search(query: str, region: Optional[str] = None,
 
 def stats() -> str:
     """Show counts per region and district + cache freshness."""
-    ds, note = _ensure_fresh()
+    ds, note = _ensure_fresh_with_note()
     rest = ds["restaurants"]
     by_region: dict[str, int] = {}
     by_dist: dict[str, int] = {}

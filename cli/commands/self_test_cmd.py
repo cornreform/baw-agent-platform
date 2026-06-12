@@ -119,10 +119,54 @@ def _register_check() -> tuple[bool, list[str]]:
         ts = list_tools()
         names = sorted(t.name for t in ts)
         lines.append(f"  ✓ {len(names)} tools registered: {', '.join(names)}")
+        if len(names) > 20:
+            lines.append(
+                f"  ⚠ {len(names)} tools exceeds soft budget of 20; "
+                f"LLM tool-selection accuracy may degrade."
+            )
         return True, lines
     except Exception as e:
         lines.append(f"  ✗ register_all() failed: {type(e).__name__}: {e}")
         return False, lines
+
+
+def _tool_schema_check() -> tuple[bool, list[str]]:
+    """Validate every registered tool's TOOL_DEF against the schema."""
+    from core.tool_schema import validate_all_tools
+    result = validate_all_tools()
+    lines = [f"  ✓ {result['summary']}"]
+    for name, warns in sorted(result["per_tool"].items()):
+        for w in warns:
+            lines.append(f"  ⚠ {name}: {w}")
+    return result["ok"], lines
+
+
+def _data_sources_check() -> tuple[bool, list[str]]:
+    """Audit the data source registry — must have free + no-key defaults."""
+    from core.data_sources import REGISTRY, free_sources, validate as ds_validate
+    warnings = ds_validate()
+    free = free_sources()
+    lines = [
+        f"  ✓ {len(REGISTRY)} data categories registered",
+        f"  ✓ {len(free)} free + no-key + stdlib sources: "
+        + ", ".join(s.category for s in free),
+    ]
+    for w in warnings:
+        lines.append(f"  ⚠ {w}")
+    return len(warnings) == 0, lines
+
+
+def _system_defaults_check() -> tuple[bool, list[str]]:
+    """Audit system defaults — every default must have a value + rationale."""
+    from core.system_defaults import DEFAULTS, validate as sd_validate
+    warnings = sd_validate()
+    lines = [
+        f"  ✓ {len(DEFAULTS)} system defaults registered: "
+        + ", ".join(sorted(DEFAULTS.keys())),
+    ]
+    for w in warnings:
+        lines.append(f"  ⚠ {w}")
+    return len(warnings) == 0, lines
 
 
 def main(argv=None):
@@ -154,6 +198,18 @@ def main(argv=None):
     # 2. Tool registration
     ok, lines = _register_check()
     sections.append(("Tool registry (register_all)", ok, lines))
+
+    # 2b. TOOL_DEF schema validation (catches missing risk_level etc.)
+    ok, lines = _tool_schema_check()
+    sections.append(("TOOL_DEF schema (core.tool_schema)", ok, lines))
+
+    # 2c. Data source registry (free + no-key + stdlib defaults present)
+    ok, lines = _data_sources_check()
+    sections.append(("Data source registry (core.data_sources)", ok, lines))
+
+    # 2d. System defaults (every default has a value + rationale)
+    ok, lines = _system_defaults_check()
+    sections.append(("System defaults (core.system_defaults)", ok, lines))
 
     # 3. HTTP fetch
     if not args.no_fetch:

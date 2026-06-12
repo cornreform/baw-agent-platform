@@ -29,7 +29,29 @@ def register(
     parameters: dict,
     risk_level: str = "low",
 ):
-    """Register a tool with BAW's tool registry."""
+    """Register a tool with BAW's tool registry.
+
+    Validates the schema (see ``core.tool_schema``) before storing.
+    Hard failures raise ``ToolSchemaError`` so the bug surfaces at
+    registration time, not silently at first-call time.
+    """
+    from .tool_schema import validate_tool_def
+    tool_def = {
+        "name": name,
+        "description": description,
+        "handler": handler,
+        "parameters": parameters,
+        "risk_level": risk_level,
+    }
+    warnings = validate_tool_def(tool_def, source=name)
+    if warnings:
+        import sys as _sys
+        print(
+            f"[tool_schema] WARN registering {name!r}:",
+            file=_sys.stderr,
+        )
+        for w in warnings:
+            print(f"  - {w}", file=_sys.stderr)
     _tools[name] = ToolDef(
         name=name,
         description=description,
