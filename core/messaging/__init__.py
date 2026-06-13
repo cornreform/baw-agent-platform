@@ -24,6 +24,19 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger("baw.messaging")  # v2-builtin-cmds
 
+# ── Multi-task split pattern ──
+_MULTITASK_PATTERN = (
+    r'(?:^|\n)\s*(?:'
+    r'(?:\#+\s*)?(?:任務|Task)\s+\d+\s*[：:]'
+    r'|\d+[\.\)、]\s+'
+    r')'
+)
+# Lookahead version: matches position before a task header without consuming it
+_MULTITASK_SPLIT = (
+    r'(?:^|\n)(?=\s*(?:(?:\#+\s*)?(?:任務|Task)\s+\d+\s*[：:]|\d+[\.\)、]\s+))'
+)
+
+
 
 @dataclass
 class Message:
@@ -93,6 +106,7 @@ class BaseConnector(ABC):
         self._restart_requested = False
         self._chat_config = {}  # per-chat overrides: {chat_id: {key: value}}
         self._restart_chat_id: str | None = None
+        self._silent_mode = False  # suppress progress updates (for batch execution)
         # ── Session management ──
         self._sessions: dict[str, dict] = {}  # {chat_id: session_dict}
         self._sessions_dir = Path.home() / ".baw" / "sessions"
@@ -586,15 +600,9 @@ class BaseConnector(ABC):
                 task_arg = sub_cmd[1] if len(sub_cmd) > 1 else ""
                 return self._handle_task_command(msg.chat_id, task_action, task_arg)
 
-        # Default: pass to BAW (with chat_id for per-chat config + session history)
-        # Layer 2: Track user feedback for self-evolution
+        # ── Unified task dispatch (recursive multi-split → chat → agent loop) ──
         try:
-            from ..evolve import track_user_feedback
-            track_user_feedback(text, session_id=msg.chat_id or "")
-        except Exception:
-            pass
-        try:
-            return self._run_baw(text, chat_id=msg.chat_id)
+            return self._dispatch_task(text, chat_id=msg.chat_id)
         except Exception as e:
             logger.error(f"[route] BAW error: {e}")
             try:
@@ -602,6 +610,98 @@ class BaseConnector(ABC):
                 return bail("api_error", status="internal", message=str(e)[:200])
             except Exception:
                 return f"❌ BAW error — please try again.\n({str(e)[:100]})"
+
+    # ── Unified task dispatch ────────────────────────────────────
+    def _dispatch_task(self, text: str, chat_id: str | None, _depth: int = 0) -> str:
+        """Route a task: multi-task split → chat bypass → agent loop. Recursive."""
+        import re as _re
+        _task_headers = _re.findall(_MULTITASK_PATTERN, text, _re.MULTILINE)
+        if len(_task_headers) >= 2:
+            return self._execute_multi_task(text, chat_id, _depth)
+        _work_kw = ["幫我", "設定", "整", "改", "生成", "建立", "部署", "寫",
+                      "create", "build", "deploy", "write", "fix", "debug", "install",
+                      "code", "implement", "config", "run ", "exec", "curl", "api",
+                      "git", "send", "分析", "研究", "research", "compare",
+                      "/baw", "search", "memory", "記低", "搜尋", "執行"]
+        _is_chat = (
+            len(text.strip()) < 80
+            and not text.startswith("/")
+            and not any(kw in text.lower() for kw in _work_kw)
+        )
+        if _is_chat:
+            try:
+                return self._chat_response(text)
+            except Exception:
+                pass
+        try:
+            from ..evolve import track_user_feedback
+            track_user_feedback(text, session_id=chat_id or "")
+        except Exception:
+            pass
+        return self._run_baw(text, chat_id=chat_id)
+
+    # ── Chat bypass ──────────────────────────────────────────────
+    def _chat_response(self, text: str) -> str:
+        """Direct lightweight LLM response. No tools, no court, no agent loop."""
+        import time as _t
+        _t0 = _t.time()
+        try:
+            baw = self._baw_ensure()
+            config = baw["config"]
+            from ..llm import get_model, call_llm_with_fallback
+            from ..context import Context
+            model = get_model(config, "MiniMax-M2.5")
+            ctx = Context(
+                system_prompt="你是BAW，一個友好嘅助手。直接回應，保持簡潔自然。唔使用工具。",
+                temperature=0.7,
+            )
+            ctx.add_user(text)
+            fb = call_llm_with_fallback(
+                config, ctx.to_openai_messages(),
+                temperature=0.7,
+            )
+            resp = fb.response.content or "..."
+            _t1 = _t.time()
+            logger.info(f"[ChatBypass] {_t1 - _t0:.1f}s — {text[:40]}")
+            return resp
+        except Exception as e:
+            logger.warning(f"[ChatBypass] failed, falling back: {e}")
+            raise
+
+    # ── Multi-task execution ─────────────────────────────────────
+    def _execute_multi_task(self, text: str, chat_id: str | None = None,
+                            _depth: int = 0) -> str:
+        """Detect numbered tasks, execute each via _dispatch_task (recursive)."""
+        if _depth >= 5:
+            return f"❌ Nesting too deep ({_depth}).\n{self._run_baw(text, chat_id=chat_id)}"
+        import re as _re
+        _sections = _re.split(
+            _MULTITASK_SPLIT,
+            text, flags=_re.MULTILINE
+        )
+        _tasks = [s.strip() for s in _sections if s.strip() and _re.match(_MULTITASK_PATTERN, s.strip())]
+        _results = []
+        _total = len(_tasks)
+        _prev = self._silent_mode
+        self._silent_mode = True
+        try:
+            for _i, _task in enumerate(_tasks, 1):
+                logger.info(f"[MultiTask] [{_i}/{_total}] depth={_depth}")
+                try:
+                    _resp = self._dispatch_task(_task, chat_id, _depth + 1)
+                    _results.append(f"## Task {_i}/{_total}: {_resp[:500]}")
+                except Exception as _e:
+                    _results.append(f"## Task {_i}/{_total}: ❌ Error — {_e}")
+        finally:
+            self._silent_mode = _prev
+        _pass = sum(1 for r in _results if "❌ Error" not in r)
+        _fail = _total - _pass
+        _summary = (
+            f"\n\n---\n## Summary\n"
+            f"- Total: {_total}  |  Pass: {_pass}  |  Fail: {_fail}\n"
+            f"- Nesting depth: {_depth}\n"
+        )
+        return "\n\n".join(_results) + _summary
 
     # ── Session / Task command handler ───────────────────────────
     def _handle_task_command(self, chat_id: str, action: str, arg: str) -> str:
@@ -1342,9 +1442,12 @@ class BaseConnector(ABC):
             _progress_lines: list[str] = []  # accumulated lines for current batch
 
             def _on_progress(step_type: str = "", name: str = "", args: dict = None):
-                nonlocal _progress_msg_id, _progress_lines
+                nonlocal _progress_msg_id, _progress_lines, _last_progress
+                if self._silent_mode:
+                    with _progress_lock:
+                        _last_progress = time.time()
+                    return
                 with _progress_lock:
-                    nonlocal _last_progress
                     _last_progress = time.time()
                 if not chat_id or not step_type:
                     return

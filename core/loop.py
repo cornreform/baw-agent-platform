@@ -192,6 +192,10 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
         "This rule applies EVEN WHEN your plan has 5 checkboxes and the bash call\n"
         "returned an error. **3/5 done, 2 failed** is honest. **5/5 done** when the\n"
         "command actually failed is fabrication.\n"
+        "  ✗ Do NOT write Python code in your response and claim it ran — CALL THE TOOL.\n"
+        "  ✗ Do NOT say 'I cannot access local files' — you have `read_file`, `write_file`, `terminal`. USE THEM.\n"
+        "  ✗ File creation: use `write_file` tool directly. File reading: use `read_file` tool directly.\n"
+        "  ✗ If you write code without executing it, you are faking completion. STOP.\n"
     )
 
     if fresh_start:
@@ -448,6 +452,10 @@ def _build_todo_block(data_dir: Path) -> str:
         "This rule applies EVEN WHEN your plan has 5 checkboxes and the bash call\n"
         "returned an error. **3/5 done, 2 failed** is honest. **5/5 done** when the\n"
         "command actually failed is fabrication.\n"
+        "  ✗ Do NOT write Python code in your response and claim it ran — CALL THE TOOL.\n"
+        "  ✗ Do NOT say 'I cannot access local files' — you have `read_file`, `write_file`, `terminal`. USE THEM.\n"
+        "  ✗ File creation: use `write_file` tool directly. File reading: use `read_file` tool directly.\n"
+        "  ✗ If you write code without executing it, you are faking completion. STOP.\n"
     )
 
     block = (
