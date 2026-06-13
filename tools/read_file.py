@@ -2,9 +2,25 @@
 
 from pathlib import Path
 
+SENSITIVE_PATHS = [
+    "/etc/passwd", "/etc/shadow", "/etc/master.passwd",
+    "/etc/hosts", "/etc/hostname", "/proc/",
+    "/root/", "/home/*/.ssh/", "/home/*/.bash_history",
+    "id_rsa", "id_ed25519", ".aws/credentials", ".env",
+]
+
+def _is_sensitive(path: str) -> tuple[bool, str]:
+    path_lower = path.lower().strip()
+    for sp in SENSITIVE_PATHS:
+        if sp.lower() in path_lower:
+            return True, f"❌ Blocked — cannot read sensitive path: {sp}"
+    return False, ""
 
 def read_file(path: str, offset: int = 1, limit: int = 500) -> str:
     """Read a text file with line numbers."""
+    blocked, reason = _is_sensitive(path)
+    if blocked:
+        return reason
     p = Path(path).expanduser().resolve()
     if not p.exists():
         return f"Error: file not found: {path}"
