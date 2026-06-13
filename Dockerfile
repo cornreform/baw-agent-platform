@@ -28,6 +28,7 @@ RUN mkdir -p /home/baw/.local/bin && \
 
 USER baw
 ENV HOME=/home/baw
+ENV PATH=/home/baw/.local/bin:$PATH
 # Default log level: INFO. Override with BAW_LOG_LEVEL=DEBUG for verbose.
 ENV BAW_LOG_LEVEL=INFO
 
