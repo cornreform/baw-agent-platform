@@ -241,20 +241,12 @@ def _todo_dispatcher(action: str, **kwargs) -> str:
 TOOL_DEF = {
     "name": "todo",
     "description": (
-        "Manage a persistent task / thought / follow-up list across sessions.\n\n"
-        "Three item types:\n"
-        "- **task**: standard checklist item with status pending/in_progress/completed/cancelled.\n"
-        "- **thought**: BAW's self-reflection or idea. Always visible; never auto-completed.\n"
-        "- **followup**: action for a future turn/session. Surfaced at every new session boot.\n\n"
-        "Actions:\n"
-        "- `write` (todos_json, merge) — back-compat, task-only write/merge.\n"
-        "- `read` (active_only) — show current items + stats.\n"
-        "- `add_thought` (content, note) — capture a self-reflection.\n"
-        "- `add_followup` (content, note) — schedule future work.\n"
-        "- `surface` — list this session + all carried-over follow-ups.\n"
-        "- `stats` — counters per type.\n"
-        "- `done`/`cancel`/`remove` (item_id) — last 6 chars of the id is fine.\n\n"
-        "Use this aggressively for any multi-step task, planning, or self-review."
+        "Persistent task/thought/followup list across sessions.\n"
+        "Types: task (pending/in_progress/done/cancelled), thought (self-reflection, never auto-done), "
+        "followup (surfaced at next boot).\n"
+        "Actions: write(todos, merge), read(active_only), add_thought(content, note), "
+        "add_followup(content, note), surface, stats, done/cancel/remove(item_id).\n"
+        "Use for any multi-step task, plan, or self-review."
     ),
     "handler": _todo_dispatcher,
     "parameters": {
