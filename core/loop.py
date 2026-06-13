@@ -1597,6 +1597,17 @@ def run_agent(
                             _result = _inline_vars.get("_result", _inline_code[:2000])
                             if not isinstance(_result, str):
                                 _result = str(_result)
+                            # ── Anti-fake validation: reject placeholder output ──
+                            _is_command_step = any(kw in _step_goal.lower() for kw in
+                                ("run ", "execute", "invoke", "baw ", "self-test",
+                                 "preflight", "petrestaurants", "restaurant", "todo"))
+                            if _is_command_step:
+                                _fake_markers = ["stdout-line", "err-line",
+                                    "hello-from-step", "hello from step",
+                                    "stdout_line", "err_line",
+                                    "# this is", "# simulate"]
+                                if any(m in (_result or "").lower() for m in _fake_markers):
+                                    _result = f"[FAILED-FAKE-OUTPUT] step '{_step_goal[:60]}' generated placeholder text instead of real command output. Raw: {_result[:200]}"
                         except Exception as _exec_e:
                             _result = f"[INLINE EXEC] {_step_goal[:60]}: {_exec_e}"
                     except Exception as _ie:
