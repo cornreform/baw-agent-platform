@@ -1549,7 +1549,10 @@ def run_agent(
                                 "  import subprocess, os\\n"
                                 "  # Use full path: bash -lc loads ~/.local/bin/baw\\n"
                                 "  result = subprocess.run(['bash', '-lc', 'baw self-test --no-fetch'], capture_output=True, text=True, timeout=30)\\n"
-                                "  _result = f'EXIT_CODE: {result.returncode}\\\\\\nSTDOUT:\\\\n{result.stdout}\\\\\\nSTDERR:\\\\n{result.stderr}'\\n"
+                                "  _result = f'EXIT_CODE: {result.returncode}\\\\nSTDOUT:\\\\n{result.stdout}\\\\nSTDERR:\\\\n{result.stderr}'\\n"
+                                "SET _result to the subprocess output STRING. Do NOT set _result to result.returncode,\\n"
+                                "result.stdout, or result.stderr separately — concatenate them into one string.\\n"
+                                "Do NOT use print(), the 'exec' function captures _result variable directly.\\n"
                                 "Do NOT probe PATH, do NOT check if binary exists, do NOT print\\n"
                                 "diagnostic info before running. Run the command directly.\\n"
                                 "If there's an error, report the real exit code + stderr verbatim.\\n\\n"
@@ -1605,7 +1608,10 @@ def run_agent(
                                 _fake_markers = ["stdout-line", "err-line",
                                     "hello-from-step", "hello from step",
                                     "stdout_line", "err_line",
-                                    "# this is", "# simulate"]
+                                    "# this is", "# simulate",
+                                    "capture_output=True", "subprocess.run",
+                                    "CompletedProcess", "returncode=",
+                                    "args=", "stderr= b''", "stdout= b''"]
                                 if any(m in (_result or "").lower() for m in _fake_markers):
                                     _result = f"[FAILED-FAKE-OUTPUT] step '{_step_goal[:60]}' generated placeholder text instead of real command output. Raw: {_result[:200]}"
                         except Exception as _exec_e:
