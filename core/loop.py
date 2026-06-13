@@ -789,6 +789,12 @@ def run_agent(
                     + "\n\nHonest status: see synthesis results above."
                 )
 
+        # ── Inject reasoning content if configured ──
+        if config.get("display", {}).get("show_reasoning"):
+            _reasoning = getattr(quick_resp, 'reasoning_content', None) or getattr(_resp, 'reasoning_content', None) or ""
+            if _reasoning:
+                output = f"💭 {_reasoning}\n\n---\n\n{output}"
+
         output += final_content
         output += f"\n\n{format_cost_summary()}"
         try:
