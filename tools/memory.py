@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def memory_remember(content: str, tags: str = "", source: str = "agent") -> str:
-    """Save a memory entry.
+    """Save a memory entry. Deduplicates against recent entries (last 100).
 
     Args:
         content: The text content to remember.
@@ -15,7 +15,7 @@ def memory_remember(content: str, tags: str = "", source: str = "agent") -> str:
         source: Who created this memory ('user', 'agent', 'system').
 
     Returns:
-        Confirmation with memory ID.
+        Confirmation with memory ID (new or existing).
     """
     _BAW_ROOT = str(Path(__file__).resolve().parent.parent)
     if _BAW_ROOT not in sys.path:
@@ -26,6 +26,16 @@ def memory_remember(content: str, tags: str = "", source: str = "agent") -> str:
     data_dir = Path.home() / ".baw"
     mem = MemoryStore(data_dir)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+    # ── Deduplication: check last 100 entries for similarity ──
+    _recent = list(reversed(mem._cache))[:100]
+    _content_norm = content.strip().replace("　", " ").replace("，", ",").replace("。", ".")
+    for _existing in _recent:
+        _ec = _existing.get("content", "").strip().replace("　", " ").replace("，", ",").replace("。", ".")
+        # Exact match or >80% substring overlap
+        if _ec == _content_norm or (_ec in _content_norm and len(_ec) > len(_content_norm) * 0.5) or (_content_norm in _ec and len(_content_norm) > len(_ec) * 0.5):
+            return f"🔄 Memory already exists (id: {_existing['id']}) — no change needed."
+
     entry = mem.remember(content=content, tags=tag_list, source=source)
     return f"✅ Memory saved (id: {entry.get('id', '?')}, tags: {entry.get('tags', [])})"
 

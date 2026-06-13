@@ -8,6 +8,10 @@ def write_file(path: str, content: str) -> str:
     p = Path(path).expanduser().resolve()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
+    # Verify write
+    written = p.read_text(encoding="utf-8")
+    if written != content:
+        return f"❌ Write verification failed for {p}"
     return f"Written {len(content)} bytes to {p}"
 
 

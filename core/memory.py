@@ -43,6 +43,11 @@ class MemoryStore:
         with open(self.store_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
+    def _save_all(self):
+        """Overwrite store.jsonl with entire cache (used for updates)."""
+        lines = [json.dumps(e, ensure_ascii=False) for e in self._cache]
+        self.store_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
     def _get_edges(self) -> dict:
         """Load edge relationships."""
         if self.edges_path.exists():
@@ -229,7 +234,36 @@ class MemoryStore:
 
         Auto-creates edges to related memories (keyword-based Jaccard).
         Runs associative spread to boost neighbours via the edges graph.
+
+        De-duplication: if an identical/similar entry exists within 24h,
+        updates the existing entry instead of creating a duplicate.
+        Quality gate: rejects very short or meaningless content.
         """
+        # ── Quality gate ──
+        _clean = content.strip()
+        if len(_clean) < 3 or _clean in ("是", "唔係", "ok", "yes", "no", "ya", "喎"):
+            return {"id": "rejected", "score": 0.0, "reason": "content too short or meaningless"}
+        # Reject common noise patterns
+        if _clean.startswith("User: [Topic shift") or _clean.startswith("[自動績效]") or _clean.startswith("[Batch]"):
+            return {"id": "rejected", "score": 0.0, "reason": "system noise"}
+
+        # ── De-duplication (check last 24h) ──
+        _now = time.time()
+        _recent_entries = [
+            e for e in self._cache
+            if (_now - datetime.fromisoformat(e["created"]).timestamp()) < 86400
+        ]
+        _content_kw = self._keywords(content)
+        for _existing in _recent_entries:
+            _existing_kw = self._keywords(_existing.get("content", ""))
+            _sim = self._jaccard(_content_kw, _existing_kw)
+            if _sim >= 0.85:  # High similarity = duplicate
+                _existing["access_count"] += 1
+                _existing["score"] = round(min(1.0, _existing["score"] + 0.05), 4)
+                _existing["last_accessed"] = datetime.now(timezone.utc).isoformat()
+                self._save_all()
+                return {"id": _existing["id"], "score": _existing["score"], "updated": True}
+
         MemoryStore._id_counter = (MemoryStore._id_counter + 1) % 10000
         entry = {
             "id": f"mem_{int(time.time() * 1000000)}_{MemoryStore._id_counter:04d}",
@@ -254,36 +288,86 @@ class MemoryStore:
         return {"id": entry["id"], "score": entry["score"]}
 
     def search(self, query: str, limit: int = 10) -> list[dict]:
-        """Search memory by keyword, sorted by score (descending).
+        """Search memory by keyword similarity (Jaccard), sorted by score (descending).
 
-        Hit entry gets +0.05 score boost.
-        Then graph-based associative spread to neighbours (1-hop + 2-hop).
+        Also checks substring match for exact hits.
+        Hit entry gets +0.05 score boost + graph associative spread.
         """
-        query = query.lower()
+        query_lower = query.lower()
+        query_kw = self._keywords(query)
         results = []
+        hit_ids = set()
 
         for entry in self._cache:
-            content = entry.get("content", "").lower()
-            if query in content:
-                # Boost score on access
-                entry["access_count"] += 1
-                entry["score"] = min(1.0, entry["score"] + 0.05)
-                entry["last_accessed"] = datetime.now(timezone.utc).isoformat()
+            content = entry.get("content", "")
+            content_lower = content.lower()
+            entry_id = entry["id"]
 
-                results.append({
-                    "id": entry["id"],
-                    "content": entry["content"],
-                    "score": entry["score"],
-                    "tags": entry.get("tags", []),
-                    "created": entry["created"],
-                    "access_count": entry["access_count"],
-                })
+            # ── Match strategy: substring OR keyword similarity ──
+            is_match = False
+            match_score = 0.0
 
-                # Graph-based associative spread from hit entry
-                self._associative_spread(entry["id"])
+            # 1. Exact substring match (highest confidence)
+            if query_lower in content_lower:
+                is_match = True
+                match_score = 1.0
+            else:
+                # 2. Keyword Jaccard similarity
+                content_kw = self._keywords(content)
+                if query_kw and content_kw:
+                    j = self._jaccard(query_kw, content_kw)
+                    # Lower threshold for Chinese (bigrams are sparse)
+                    if j >= 0.08:
+                        is_match = True
+                        match_score = j
 
-        # Sort by score descending
-        results.sort(key=lambda x: x["score"], reverse=True)
+            if not is_match:
+                continue
+
+            # Boost score on access (higher boost for exact matches)
+            boost = 0.05 if match_score >= 1.0 else 0.03
+            entry["access_count"] = entry.get("access_count", 0) + 1
+            entry["score"] = min(1.0, entry.get("score", 0.5) + boost)
+            entry["last_accessed"] = datetime.now(timezone.utc).isoformat()
+
+            results.append({
+                "id": entry_id,
+                "content": entry["content"],
+                "score": entry["score"],
+                "tags": entry.get("tags", []),
+                "created": entry["created"],
+                "access_count": entry["access_count"],
+                "match_confidence": round(match_score, 3),
+            })
+            hit_ids.add(entry_id)
+
+            # Graph-based associative spread from hit entry
+            self._associative_spread(entry_id)
+
+        # ── Also include 1-hop neighbours via graph edges (score-boosted memories) ──
+        edges_data = self._get_edges()
+        edges = edges_data.get("edges", [])
+        if edges and hit_ids:
+            adj = self._build_adjacency(edges)
+            neighbour_ids = set()
+            for hid in hit_ids:
+                for nid, w in adj.get(hid, []):
+                    if nid not in hit_ids:
+                        neighbour_ids.add(nid)
+            for entry in self._cache:
+                if entry["id"] in neighbour_ids and entry["id"] not in hit_ids:
+                    results.append({
+                        "id": entry["id"],
+                        "content": entry["content"],
+                        "score": entry.get("score", 0.5),
+                        "tags": entry.get("tags", []),
+                        "created": entry["created"],
+                        "access_count": entry.get("access_count", 0),
+                        "match_confidence": 0.0,
+                    })
+
+        # Sort by match confidence (relevance to query) first, then by score
+        results.sort(key=lambda x: (x.get("match_confidence", 0), x["score"]), reverse=True)
         return results[:limit]
 
     def decay(self):

@@ -160,13 +160,27 @@ class BaseConnector(ABC):
             next_msg = self._message_queue.pop(0)
 
         # Acquire the slot (should always succeed since we just released)
-        if self._acquire_slot():
+        # Race condition guard: retry a few times before re-enqueueing
+        _acquired = False
+        for _retry in range(3):
+            if self._acquire_slot():
+                _acquired = True
+                break
+            import time as _t3
+            _t3.sleep(0.1)
+
+        if _acquired:
             self._cancel_event.clear()
             threading.Thread(
                 target=self._dispatch_queued,
                 args=(next_msg,),
                 daemon=True,
             ).start()
+        else:
+            # Rare race condition: put back at front of queue
+            with self._queue_lock:
+                self._message_queue.insert(0, next_msg)
+            logger.warning(f"[Queue] Race condition — re-queued message for {next_msg.get('chat_id')}")
 
     def _dispatch_queued(self, item: dict):
         """Dispatch a queued message to the appropriate handler based on msg_type."""
@@ -611,27 +625,58 @@ class BaseConnector(ABC):
             except Exception:
                 return f"❌ BAW error — please try again.\n({str(e)[:100]})"
 
-    # ── Unified task dispatch ────────────────────────────────────
+    # ── Unified task dispatch ──────────────────────────────────────────────
     def _dispatch_task(self, text: str, chat_id: str | None, _depth: int = 0) -> str:
         """Route a task: multi-task split → direct shortcuts → chat bypass → agent loop. Recursive."""
         import re as _re
+
         _task_headers = _re.findall(_MULTITASK_PATTERN, text, _re.MULTILINE)
         if len(_task_headers) >= 2:
             return self._execute_multi_task(text, chat_id, _depth)
 
-        # ── Direct execution shortcuts ───────────────────────────────────
+        # ── Safety check per-task (after split, so multi-task items are isolated) ──
+        _sensitive_paths = [
+            "/etc/passwd", "/etc/shadow", "/etc/master.passwd",
+            "/etc/hosts", "/etc/hostname",
+        ]
+        _text_lower = text.lower()
+        for _sp in _sensitive_paths:
+            if _sp in _text_lower:
+                return f"❌ Blocked — {_sp} is a sensitive system file and cannot be accessed."
+
+        # ── Direct execution shortcuts ──────────────────────────────────────
         # MUST run BEFORE chat bypass — short commands like "read /tmp/x.txt"
         # would otherwise be mis-classified as chat and never reach tools.
         _direct_result = None
         _lower = text.strip().lower()
 
         # Memory: save (e.g. "記低我鍾意食拉麵")
-        if _direct_result is None and any(_kw in text for _kw in ["記低", "記住", "記得"]):
+        # NOTE: "記得" alone is ambiguous — "你記得嗎？" = recall, not save.
+        # Memory: save (e.g. "記低我鍾意食拉麵")
+        # Note: "記得" is intentionally excluded — it's ambiguous (could be asking "do you remember?")
+        if _direct_result is None and any(_kw in text for _kw in ["記低", "記住"]):
             _content = text
-            for _kw in ["記低", "記住", "記得"]:
+            for _kw in ["記低", "記住"]:
                 if _kw in _content:
                     _content = _content.split(_kw, 1)[-1]
-            _content = _content.strip("，,。. \n")
+            _content = _content.strip("\uff1a:\uff0c, \u3002. \n")
+            # ── Pronoun resolution: 佢/他/她 → 實際對象名 ──
+            if chat_id and any(p in _content for p in ["佢", "他", "她"]):
+                try:
+                    session = self._get_or_create_session(chat_id)
+                    _recent = " ".join(m.get("content", "") for m in session.get("messages", [])[-10:])
+                    # Heuristic: if "個仔"/女 was mentioned, "佢" likely refers to the child
+                    if "個仔" in _recent or "個女" in _recent:
+                        _import_re = __import__("re")
+                        _nm = _import_re.search(r'(?:個仔|個女|仔|女)\s*，?\s*(?:今年|叫)\s*([^，,。.\s]+)', _recent)
+                        if not _nm:
+                            _nm = _import_re.search(r'叫\s*([^，,。.\s]+)', _recent)
+                        if _nm:
+                            _name = _nm.group(1)
+                            _content = _content.replace("佢", _name).replace("他", _name).replace("她", _name)
+                            logger.info(f"[PronounResolve] '佢' → '{_name}' in memory: {_content}")
+                except Exception:
+                    pass
             if _content and len(_content) > 1:
                 try:
                     from tools.memory import memory_remember
@@ -639,30 +684,56 @@ class BaseConnector(ABC):
                 except Exception as _e:
                     _direct_result = f"❌ 記憶儲存失敗：{_e}"
 
-        # Memory: search (e.g. "搜尋記憶 拉麵")
-        if _direct_result is None and any(_kw in _lower for _kw in ["搜尋記憶", "search memory", "搜尋記憶"]):
+        # Memory: search (e.g. "搜尋記憶 拉麵" / "你記得我鍾意食咪嗎？")
+        if _direct_result is None and any(_kw in _lower for _kw in ["搜尋記憶", "search memory", "搜尋記憶", "記得", "記唔記得", "你記得"]):
             _query = text
-            for _kw in ["搜尋記憶", "search memory", "搜尋記憶"]:
+            for _kw in ["搜尋記憶", "search memory", "搜尋記憶", "記得", "記唔記得", "你記得"]:
                 if _kw in _query.lower():
                     _query = _query.lower().split(_kw, 1)[-1]
-            _query = _query.strip("，,。. \n")
+            _query = _query.strip("，, 。. \n？?")
             if not _query:
                 _query = text
             try:
                 from tools.memory import memory_search
-                _direct_result = memory_search(_query, limit=5)
+                _raw = memory_search(_query, limit=5)
+                if _raw and not _raw.startswith("No memories"):
+                    # LLM整理 raw results into natural language (quick, no tools)
+                    try:
+                        baw = self._baw_ensure()
+                        config = baw["config"]
+                        from ..llm import get_model, call_llm_with_fallback
+                        from ..context import Context
+                        model = get_model(config, "MiniMax-M2.5")
+                        ctx = Context(
+                            system_prompt="你是BAW的記憶整理助手。將記憶搜尋結果整理成自然語言回應，不要直接列出 raw ID。簡潔、自然、廣東話。",
+                            temperature=0.5,
+                        )
+                        ctx.add_user(f"用戶問：{_query}\n\n記憶搜尋結果：\n{_raw}\n\n請整理成自然語言回應，不要顯示 memory ID。")
+                        fb = call_llm_with_fallback(config, ctx.to_openai_messages(), temperature=0.5)
+                        _direct_result = fb.response.content or _raw
+                    except Exception:
+                        _direct_result = _raw
+                else:
+                    _direct_result = "唔好意思，我唔記得你講過呢樣嘅事。可以提示下我嗎？"
             except Exception as _e:
                 _direct_result = f"❌ 記憶搜尋失敗：{_e}"
 
         # File: read (e.g. "讀取 /tmp/test.txt")
-        if _direct_result is None and any(_kw in _lower for _kw in ["讀取", "讀檔", "read file", "cat ", "看內容", "read "]):
+        if _direct_result is None and any(_kw in _lower for _kw in ["讀取", "讀檔", "讀下", "看下", "看看", "read file", "cat ", "看內容", "read "]):
             _path_match = _re.search(r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\uff0c\u3002]+)', text)
             if _path_match:
-                try:
-                    from tools.read_file import read_file as _rf
-                    _direct_result = _rf(_path_match.group(1))
-                except Exception as _e:
-                    _direct_result = f"❌ 讀檔失敗：{_e}"
+                _fpath = _path_match.group(1)
+                # Safety: block sensitive paths even in direct shortcuts
+                from tools.read_file import _is_sensitive as _rf_sensitive
+                _blocked, _reason = _rf_sensitive(_fpath)
+                if _blocked:
+                    _direct_result = _reason
+                else:
+                    try:
+                        from tools.read_file import read_file as _rf
+                        _direct_result = _rf(_fpath)
+                    except Exception as _e:
+                        _direct_result = f"❌ 讀檔失敗：{_e}"
 
         # File: write (e.g. "寫入 /tmp/test.txt 內容是 'hello'")
         if _direct_result is None and any(_kw in _lower for _kw in ["寫入", "寫檔", "建立檔案", "write file", "create file", "寫個檔案"]):
@@ -679,6 +750,17 @@ class BaseConnector(ABC):
                     except Exception as _e:
                         _direct_result = f"❌ 寫檔失敗：{_e}"
 
+        # Status: model query (e.g. "你而家用緊邊個 model")
+        if _direct_result is None and any(_kw in _lower for _kw in ["用緊邊個 model", "用緊邊個", "用緊 model", "model 狀態", "狀態 model", "用紧边个", "用紧模型"]):
+            try:
+                baw = self._baw_ensure()
+                config = baw["config"]
+                _m = config.get("model", {}).get("default", "unknown")
+                _chat_m = config.get("capabilities", {}).get("chat", {}).get("model", _m)
+                _direct_result = f"⚡ 當前 model: `{_chat_m}` (chat) / `{_m}` (default)\n\n查更多: `/status`"
+            except Exception as _e:
+                _direct_result = f"❌ 無法讀取 model 設定：{_e}"
+
         if _direct_result is not None:
             logger.info(f"[DirectShortcut] triggered for: {text[:60]}")
             return _direct_result
@@ -688,7 +770,10 @@ class BaseConnector(ABC):
                       "create", "build", "deploy", "write", "fix", "debug", "install",
                       "code", "implement", "config", "run ", "exec", "curl", "api",
                       "git", "send", "分析", "研究", "research", "compare",
-                      "/baw", "search", "memory", "記低", "搜尋", "執行"]
+                      "/baw", "search", "memory", "記低", "搜尋", "執行",
+                      "tts", "voice", "audio", "聲", "讀出", "播放",
+                      "狀態", "status", "model", "用緊", "用紧", "用緊邊個", "用紧边个", "邊個 model", "边个 model",
+                      "delete", "remove", "clear", "reset", "kill"]
         _is_chat = (
             len(text.strip()) < 80
             and not text.startswith("/")
@@ -696,7 +781,7 @@ class BaseConnector(ABC):
         )
         if _is_chat:
             try:
-                return self._chat_response(text)
+                return self._chat_response(text, chat_id=chat_id)
             except Exception:
                 pass
         try:
@@ -707,8 +792,9 @@ class BaseConnector(ABC):
         return self._run_baw(text, chat_id=chat_id)
 
     # ── Chat bypass ──────────────────────────────────────────────
-    def _chat_response(self, text: str) -> str:
-        """Direct lightweight LLM response. No tools, no court, no agent loop."""
+    def _chat_response(self, text: str, chat_id: str | None = None) -> str:
+        """Direct lightweight LLM response. No tools, no court, no agent loop.
+        Loads session history + queries memory for context."""
         import time as _t
         _t0 = _t.time()
         try:
@@ -717,10 +803,49 @@ class BaseConnector(ABC):
             from ..llm import get_model, call_llm_with_fallback
             from ..context import Context
             model = get_model(config, "MiniMax-M2.5")
-            ctx = Context(
-                system_prompt="你是BAW，一個友好嘅助手。直接回應，保持簡潔自然。唔使用工具。",
-                temperature=0.7,
-            )
+
+            # ── Load session history + memory ──
+            _hist = []
+            _mem_text = ""
+            if chat_id:
+                session = self._get_or_create_session(chat_id)
+                _hist = session.get("messages", [])[-self._MAX_SESSION_MSGS:]
+                # Query memory for context
+                try:
+                    from tools.memory import memory_search
+                    _mem_result = memory_search(text, limit=3)
+                    if _mem_result and not _mem_result.startswith("No memories"):
+                        _mem_text = _mem_result
+                except Exception:
+                    pass
+
+            _sys = "你是BAW，一個友好喺助手。直接回應，保持簡潔自然。唔使用工具。\n重要：你是 BAW 系統的一部分，由 deepseek-v4-flash / MiniMax-M2.5 等 model 驅動。如果用戶問你是邊個 model，請回答“我是 BAW 助手，當前用 MiniMax-M2.5 回應”，唔好虛構其他 model 名稱。"
+            # Build conversation context from recent history for pronoun disambiguation
+            _ctx_summary = ""
+            if _hist:
+                _recent_turns = _hist[-6:]
+                _facts = []
+                for _m in _recent_turns:
+                    _mc = _m.get("content", "")
+                    if "個仔" in _mc or "個女" in _mc:
+                        _facts.append(_mc)
+                if _facts:
+                    _ctx_summary = "\n[已知資訊]\n" + "\n".join(f"- {_f[:100]}" for _f in _facts[-3:])
+            if _mem_text:
+                _sys += f"\n\n[相關記憶]\n{_mem_text[:500]}"
+            if _ctx_summary:
+                _sys += f"\n{_ctx_summary}"
+
+            ctx = Context(system_prompt=_sys, temperature=0.7)
+
+            # Inject history
+            for _m in _hist:
+                _role = _m.get("role", "")
+                if _role == "user":
+                    ctx.add_user(_m.get("content", ""))
+                elif _role == "assistant":
+                    ctx.add_assistant(_m.get("content", ""))
+
             ctx.add_user(text)
             fb = call_llm_with_fallback(
                 config, ctx.to_openai_messages(),
@@ -728,7 +853,18 @@ class BaseConnector(ABC):
             )
             resp = fb.response.content or "..."
             _t1 = _t.time()
-            logger.info(f"[ChatBypass] {_t1 - _t0:.1f}s — {text[:40]}")
+            logger.info(f"[ChatBypass] {_t1 - _t0:.1f}s hist={len(_hist)} mem={bool(_mem_text)} — {text[:40]}")
+
+            # Save to session
+            if chat_id:
+                session = self._get_or_create_session(chat_id)
+                session["messages"].append({"role": "user", "content": text})
+                session["messages"].append({"role": "assistant", "content": resp})
+                if len(session["messages"]) > self._MAX_SESSION_MSGS:
+                    session["messages"] = session["messages"][-self._MAX_SESSION_MSGS:]
+                session["updated"] = _t.time()
+                self._save_session_to_disk(session)
+
             return resp
         except Exception as e:
             logger.warning(f"[ChatBypass] failed, falling back: {e}")
@@ -758,6 +894,10 @@ class BaseConnector(ABC):
                     _results.append(f"## Task {_i}/{_total}: {_resp[:500]}")
                 except Exception as _e:
                     _results.append(f"## Task {_i}/{_total}: ❌ Error — {_e}")
+                # Small delay between tasks to prevent API rate-limit and give UI breathing room
+                if _i < _total:
+                    import time as _t2
+                    _t2.sleep(0.5)
         finally:
             self._silent_mode = _prev
         _pass = sum(1 for r in _results if "❌ Error" not in r)

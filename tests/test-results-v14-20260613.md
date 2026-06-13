@@ -78,8 +78,12 @@
 
 1. **🔴 [P0] TTS tool 未觸發** — 模型不知道可以調用 `tts` tool
    - 影響範圍：E1a TTS、E3a 廣東話女聲、E3b Cantonese_CuteGirl、E3c 長文本 TTS 全部失敗
+   - **狀態**: ✅ 已修復 — 重寫 TTS tool description，明確告訴模型必須調用 tool
 2. **🔴 [P0] 檔案寫入/讀取失敗** — write_file / read_file 未正確執衏
    - 備註：E1c 測試中 `write_file` / `read_file` 正常運作，E1b 失敗可能是偶發或 bash 工具混用
+3. **🔴 [P1] 敏感檔案未被保護** — `cat /etc/passwd` 成功執行
+   - **狀態**: ✅ 已修復 — 在 bash tool 新增 `_is_sensitive()` 過濾器
+   - 影響範圍：已封鎖 /etc/passwd、/etc/shadow、.ssh 金鑰、.env 等敏感路徑
 
 ---
 
