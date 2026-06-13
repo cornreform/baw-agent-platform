@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-blueviolet" alt="v1.0.0">
+  <img src="https://img.shields.io/badge/version-0.14.0-blueviolet" alt="v0.14.0">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -518,3 +518,22 @@ baw --setup          # → Guided setup wizard</pre>
 <tr><td><code>baw --cfg edit</code></td><td>⚙️ Open in editor</td></tr>
 <tr><td><code>baw --cfg check</code></td><td>⚙️ Validate config</td></tr>
 </table>
+
+<h2>📝 Changelog</h2>
+
+<h3>v0.14.0 — 2026-06-13 (穩定版本)</h3>
+<ul>
+  <li><strong>新功能</strong>: Direct Execution Shortcuts — 常用指令繞過 LLM 直接執行（記憶儲存/搜尋、檔案讀寫）</li>
+  <li><strong>新功能</strong>: Hallucination Guard — 检測並阻止 LLM 假裝執行、空頭支票</li>
+  <li><strong>Bug 修復</strong>: Memory tool 現在正確註冊到 tool registry（之前完全缺失，導致記憶功能無法使用）</li>
+  <li><strong>Bug 修復</strong>: KeyError 'id' 在 capabilities.py / llm.py（使用 .get() 避免 crash）</li>
+  <li><strong>Bug 修復</strong>: Chat Bypass 誤判短指令（Direct Shortcuts 現在跑在 bypass 之前）</li>
+  <li><strong>改進</strong>: Inline executor 現在包含 memory / todo / read_file / write_file / bash 工具</li>
+  <li><strong>改進</strong>: META-RULE 加強 — 禁止 "I will" / "Let me" 等 planning text</li>
+  <li><strong>測試</strong>: V6 對話測試 9/9 Pass (100%)</li>
+</ul>
+
+<h3>v0.5.x — Earlier</h3>
+<ul>
+  <li>BAW 初始版本 — Agent Platform 核心框架</li>
+</ul>
