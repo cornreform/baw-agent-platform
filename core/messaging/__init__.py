@@ -613,11 +613,77 @@ class BaseConnector(ABC):
 
     # ── Unified task dispatch ────────────────────────────────────
     def _dispatch_task(self, text: str, chat_id: str | None, _depth: int = 0) -> str:
-        """Route a task: multi-task split → chat bypass → agent loop. Recursive."""
+        """Route a task: multi-task split → direct shortcuts → chat bypass → agent loop. Recursive."""
         import re as _re
         _task_headers = _re.findall(_MULTITASK_PATTERN, text, _re.MULTILINE)
         if len(_task_headers) >= 2:
             return self._execute_multi_task(text, chat_id, _depth)
+
+        # ── Direct execution shortcuts ───────────────────────────────────
+        # MUST run BEFORE chat bypass — short commands like "read /tmp/x.txt"
+        # would otherwise be mis-classified as chat and never reach tools.
+        _direct_result = None
+        _lower = text.strip().lower()
+
+        # Memory: save (e.g. "記低我鍾意食拉麵")
+        if _direct_result is None and any(_kw in text for _kw in ["記低", "記住", "記得"]):
+            _content = text
+            for _kw in ["記低", "記住", "記得"]:
+                if _kw in _content:
+                    _content = _content.split(_kw, 1)[-1]
+            _content = _content.strip("，,。. \n")
+            if _content and len(_content) > 1:
+                try:
+                    from tools.memory import memory_remember
+                    _direct_result = memory_remember(_content, tags="user")
+                except Exception as _e:
+                    _direct_result = f"❌ 記憶儲存失敗：{_e}"
+
+        # Memory: search (e.g. "搜尋記憶 拉麵")
+        if _direct_result is None and any(_kw in _lower for _kw in ["搜尋記憶", "search memory", "搜尋記憶"]):
+            _query = text
+            for _kw in ["搜尋記憶", "search memory", "搜尋記憶"]:
+                if _kw in _query.lower():
+                    _query = _query.lower().split(_kw, 1)[-1]
+            _query = _query.strip("，,。. \n")
+            if not _query:
+                _query = text
+            try:
+                from tools.memory import memory_search
+                _direct_result = memory_search(_query, limit=5)
+            except Exception as _e:
+                _direct_result = f"❌ 記憶搜尋失敗：{_e}"
+
+        # File: read (e.g. "讀取 /tmp/test.txt")
+        if _direct_result is None and any(_kw in _lower for _kw in ["讀取", "讀檔", "read file", "cat ", "看內容", "read "]):
+            _path_match = _re.search(r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\uff0c\u3002]+)', text)
+            if _path_match:
+                try:
+                    from tools.read_file import read_file as _rf
+                    _direct_result = _rf(_path_match.group(1))
+                except Exception as _e:
+                    _direct_result = f"❌ 讀檔失敗：{_e}"
+
+        # File: write (e.g. "寫入 /tmp/test.txt 內容是 'hello'")
+        if _direct_result is None and any(_kw in _lower for _kw in ["寫入", "寫檔", "建立檔案", "write file", "create file", "寫個檔案"]):
+            _path_match = _re.search(r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\uff0c\u3002]+)', text)
+            if _path_match:
+                _fpath = _path_match.group(1)
+                _content_match = _re.search(r'["「'']([^"''\u300d]+)["''\u300d]', text)
+                if not _content_match:
+                    _content_match = _re.search(r'(?:是|為|寫)「?(.{1,500})」?(?:\n|$)', text)
+                if _content_match:
+                    try:
+                        from tools.write_file import write_file as _wf
+                        _direct_result = _wf(_fpath, _content_match.group(1))
+                    except Exception as _e:
+                        _direct_result = f"❌ 寫檔失敗：{_e}"
+
+        if _direct_result is not None:
+            logger.info(f"[DirectShortcut] triggered for: {text[:60]}")
+            return _direct_result
+
+        # ── Chat bypass ──────────────────────────────────────────────
         _work_kw = ["幫我", "設定", "整", "改", "生成", "建立", "部署", "寫",
                       "create", "build", "deploy", "write", "fix", "debug", "install",
                       "code", "implement", "config", "run ", "exec", "curl", "api",
@@ -696,11 +762,47 @@ class BaseConnector(ABC):
             self._silent_mode = _prev
         _pass = sum(1 for r in _results if "❌ Error" not in r)
         _fail = _total - _pass
+        # ── Truth-check: don't call it "Pass" if the reply contains failure
+        #    indicators beyond just "❌ Error". The LLM often reports
+        #    "Done — 1/1 (100%)" after a real failure (syntax error, hallucination).
+        _real_pass = 0
+        _real_fail = 0
+        _suspicious = []
+        for _r in _results:
+            _body = _r.split(":", 1)[1] if ":" in _r else _r
+            _body_lower = _body.lower()
+            # Genuine success: tool output shows it worked
+            _is_fail = (
+                "❌" in _r
+                or "error" in _body_lower
+                or "fail" in _body_lower
+                or "syntax error" in _body_lower
+                or "syntaxerror" in _body_lower or "synatx" in _body_lower
+                or "無法" in _body
+                or "cannot access" in _body_lower
+                or "not found" in _body_lower
+                or "not created" in _body_lower
+                or "冇建立" in _body
+                or "沒有建立" in _body
+                or "係 shell command 唔係 tool" in _body
+                or "不是 memory tool" in _body
+                or "was not executed" in _body_lower
+                or "was not created" in _body_lower
+            )
+            if _is_fail:
+                _real_fail += 1
+                _suspicious.append(_r.split("\n")[0][:60])
+            else:
+                _real_pass += 1
         _summary = (
             f"\n\n---\n## Summary\n"
-            f"- Total: {_total}  |  Pass: {_pass}  |  Fail: {_fail}\n"
-            f"- Nesting depth: {_depth}\n"
+            f"- Total: {_total}  |  Pass: {_real_pass}  |  Fail: {_real_fail}"
         )
+        if _suspicious:
+            _summary += f"\n- ⚠️ Possibly fabricated tasks: {len(_suspicious)}"
+            for _s in _suspicious:
+                _summary += f"\n  - `{_s}`"
+        _summary += f"\n- Nesting depth: {_depth}\n"
         return "\n\n".join(_results) + _summary
 
     # ── Session / Task command handler ───────────────────────────
@@ -1351,7 +1453,7 @@ class BaseConnector(ABC):
                     _model_id = config.get("model", {}).get("default", "deepseek-v4-flash")
                     for _p in config.get("providers", {}).values():
                         for _m in _p.get("models", []):
-                            if _m["id"] == _model_id:
+                            if _m.get("id") == _model_id:
                                 _cw = _m.get("context_window", 65536)
                                 break
 
@@ -1729,6 +1831,45 @@ class BaseConnector(ABC):
             # ── Guarantee non-empty output — user must always see a result ──
             if not output.strip():
                 output = "✅ Completed. (No additional output — check inline progress above for step details.)"
+            # ── Hallucination guard: LLM sometimes claims it "cannot access local files"
+            #    even though it has read_file/write_file/terminal tools. Override it.
+            _hallucination_phrases = [
+                "無法直接讀取", "無法直接讀取你電腦上的檔案",
+                "cannot access local files", "i cannot access", "我無法直接",
+                "我無法讀取", "無法讀取你電腦",
+            ]
+            if any(_hp in output.lower() for _hp in _hallucination_phrases):
+                # Try to extract file path from original prompt
+                _file_match = re.search(
+                    r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\u3002\uff0c？]+)',
+                    prompt
+                )
+                if _file_match:
+                    _fpath = _file_match.group(1)
+                    try:
+                        from pathlib import Path as _Path
+                        _pp = _Path(_fpath).expanduser().resolve()
+                        if not _pp.exists():
+                            _fcontent = f"Error: file not found: {_fpath}"
+                        elif not _pp.is_file():
+                            _fcontent = f"Error: not a file: {_fpath}"
+                        else:
+                            _fcontent = _pp.read_text(encoding="utf-8")
+                        if _fcontent.startswith("Error:"):
+                            output = f"❌ 無法讀取 `{_fpath}`：{_fcontent}"
+                        else:
+                            output = (
+                                f"📄 **檔案內容** (`{_fpath}`):\n"
+                                f"```\n{_fcontent[:2000]}\n```"
+                            )
+                    except Exception as _e2:
+                        output = f"❌ 讀檔錯誤: {_e2}"
+                else:
+                    output = (
+                        "❌ 讀檔失敗: 請求包含讀取檔案，"
+                        "但 LLM 誤報無法讀取。未能自動提取檔案路徑。"
+                    )
+
             return output.strip()
 
         except Exception as e:

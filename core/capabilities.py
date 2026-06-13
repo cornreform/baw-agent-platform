@@ -115,8 +115,8 @@ def resolve_capability(
 def _find_model(config: dict, model_id: str) -> Optional[dict]:
     for pname, pcfg in config.get("providers", {}).items():
         for m in pcfg.get("models", []):
-            if m["id"] == model_id:
-                return {"id": m["id"], "provider": pname,
+            if m.get("id") == model_id:
+                return {"id": m.get("id", model_id), "provider": pname,
                         "base_url": pcfg.get("base_url", ""),
                         "api_key_env": pcfg.get("api_key_env", ""),
                         **m}
