@@ -191,9 +191,12 @@ def get_model(config: dict, model_id: Optional[str] = None) -> ModelDef:
 
     for provider_name, provider_cfg in providers.items():
         for m in provider_cfg.get("models", []):
-            if m["id"] == model_id:
+            mid = m.get("id")
+            if not mid:
+                continue
+            if mid == model_id:
                 return ModelDef(
-                    id=m["id"],
+                    id=mid,
                     provider=provider_name,
                     base_url=provider_cfg.get("base_url", ""),
                     api_key=os.environ.get(provider_cfg.get("api_key_env", ""), ""),
@@ -206,8 +209,12 @@ def get_model(config: dict, model_id: Optional[str] = None) -> ModelDef:
                     model_kwargs=m.get("model_kwargs"),
                     custom_handler=m.get("custom_handler"),
                 )
+    available = [
+        m.get("id") for p in providers.values()
+        for m in p.get("models", []) if m.get("id")
+    ]
     raise ValueError(f"Model '{model_id}' not found in config.\n"
-                     f"Available: {[m['id'] for p in providers.values() for m in p.get('models', [])]}")
+                     f"Available: {available}")
 
 
 # ── Protocol Handlers ──────────────────────────────────────────

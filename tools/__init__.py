@@ -13,13 +13,14 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 from core.tools import register
 
-from . import bash, read_file, write_file, web_search, image_generate, tts, todo, petrestaurants, http_fetch, restaurant
+from . import bash, read_file, write_file, web_search, image_generate, tts, todo, petrestaurants, http_fetch, restaurant, memory
 
 
 def register_all():
     register(**bash.TOOL_DEF)
     register(**read_file.TOOL_DEF)
     register(**write_file.TOOL_DEF)
+    register(**memory.TOOL_DEF)
     register(**web_search.TOOL_DEF)
     register(**image_generate.TOOL_DEF)
     register(**tts.TOOL_DEF)
