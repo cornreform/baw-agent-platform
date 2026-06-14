@@ -2,6 +2,13 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v0.20.4 — 2026-06-14
+
+### 🔧 Bug Fixes
+
+- **Court merged mode**: Devil and Angel content were identical — now correctly split at [DEVIL: X/10] / [ANGEL: X/10] markers
+- **Message truncation removed**: Telegram no longer cuts messages at 1800 chars; only splits at Telegram's 4000 limit
+
 ## v0.20.3 — 2026-06-14
 
 ### 💬 Multi-Platform Messaging
