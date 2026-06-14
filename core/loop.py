@@ -1277,13 +1277,16 @@ def run_agent(
         r'\bsend\b.*\b(media|file|audio|mp3|attachment)\b.*\b(to|via)\b',
         r'\bMEDIA:\b',
         # Browse / fetch web
-        r'\b(use|call|invoke)\b.*\b(browse|browser|web_search)\b',
+        r'\b(use|call|invoke)\b.*\b(browse|browser|web_search|web_extract)\b',
+        r'\bweb_extract\b',
         r'\b(navigate to|fetch url|open url)\b',
     ]
     _SUBAGENT_REQUIRED_PATTERNS = [
         # Multi-turn reasoning needed
         r'\b(research|analyse|analyze|investigate|compare|evaluate)\b.*\b(options|approaches|tradeoffs|alternatives|pros|cons)\b',
         r'\b(browse|browser|navigate|web.*page)\b',
+        r'\b(fetch|extract).*\b(url|web|page|docs|documentation)\b',
+        r'\bweb_extract\b',
         r'\b(debug|troubleshoot|diagnose)\b.*\b(stack trace|error|bug|issue)\b',
         r'\b(multi.file|multiple files|several files|complex|refactor|restructure)\b',
         r'\b(search.*documentation|docs.*search|find.*api|api.*search)\b',
@@ -1573,6 +1576,11 @@ def run_agent(
                                 "Do NOT use print(), the 'exec' function captures _result variable directly.\\n"
                                 "Do NOT probe PATH, do NOT check if binary exists, do NOT print\\n"
                                 "diagnostic info before running. Run the command directly.\\n"
+                                "For fetching web pages, USE web_extract(url=...) directly. Do NOT use curl or requests.\\n"
+                                "web_search() and web_extract() return PLAIN TEXT strings — NOT JSON.\\n"
+                                "NEVER call json.loads() on their results. Use the text directly.\\n"
+                                "Example: result = web_extract(\'https://example.com\'); _result = result[:500]\\n"
+                                "Example: result = web_search(\'query\'); _result = result[:500]\\n"
                                 "If there's an error, report the real exit code + stderr verbatim.\\n\\n"
                                 "Available:\n"
                                 f"- Path.home() = {Path.home()}\n"
@@ -1598,6 +1606,12 @@ def run_agent(
                                 "- from tools.tts import tts_generate, tts_list_voices, _detect_provider\n"
                                 "- from tools.delegate_task import delegate_task\n"
                                 "- from tools.web_search import web_search\n"
+                                "- from tools.web_extract import web_extract\n"
+                                "- from tools.search_files import search_files\n"
+                                "- from tools.patch import patch\n"
+                                "- from tools.memory import memory_remember, memory_search, memory_recall\n"
+                                "- from tools.todo import todo_add, todo_list, todo_mark_done\n"
+                                "- from tools.install import install\n"
                                 "- from tools.image_generate import image_generate\n\n"
                                 "CRITICAL: When a step says 'save memory', 'remember', '記低', or '記住':\n"
                                 "  USE memory_remember(content=..., tags=['user']) directly.\n"

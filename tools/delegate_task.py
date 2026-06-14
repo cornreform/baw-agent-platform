@@ -60,8 +60,15 @@ def _import_baw():
         _reg(**_ld("read_file"))
         _reg(**_ld("write_file"))
         _reg(**_ld("web_search"))
+        _reg(**_ld("web_extract"))
+        _reg(**_ld("search_files"))
+        _reg(**_ld("patch"))
+        _reg(**_ld("memory"))
+        _reg(**_ld("todo"))
         _reg(**_ld("vision"))
         _reg(**_ld("tts"))
+        _reg(**_ld("image_generate"))
+        _reg(**_ld("install"))
     except BaseException:
         # Restore on any failure so the parent process isn't left broken.
         _registry.clear()
@@ -229,9 +236,15 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: st
     _tool_calls_made = 0  # track if sub-agent actually used tools
     _verify_retries = 0  # P1-4: per-iteration verify_step retries
     MAX_VERIFY_RETRIES = 2  # P1-4: hard cap so we don't loop forever
+    OVERALL_TIMEOUT = 300  # 5 minutes max for entire sub-agent
+    _start_time = __import__('time').time()
 
     try:
         for iteration in range(max_iterations):
+            # Overall timeout guard
+            if __import__('time').time() - _start_time > OVERALL_TIMEOUT:
+                final_content = f"[TIMEOUT] Sub-agent exceeded {OVERALL_TIMEOUT}s overall limit. Partial result: {final_content[:200]}"
+                break
             fb = call_llm_with_fallback(
                 config,
                 ctx.to_openai_messages(),

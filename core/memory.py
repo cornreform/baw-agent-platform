@@ -51,7 +51,12 @@ class MemoryStore:
     def _get_edges(self) -> dict:
         """Load edge relationships."""
         if self.edges_path.exists():
-            return json.loads(self.edges_path.read_text())
+            text = self.edges_path.read_text().strip()
+            if text:
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError:
+                    pass
         return {"edges": []}
 
     def _save_edges(self, edges_data: dict):

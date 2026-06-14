@@ -97,6 +97,9 @@ class BaseConnector(ABC):
         self._max_concurrency = self.config.get("max_concurrency", 3)
         self._active_count = 0
         self._active_lock = threading.Lock()
+        # ── Per-chat sequential processing ──
+        self._active_chats: set[str] = set()  # chats with an active task
+        self._chat_lock = threading.Lock()
         # ── Message queue ──
         self._message_queue: list[dict] = []  # [{chat_id, user_id, user_name, text, msg, reply_to}]
         self._queue_lock = threading.Lock()
@@ -118,6 +121,21 @@ class BaseConnector(ABC):
         """Connect to the platform. Return True on success."""
         ...
 
+    def _is_chat_busy(self, chat_id: str) -> bool:
+        """Check if this chat already has an active task."""
+        with self._chat_lock:
+            return chat_id in self._active_chats
+
+    def _mark_chat_busy(self, chat_id: str):
+        """Mark a chat as having an active task."""
+        with self._chat_lock:
+            self._active_chats.add(chat_id)
+
+    def _unmark_chat_busy(self, chat_id: str):
+        """Unmark a chat when its task completes."""
+        with self._chat_lock:
+            self._active_chats.discard(chat_id)
+
     def _acquire_slot(self) -> bool:
         """Try to acquire a processing slot. Returns True if slot available."""
         with self._active_lock:
@@ -126,8 +144,10 @@ class BaseConnector(ABC):
                 return True
             return False
 
-    def _release_slot(self):
+    def _release_slot(self, chat_id: str = ""):
         """Release a processing slot. If messages are queued, process the next one."""
+        if chat_id:
+            self._unmark_chat_busy(chat_id)
         with self._active_lock:
             self._active_count = max(0, self._active_count - 1)
             was_last = self._active_count == 0
@@ -186,6 +206,14 @@ class BaseConnector(ABC):
         """Dispatch a queued message to the appropriate handler based on msg_type."""
         msg_type = item.get("msg_type", "text")
         chat_id = item["chat_id"]
+        # Per-chat sequential safety: if chat still busy, re-queue and release slot
+        if self._is_chat_busy(chat_id):
+            self._release_slot()
+            with self._queue_lock:
+                self._message_queue.append(item)
+            self.send(chat_id, f"⏳ Still waiting — another task is running in this chat (re-queued)")
+            return
+        self._mark_chat_busy(chat_id)
         # Better queue UX: show position and ETA
         queue_pos = len(self._message_queue) + 1
         eta = queue_pos * 8  # rough 8s per task (conservative for mobile)
@@ -761,6 +789,14 @@ class BaseConnector(ABC):
             except Exception as _e:
                 _direct_result = f"❌ 無法讀取 model 設定：{_e}"
 
+        # Self-test (e.g. "幫我做自我測試" / "/selftest")
+        if _direct_result is None and any(_kw in _lower for _kw in ["自我測試", "selftest", "自我檢查", "系統檢查", "健康檢查"]):
+            try:
+                from tools.selftest import selftest as _st
+                _direct_result = _st(full=False)
+            except Exception as _e:
+                _direct_result = f"❌ Self-test error: {_e}"
+
         if _direct_result is not None:
             logger.info(f"[DirectShortcut] triggered for: {text[:60]}")
             return _direct_result
@@ -819,7 +855,25 @@ class BaseConnector(ABC):
                 except Exception:
                     pass
 
-            _sys = "你是BAW，一個友好喺助手。直接回應，保持簡潔自然。唔使用工具。\n重要：你是 BAW 系統的一部分，由 deepseek-v4-flash / MiniMax-M2.5 等 model 驅動。如果用戶問你是邊個 model，請回答“我是 BAW 助手，當前用 MiniMax-M2.5 回應”，唔好虛構其他 model 名稱。"
+            # ── Load SOUL.md for identity ──
+            _soul = ""
+            try:
+                _soul_path = Path.home() / '.baw' / 'SOUL.md'
+                if _soul_path.exists():
+                    _soul = _soul_path.read_text(encoding='utf-8')[:2000]
+            except Exception:
+                pass
+
+            _sys = (
+                "你是 BAW（Black And White）— Sunny 的 Agent Platform。\n"
+                "你可以執行命令、操作文件、搜索網頁、生成圖像、TTS 等。\n"
+                "你不是普通的語言模型 — 你是有行動能力的 agent。\n"
+                "直接回應，保持簡潔自然。如果問題簡單就直接答，唔好問「需要我幫你做咩」。\n"
+                "重要：你是 BAW 系統的一部分，由 deepseek-v4-flash / MiniMax-M2.5 等 model 驅動。"
+                "如果用戶問你是邊個 model，請回答‘我是 BAW 助手，當前用 MiniMax-M2.5 回應’，唔好虛構其他 model 名稱。"
+            )
+            if _soul:
+                _sys += f"\n\n[SOUL.md 精神]\n{_soul}"
             # Build conversation context from recent history for pronoun disambiguation
             _ctx_summary = ""
             if _hist:
