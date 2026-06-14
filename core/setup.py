@@ -210,17 +210,80 @@ def _print_logo():
     for line in logo.strip().split("\n"):
         formatted += line.format(**globals()) + "\n"
     print(formatted)
-    print(f"  {C.DIM}Black And White — Agent Platform v1.0.0{C.RESET}")
+    print(f"  {C.DIM}Black And White — Agent Platform v0.20.1{C.RESET}")
     w, _ = shutil.get_terminal_size()
     print(f"  {C.DIM}{'─' * min(w-2, 40)}{C.RESET}")
     print()
+
+
+# ── API Key validation ───────────────────────────────────────────────
+
+def _validate_api_key(provider: str, base_url: str, api_key: str, model: str = "") -> tuple[bool, str]:
+    """Send a test request to validate an API key. Returns (ok, message)."""
+    import requests
+    test_models = {
+        "deepseek": "deepseek-v4-flash",
+        "minimax": "MiniMax-M3",
+        "openai": "gpt-4o-mini",
+    }
+    test_model = model or test_models.get(provider, "")
+    if not test_model:
+        return True, "Skipping validation (unknown provider)"
+
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": test_model,
+        "messages": [{"role": "user", "content": "Say 'pong' and nothing else."}],
+        "max_tokens": 5,
+    }
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=15)
+        if r.status_code == 200:
+            return True, "Key valid — test request succeeded"
+        elif r.status_code == 401:
+            return False, "Invalid key (401 Unauthorized)"
+        elif r.status_code == 402:
+            return False, "Quota exceeded (402 Payment Required)"
+        else:
+            return False, f"HTTP {r.status_code}: {r.text[:100]}"
+    except requests.exceptions.Timeout:
+        return False, "Timeout — network or endpoint issue"
+    except Exception as e:
+        return False, f"Request failed: {str(e)[:100]}"
+
+
+# ── Plan explanations ──────────────────────────────────────────────
+
+_PLAN_GUIDES: dict[str, str] = {
+    "stepfun": (
+        "\n    Stepfun plans:\n"
+        "      standard   — api.stepfun.ai/v1 (general API access)\n"
+        "      step-plan  — api.stepfun.ai/step_plan/v1 (step-plan pricing)\n"
+        "      china      — api.stepfun.com/v1 (mainland China endpoint)"
+    ),
+    "minimax": (
+        "\n    MiniMax plans:\n"
+        "      standard      — pay-per-use\n"
+        "      subscription  — monthly subscription (better rates)"
+    ),
+    "moonshot": (
+        "\n    Moonshot plans:\n"
+        "      standard   — general API access\n"
+        "      code-plan  — optimised for code generation"
+    ),
+}
+
+
+def _explain_plan(provider: str) -> str:
+    return _PLAN_GUIDES.get(provider, "")
 
 
 def cmd_setup(data_dir: Path):
     cfg = load_config(data_dir)
     is_first_run = not cfg.get("model") and not cfg.get("providers")
 
-    print()  # Clear space
+    print()
     _print_logo()
     _print_header("Setup Wizard")
     if is_first_run:
@@ -230,31 +293,27 @@ def cmd_setup(data_dir: Path):
         _print_note("Updating existing configuration. Press Enter to keep current values.")
     print()
 
-    # ── 1. Platform (Telegram/Discord/etc) ──
-    _print_section("Messaging Platform")
-    token = os.environ.get("BAW_TELEGRAM_TOKEN", "")
-    if not token:
-        token = input(f"  {C.CYAN}?{C.RESET} Telegram Bot Token (or press Enter to skip): ").strip()
-    if token:
-        cfg.setdefault("telegram", {})["token"] = token
-        _ok("Telegram token set")
-    else:
-        _print_note("No Telegram token — BAW runs CLI-only. Add token later with: baw --cfg set telegram.token <token>")
-
-    # ── 2. Model ──
-    _print_section("Default Model")
-    _print_note("Main model for chat + tools. Step 3.7 Flash is recommended.")
-    current_model = cfg.get("model", {}).get("default", "step-3.7-flash")
+    # ── 1. Default Model ──
+    _print_section("1. Default Model")
+    _print_note("This is the main model BAW uses for chat and tool execution.")
+    _print_note("Recommendations:")
+    _print_note("  • deepseek-v4-flash  — fast, cheap, good for most tasks")
+    _print_note("  • MiniMax-M3         — multimodal (vision + TTS + chat)")
+    _print_note("  • claude-sonnet-4    — highest quality, most expensive")
+    current_model = cfg.get("model", {}).get("default", "deepseek-v4-flash")
     model_id = _input("Default model ID", default=current_model)
     cfg.setdefault("model", {})["default"] = model_id
-    _print_note("Fallback model (used when main fails):")
-    current_fb = cfg.get("model", {}).get("fallback", "deepseek-v4-flash")
+
+    _print_note("Fallback model (used when main model fails — must be DIFFERENT provider):")
+    current_fb = cfg.get("model", {}).get("fallback", "MiniMax-M3")
     fb_id = _input("Fallback model ID", default=current_fb)
     if fb_id:
         cfg.setdefault("model", {})["fallback"] = fb_id
 
-    # ── 3. API Keys ──
-    _print_section("API Keys")
+    # ── 2. API Keys (with validation) ──
+    _print_section("2. API Keys")
+    _print_note("Enter API keys one by one. Leave blank to skip.")
+    _print_note("Each key will be tested immediately — you'll know if it works.")
     env_path = data_dir / ".env"
     existing_env = {}
     if env_path.exists():
@@ -264,41 +323,58 @@ def cmd_setup(data_dir: Path):
                 k, v = line.split("=", 1)
                 existing_env[k.strip()] = v.strip()
 
-    _print_note("Enter API keys one by one. Leave blank to skip.")
-    _print_note("For providers with special plans, you'll be asked about your plan type.")
     providers_prompt = [
-        ("STEPFUN_API_KEY", "Stepfun (chat + TTS/ASR)"),
-        ("MINIMAX_API_KEY", "MiniMax (fallback chat + TTS + vision)"),
-        ("MOONSHOT_API_KEY", "Moonshot/Kimi (alternative chat)"),
-        ("DEEPSEEK_API_KEY", "DeepSeek (fast cheap model)"),
-        ("OPENAI_API_KEY", "OpenAI (GPT-4o, DALL-E)"),
-        ("ANTHROPIC_API_KEY", "Anthropic (Claude models)"),
-        ("GEMINI_API_KEY", "Google (Gemini models)"),
-        ("AGNES_API_KEY", "Agnes AI (free image/video gen)"),
+        ("DEEPSEEK_API_KEY", "DeepSeek", "deepseek", "https://api.deepseek.com/v1"),
+        ("MINIMAX_API_KEY", "MiniMax", "minimax", "https://api.minimax.io/v1"),
+        ("OPENAI_API_KEY", "OpenAI", "openai", "https://api.openai.com/v1"),
+        ("STEPFUN_API_KEY", "Stepfun", "stepfun", ""),
+        ("MOONSHOT_API_KEY", "Moonshot/Kimi", "moonshot", "https://api.moonshot.ai/v1"),
+        ("ANTHROPIC_API_KEY", "Anthropic", "anthropic", "https://api.anthropic.com/v1"),
+        ("GEMINI_API_KEY", "Google Gemini", "gemini", "https://generativelanguage.googleapis.com/v1beta"),
     ]
     new_env = {}
     plan_choices = {}
-    for env_key, label in providers_prompt:
+    validated_providers: set[str] = set()
+
+    for env_key, label, provider_key, default_base in providers_prompt:
         current_val = existing_env.get(env_key, "")
         hint = f" ({current_val[:8]}...)" if current_val and len(current_val) > 8 else ""
         val = input(f"  {C.CYAN}?{C.RESET} {label} ({env_key}){hint}: ").strip()
         if val:
-            new_env[env_key] = val
-            # Ask about plan type for known plan-based providers
-            if env_key == "STEPFUN_API_KEY":
-                plan = _input("  Plan type (standard / step-plan)", default="step-plan")
+            # Determine base URL
+            base_url = default_base
+            if provider_key == "stepfun":
+                print(f"  {C.DIM}{_explain_plan('stepfun')}{C.RESET}")
+                plan = _input("  Plan type", default="standard")
                 plan_choices[env_key] = plan.lower().replace("-", "_")
-            elif env_key == "MINIMAX_API_KEY":
-                plan = _input("  Plan type (standard / subscription)", default="standard")
+                if plan.lower() in ("step_plan", "step-plan"):
+                    base_url = "https://api.stepfun.ai/step_plan/v1"
+                elif plan.lower() == "china":
+                    base_url = "https://api.stepfun.com/v1"
+                else:
+                    base_url = "https://api.stepfun.ai/v1"
+            elif provider_key == "minimax":
+                print(f"  {C.DIM}{_explain_plan('minimax')}{C.RESET}")
+                plan = _input("  Plan type", default="standard")
                 plan_choices[env_key] = plan.lower()
-            elif env_key == "MOONSHOT_API_KEY":
-                plan = _input("  Plan type (standard / code-plan)", default="standard")
+            elif provider_key == "moonshot":
+                print(f"  {C.DIM}{_explain_plan('moonshot')}{C.RESET}")
+                plan = _input("  Plan type", default="standard")
                 plan_choices[env_key] = plan.lower().replace("-", "_")
-            else:
-                # Ask for custom endpoint if they want to override
-                endpoint = _input("  Custom base URL? (leave blank for default)", default="")
-                if endpoint:
-                    plan_choices[env_key] = f"custom:{endpoint}"
+
+            # Validate key
+            if base_url:
+                print(f"  {C.DIM}⏳ Testing key...{C.RESET}", end="", flush=True)
+                ok, msg = _validate_api_key(provider_key, base_url, val)
+                print(f"\r  {' ' * 20}\r", end="")
+                if ok:
+                    _ok(msg)
+                    validated_providers.add(provider_key)
+                else:
+                    _warn(msg)
+                    if not _confirm("  Use this key anyway?", default=False):
+                        continue
+            new_env[env_key] = val
         elif current_val and not val:
             pass
 
@@ -307,104 +383,71 @@ def cmd_setup(data_dir: Path):
         env_lines = []
         if env_path.exists():
             env_lines = env_path.read_text().splitlines()
-            # Remove old entries we're replacing
             env_lines = [l for l in env_lines if not any(l.startswith(k + "=") for k in new_env)]
         for k, v in new_env.items():
             env_lines.append(f"{k}={v}")
         env_path.write_text("\n".join(env_lines) + "\n")
-        _print_note(f"Updated {env_path} ({len(new_env)} key(s))")
+        _ok(f"Saved {len(new_env)} key(s) to {env_path}")
 
-    # Detect which keys we have (existing + new)
     all_keys = {**existing_env, **new_env}
 
-    # ── 4. Providers (auto-configure based on API keys) ──
-    _print_section("Providers")
+    # ── 3. Providers (auto-configure) ──
+    _print_section("3. Providers")
     providers = cfg.setdefault("providers", {})
 
-    # Stepfun
-    if "STEPFUN_API_KEY" in all_keys:
-        if "stepfun" not in providers:
-            plan = plan_choices.get("STEPFUN_API_KEY", "step_plan")
-            # Determine base_url from plan choice
-            if plan == "step_plan":
-                base_url = "https://api.stepfun.ai/step_plan/v1"
-            elif plan == "international":
-                base_url = "https://api.stepfun.ai/v1"
-            elif plan == "china":
-                base_url = "https://api.stepfun.com/v1"
-            else:
-                base_url = "https://api.stepfun.ai/step_plan/v1"  # default
-            providers["stepfun"] = {
-                "api_key_env": "STEPFUN_API_KEY",
-                "base_url": base_url,
-                "models": [
-                    {"id": "step-3.7-flash", "capabilities": ["chat", "vision"], "context_window": 65536},
-                    {"id": "step-3.5-flash", "capabilities": ["chat"], "context_window": 65536},
-                    {"id": "stepaudio-2.5-tts", "capabilities": ["tts"], "context_window": 4096},
-                    {"id": "stepaudio-2.5-asr", "capabilities": ["stt"], "context_window": 4096},
-                    {"id": "step-tts-2", "capabilities": ["tts"], "context_window": 4096},
-                ],
-            }
-            _ok("Stepfun provider configured")
+    if "DEEPSEEK_API_KEY" in all_keys and "deepseek" not in providers:
+        providers["deepseek"] = {
+            "api_key_env": "DEEPSEEK_API_KEY",
+            "base_url": "https://api.deepseek.com/v1",
+            "models": [
+                {"id": "deepseek-v4-flash", "capabilities": ["chat"], "context_window": 65536,
+                 "cost_per_1m_input": 0.30, "cost_per_1m_output": 1.20},
+                {"id": "deepseek-v4-pro", "capabilities": ["chat"], "context_window": 65536},
+            ],
+        }
+        _ok("DeepSeek provider configured")
 
-    # MiniMax
-    if "MINIMAX_API_KEY" in all_keys:
-        if "minimax" not in providers:
-            providers["minimax"] = {
-                "api_key_env": "MINIMAX_API_KEY",
-                "base_url": "https://api.minimax.io/v1",
-                "models": [
-                    {"id": "MiniMax-M3", "capabilities": ["chat", "vision", "tts"], "context_window": 1048576},
-                    {"id": "MiniMax-M2.5", "capabilities": ["chat"], "context_window": 1048576},
-                ],
-            }
-            _ok("MiniMax provider configured")
+    if "MINIMAX_API_KEY" in all_keys and "minimax" not in providers:
+        providers["minimax"] = {
+            "api_key_env": "MINIMAX_API_KEY",
+            "base_url": "https://api.minimax.io/v1",
+            "models": [
+                {"id": "MiniMax-M3", "capabilities": ["chat", "vision", "tts"], "context_window": 1048576},
+                {"id": "MiniMax-M2.5", "capabilities": ["chat"], "context_window": 1048576},
+            ],
+        }
+        _ok("MiniMax provider configured")
 
-    # DeepSeek
-    if "DEEPSEEK_API_KEY" in all_keys:
-        if "deepseek" not in providers:
-            providers["deepseek"] = {
-                "api_key_env": "DEEPSEEK_API_KEY",
-                "base_url": "https://api.deepseek.com/v1",
-                "models": [
-                    {"id": "deepseek-v4-flash", "capabilities": ["chat"], "context_window": 65536,
-                     "cost_per_1m_input": 0.30, "cost_per_1m_output": 1.20},
-                ],
-            }
-            _ok("DeepSeek provider configured")
-
-    # OpenAI
-    if "OPENAI_API_KEY" in all_keys:
-        if "openai" not in providers:
-            providers["openai"] = {
-                "api_key_env": "OPENAI_API_KEY",
-                "base_url": "https://api.openai.com/v1",
-                "models": [
-                    {"id": "gpt-4o", "capabilities": ["chat"], "context_window": 128000},
-                    {"id": "dall-e-3", "capabilities": ["image_generation"], "context_window": 4096},
-                ],
-            }
-            _ok("OpenAI provider configured")
+    if "OPENAI_API_KEY" in all_keys and "openai" not in providers:
+        providers["openai"] = {
+            "api_key_env": "OPENAI_API_KEY",
+            "base_url": "https://api.openai.com/v1",
+            "models": [
+                {"id": "gpt-4o", "capabilities": ["chat"], "context_window": 128000},
+                {"id": "gpt-4o-mini", "capabilities": ["chat"], "context_window": 128000},
+            ],
+        }
+        _ok("OpenAI provider configured")
 
     if not providers:
-        _warn("No API keys set — BAW won't work until you configure at least one provider")
+        _warn("No API keys configured — BAW needs at least one provider to work")
         _print_note("Run 'baw --setup' again after getting API keys")
 
-    # ── 5. Capabilities ──
-    _print_section("Capabilities")
+    # ── 4. Capabilities ──
+    _print_section("4. Capabilities")
     caps = cfg.setdefault("capabilities", {})
     changed_caps = False
 
-    # Chat
     if not caps.get("chat", {}).get("model"):
         caps["chat"] = {"model": model_id}
         changed_caps = True
 
-    # STT
-    has_stt_key = any(k for k in all_keys if k in ("STEPFUN_API_KEY", "MINIMAX_API_KEY"))
-    if has_stt_key and not caps.get("stt"):
-        if "STEPFUN_API_KEY" in all_keys:
-            plan = plan_choices.get("STEPFUN_API_KEY", "step_plan")
+    has_minimax = "MINIMAX_API_KEY" in all_keys
+    has_stepfun = "STEPFUN_API_KEY" in all_keys
+
+    if not caps.get("stt"):
+        if has_stepfun:
+            plan = plan_choices.get("STEPFUN_API_KEY", "standard")
             stt_base = "https://api.stepfun.ai/step_plan/v1" if plan == "step_plan" else "https://api.stepfun.ai/v1"
             caps["stt"] = {
                 "method": "auto-asr",
@@ -412,74 +455,102 @@ def cmd_setup(data_dir: Path):
                 "base_url": stt_base,
                 "api_key_env": "STEPFUN_API_KEY",
             }
-            _ok("STT configured (Stepfun auto-asr)")
-        elif "MINIMAX_API_KEY" in all_keys:
+            _ok("STT configured (Stepfun)")
+        elif has_minimax:
             caps["stt"] = {"method": "model", "model": "MiniMax-M3"}
-            _ok("STT configured (MiniMax-M3)")
+            _ok("STT configured (MiniMax)")
         changed_caps = True
 
-    # TTS
     if not caps.get("tts"):
-        if "STEPFUN_API_KEY" in all_keys:
-            plan = plan_choices.get("STEPFUN_API_KEY", "step_plan")
+        if has_stepfun:
+            plan = plan_choices.get("STEPFUN_API_KEY", "standard")
             tts_base = "https://api.stepfun.ai/step_plan/v1" if plan == "step_plan" else "https://api.stepfun.ai/v1"
             caps["tts"] = {"method": "model", "model": "stepaudio-2.5-tts", "voice": "Cantonese_GentleLady",
                           "config": {"api_model": "stepaudio-2.5-tts", "base_url": tts_base}}
             _ok("TTS configured (Stepfun)")
-        elif "MINIMAX_API_KEY" in all_keys:
+        elif has_minimax:
             caps["tts"] = {"model": "MiniMax-M3", "voice": "Cantonese_GentleLady",
                           "config": {"api_model": "speech-2.8-hd"}}
             _ok("TTS configured (MiniMax)")
         changed_caps = True
 
-    # Vision
     if not caps.get("vision"):
-        if "MINIMAX_API_KEY" in all_keys:
+        if has_minimax:
             caps["vision"] = {"model": "MiniMax-M3"}
             _ok("Vision configured (MiniMax-M3)")
-        elif "STEPFUN_API_KEY" in all_keys:
+        elif has_stepfun:
             caps["vision"] = {"model": "step-3.7-flash"}
-            _ok("Vision configured (step-3.7-flash)")
+            _ok("Vision configured (Stepfun)")
 
     if changed_caps:
-        _print_note("Capabilities auto-configured. Fine-tune with: baw --cfg set capabilities.<name>.<key> <value>")
+        _print_note("Capabilities auto-configured. Adjust later: baw --cfg set capabilities.<name>.<key> <value>")
 
-    # ── 6. Mode / Tone / Adversarial / Fact Check ──
-    _print_section("Behavior")
+    # ── 5. Behaviour ──
+    _print_section("5. Behaviour")
+    _print_note("Execution mode determines how thoroughly BAW checks its work:")
+    _print_note("  quick   — fastest, no court/plan, direct execution")
+    _print_note("  hybrid  — balanced, plan + execute, light verification")
+    _print_note("  tight   — most thorough, full court + plan + per-step verify (default)")
     current = cfg.get("mode", "tight")
-    _print_note("Execution mode: quick = no court/plan, hybrid = plan only, tight = full court")
     mode = _input("Mode", default=current)
     while mode not in ("quick", "hybrid", "tight"):
         print(f"{C.RED}  Must be: quick, hybrid, or tight{C.RESET}")
         mode = _input("Mode", default=current)
     cfg["mode"] = mode
 
+    _print_note("Tone determines how BAW responds:")
+    _print_note("  casual     — friendly, conversational")
+    _print_note("  business   — professional, concise")
+    _print_note("  teaching   — explanatory, step-by-step")
+    _print_note("  client-doc — zero comments, direct artifact output")
+    _print_note("  ot-rt      — rapid execution, report after completion")
+    _print_note("  stepwise   — pause for confirmation at each step")
     current_tone = cfg.get("tone", {}).get("default", "casual")
-    tone = _input("Tone (casual/business/teaching/client-doc/ot-rt/stepwise)", default=current_tone)
+    tone = _input("Tone", default=current_tone)
     cfg.setdefault("tone", {})["default"] = tone
 
     current_adv = str(cfg.get("adversarial", {}).get("enabled", True)).lower()
-    adv = _input("Enable Angel/Devil court? (true/false)", default=current_adv)
+    _print_note("Angel/Devil court: Devil argues against every action before Angel executes.")
+    adv = _input("Enable court? (true/false)", default=current_adv)
     cfg.setdefault("adversarial", {})["enabled"] = adv == "true"
 
     current_fc = cfg.get("fact_check", {}).get("mode", "normal")
-    fc = _input("Fact check mode (off/normal/strict)", default=current_fc)
+    _print_note("Fact check: verifies claims against web search before reporting.")
+    fc = _input("Fact check (off/normal/strict)", default=current_fc)
     while fc not in ("off", "normal", "strict"):
         print(f"{C.RED}  Must be: off, normal, or strict{C.RESET}")
         fc = _input("Fact check mode", default=current_fc)
     cfg.setdefault("fact_check", {})["mode"] = fc
 
+    # ── 6. Messaging (optional) ──
+    _print_section("6. Messaging Platform (optional)")
+    _print_note("Connect BAW to Telegram, Discord, etc. Skip this for CLI-only use.")
+    if _confirm("Configure Telegram bot?", default=False):
+        token = os.environ.get("BAW_TELEGRAM_TOKEN", "")
+        if not token:
+            token = input(f"  {C.CYAN}?{C.RESET} Telegram Bot Token: ").strip()
+        if token:
+            cfg.setdefault("telegram", {})["token"] = token
+            _ok("Telegram configured")
+        else:
+            _print_note("No token provided — skip Telegram for now")
+    else:
+        _print_note("Skipped. Add later: baw --cfg set telegram.token <token>")
+
     # ── Save ──
     save_config(data_dir, cfg)
     print()
     _print_header("Setup Complete")
+    _ok(f"Config saved to {data_dir / 'config.yaml'}")
+    if new_env:
+        _ok(f"API keys saved to {env_path}")
+    print()
     _print_note("Next steps:")
-    _print_note("  1. Run  'baw --doctor'                  — verify everything works")
-    _print_note("  2. Run  'baw --version'                  — check build info")
-    _print_note("  3. Run  'baw \"hello\"'                    — test the agent")
-    if token:
-        _print_note("  4. Send /start to your Telegram bot — test messaging")
-    _print_note("  5. Run  'baw --update'                   — pull latest + rebuild")
+    _print_note("  1. Run 'baw --doctor'     — verify everything works")
+    _print_note("  2. Run 'baw \"hello\"'      — test the agent")
+    _print_note("  3. Run 'baw --cfg list'   — review all settings")
+    if cfg.get("telegram", {}).get("token"):
+        _print_note("  4. Send /start to your bot — test Telegram")
     print()
 
 

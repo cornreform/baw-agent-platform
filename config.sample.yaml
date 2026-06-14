@@ -1,202 +1,193 @@
-# BAW Agent Platform Configuration (SAMPLE — generated 2026-06-12 from active config)
-# Copy to ~/.baw/config.yaml and adjust as needed.
-# All sensitive values use env-var references (e.g. ${DEEPSEEK_API_KEY}),
-# never inline keys.
+# BAW Agent Platform Configuration
+# Linux + macOS compatible
+# Protocol-agnostic: switch models by changing one line
 
-adversarial:
-  angel_model: step-3.7-flash
-  devil_model: kimi-k2.6
-  enabled: true
-  flag_threshold: 0
-  warn_threshold: 2
-capabilities:
-  chat:
-    model: step-3.7-flash
-  image_generation:
-    model: MiniMax-M3
-  stt:
-    api_key_env: STEPFUN_API_KEY
-    base_url: https://api.stepfun.ai/v1
-    method: auto-asr
-    model: stepaudio-2.5-asr
-  tts:
-    config:
-      api_model: stepaudio-2.5-tts
-      base_url: https://api.stepfun.ai/v1
-    method: model
-    model: stepaudio-2.5-tts
-    voice: Cantonese_GentleLady
-  vision:
-    model: MiniMax-M3
-executor:
-  model: step-3.7-flash
-fact_check:
-  mode: normal
-max_concurrency: 10
-max_tokens:
-  default: 8192
-  reasoning: 16384
-mode: hybrid
 model:
-  default: step-3.7-flash
-  fallback: MiniMax-M3
-  route:
-    enabled: true
-    long_model: step-3.7-flash
-    short_model: step-3.7-flash
-    threshold_tokens: 8000
+  default: "deepseek-v4-flash"
+  # Fallback used when primary fails (must be a DIFFERENT model — Opus 4.8 audit P0-2).
+  fallback: "deepseek-reasoner"
+  # To switch: change the line above to any model ID below
+  # Examples: "MiniMax-M3", "claude-sonnet-4-20250514", "gemini-2.5-pro"
+
+  # ── Per-task model routing ──
+  # When delegate_task is called, the goal is matched against these rules.
+  # First match wins. If no match, falls back to executor.model.
   task_rules:
-  - match: search|product|購買|售價|價格|shop|商店|查詢|research|find|lookup
-    model: step-3.7-flash
-  - match: code|debug|fix|bug|error|program|script|python|node|測試|修復
-    model: step-3.7-flash
-  - match: vision|image|photo|圖片|相片|screenshot|截圖
-    model: MiniMax-M3
-  - match: write|create|build|製作|建立|generate|生成|設計
-    model: step-3.7-flash
+    - match: "search|product|購買|價錢|價格|price|shop|商店|查詢|research|find|lookup"
+      model: "deepseek-v4-flash"
+    - match: "code|debug|fix|bug|error|program|script|python|node|測試|修復"
+      model: "deepseek-v4-flash"
+    - match: "vision|image|photo|圖片|相片|screenshot|截圖"
+      model: "MiniMax-M3"
+    - match: "write|create|build|製作|建立|generate|生成|設計|design"
+      model: "deepseek-v4-flash"
+
+# ── Executor config ──
+executor:
+  model: "MiniMax-M2.5"
+
+capabilities:
+  # ── MiniMax-M3 capabilities ──
+  # Multimodal model: vision (image understanding), STT (audio transcription),
+  # image_generation (text-to-image), chat, and TTS all routed through
+  # the MiniMax-M3 endpoint at https://api.minimax.io/v1
+  MiniMax-M3:
+    stt:               "MiniMax-M3"
+    image_generation:  "MiniMax-M3"
+    vision:            "MiniMax-M3"
+
+  vision:
+    model: "MiniMax-M3"
+  chat:
+    model: "deepseek-v4-flash"
+  image_generation:
+    model: "MiniMax-M3"
+  stt:
+    method: stepfun-asr
+    model: stepaudio-2.5-asr
+    base_url: https://api.stepfun.ai/step_plan/v1
+    api_key_env: STEPFUN_API_KEY
+  tts:
+    model: "MiniMax-M3"
+  browser:
+    # Browser internal LLM — used for the in-browser page-understanding /
+    # summarization / form-fill reasoning loop, not the chat surface.
+    model: "deepseek-v4-flash"
+  delegate_task:
+    # Sub-agent delegation LLM — picks the model per task_rules above,
+    # but the default fallback (and the meta-planner that *chooses* the
+    # sub-agent) runs on deepseek-v4-flash for speed + low cost.
+    model: "deepseek-v4-flash"
+  web_extract:
+    model: "deepseek-v4-flash"
+  web_browser:
+    model: "deepseek-v4-flash"
+
+providers:
+  # ── OpenAI-compatible (default protocol: openai-chat) ──────────
+  # Works with: DeepSeek, MiniMax, Groq, Together, OpenRouter, etc.
+  deepseek:
+    base_url: "https://api.deepseek.com/v1"
+    api_key_env: "DEEPSEEK_API_KEY"
+    models:
+      - id: "deepseek-v4-flash"
+        context_window: 65536
+        vision: false
+        cost_per_1m_input: 0.30
+        cost_per_1m_output: 1.20
+      - id: "deepseek-reasoner"
+        context_window: 65536
+        vision: false
+        cost_per_1m_input: 0.55
+        cost_per_1m_output: 2.19
+
+  minimax:
+    base_url: "https://api.minimax.io/v1"
+    api_key_env: "MINIMAX_API_KEY"
+    models:
+      - id: "MiniMax-M3"
+        context_window: 1048576
+        vision: true
+        cost_per_1m_input: 2.00
+        cost_per_1m_output: 8.00
+      - id: "MiniMax-M2.5"
+        context_window: 1048576
+        vision: false
+        cost_per_1m_input: 0.50
+        cost_per_1m_output: 2.00
+
+  # ── Anthropic protocol ─────────────────────────────────────────
+  # All Claude models via anthropic.com
+  # anthropic:
+  #   base_url: "https://api.anthropic.com/v1"
+  #   api_key_env: "ANTHROPIC_API_KEY"
+  #   protocol: anthropic
+  #   models:
+  #     - id: "claude-sonnet-4-20250514"
+  #       context_window: 200000
+  #       vision: true
+  #       cost_per_1m_input: 3.00
+  #       cost_per_1m_output: 15.00
+
+  # ── Google protocol ────────────────────────────────────────────
+  # All Gemini models via Google AI Studio
+  # google:
+  #   base_url: "https://generativelanguage.googleapis.com/v1beta"
+  #   api_key_env: "GEMINI_API_KEY"
+  #   protocol: google
+  #   models:
+  #     - id: "gemini-2.5-pro"
+  #       context_window: 1048576
+  #       vision: true
+  #       cost_per_1m_input: 1.25
+  #       cost_per_1m_output: 5.00
+
+  # ── Custom protocols ──────────────────────────────────────────
+  # Any provider can be added with register_protocol("name", handler_fn).
+  # See core/llm.py for examples.
+
 permissions:
   risk_levels:
-    low:
-    - tool: read_file
-    - tool: web_search
+    high:
+      - path: "/etc/*"
+      - path: "/usr/*"
+      - path: "/boot/*"
+      - path: "*.pem"
+      - path: "*.key"
+      - path: ".env"
+      - cmd_prefix: "rm -rf"
+      - cmd_prefix: "sudo"
+      - cmd_prefix: "dd if="
     medium:
-    - tool: write_file
-    - tool: bash
-providers:
-  Azure:
-    api_key_env: AZURE_SPEECH_KEY
-    base_url: https://eastus.tts.speech.microsoft.com/cognitiveservices/v1
-    models:
-    - capabilities:
-      - tts
-      context_window: 4096
-      id: zh-HK-HiuMaanNeural
-      voice_id: zh-HK-HiuMaanNeural
-  MiniMax:
-    api_key_env: MINIMAX_API_KEY
-    base_url: https://api.minimax.io/v1
-    models:
-    - capabilities:
-      - chat
-      - tts
-      context_window: 262144
-      id: MiniMax-M3
-    - capabilities:
-      - chat
-      context_window: 262144
-      id: MiniMax-M2.5
-  agnes:
-    api_key_env: AGNES_API_KEY
-    base_url: https://apihub.agnes-ai.com/v1
-    models:
-    - capabilities:
-      - chat
-      - vision
-      context_window: 131072
-      id: agnes-2.0-flash
-    - capabilities:
-      - image_generation
-      context_window: 4096
-      id: agnes-image-2.1-flash
-    - capabilities:
-      - video_generation
-      context_window: 4096
-      id: agnes-video-v2.0
-  deepseek:
-    api_key_env: DEEPSEEK_API_KEY
-    base_url: https://api.deepseek.com/v1
-    models:
-    - capabilities:
-      - chat
-      context_window: 65536
-      cost_per_1m_input: 0.3
-      cost_per_1m_output: 1.2
-      id: deepseek-v4-flash
-  kimi:
-    api_key_env: MOONSHOT_API_KEY
-    base_url: https://api.moonshot.ai/v1
-    models:
-    - capabilities:
-      - chat
-      context_window: 262144
-      cost_per_1m_input: 0.95
-      cost_per_1m_output: 4.0
-      id: kimi-k2.6
-      temperature: 1.0
-      vision: true
-  openai:
-    api_key_env: OPENAI_API_KEY
-    base_url: https://api.openai.com/v1
-    models:
-    - capabilities:
-      - image_generation
-      context_window: 4096
-      id: dall-e-3
-    - capabilities:
-      - chat
-      context_window: 128000
-      id: gpt-4o
-  stepfun:
-    api_key_env: STEPFUN_API_KEY
-    base_url: https://api.stepfun.ai/v1
-    models:
-    - capabilities:
-      - chat
-      - vision
-      context_window: 65536
-      id: step-3.7-flash
-    - capabilities:
-      - chat
-      context_window: 65536
-      id: step-3.5-flash
-    - capabilities:
-      - chat
-      context_window: 65536
-      id: step-3.5-flash-2603
-    - capabilities:
-      - tts
-      context_window: 4096
-      id: step-tts-2
-    - capabilities:
-      - tts
-      context_window: 4096
-      id: stepaudio-2.5-tts
-    - capabilities:
-      - stt
-      context_window: 4096
-      id: stepaudio-2.5-asr
-    - capabilities:
-      - image_generation
-      context_window: 4096
-      id: step-image-edit-2
+      - tool: "write_file"
+      - tool: "bash"
+    low:
+      - tool: "read_file"
+      - tool: "web_search"
+
 tone:
-  default: casual
+  default: "casual"
   profiles:
-    business:
-      description: 正規商業文件 — 專用語
     casual:
-      description: 日常聊天吹水 — 口語短句、emoji OK
+      description: "日常同 Sunny 吹水 — 粵語口語、短句、emoji OK"
+    business:
+      description: "客戶文件 — 合作邀約 tone、唔出個人名、冇 deadline 壓力"
     client-doc:
-      description: 客戶面向文件 — 相接 artifact
+      description: "Client facing 文件 — 零 comment、零 meta、直接出 artifact"
+    teaching:
+      description: "教學文件 — 直接俾 .md、唔問要唔要 extra format"
+    ot-rt:
+      description: "快速執行 — 做完先報、唔逐 step confirm"
     stepwise:
-      description: 逐步確認模式 — 每步彙結論
-tools:
-  browser:
-    enabled: false
-  execute_code:
-    enabled: false
-  image_generate:
-    enabled: false
-  tts:
-    enabled: true
-tts:
-  voice: zh-HK-HiuMaanNeural
-dreaming:
-  schedule: 0 3 * * 0
+      description: "逐步執行 — 每步報 result、等 confirm 先繼續"
+
+fact_check:
+  mode: "normal"
+
+adversarial:
   enabled: true
-self_repair:
-  auto_clean_stuck: true
-  enabled: true
-on_hold_tasks:
-  stale_threshold_days: 7
-  auto_fail_stuck: true
+  # angel_model: "kimi-k2.6"    # Optional: override Angel's model (default: model.default)
+  # devil_model: "kimi-k2.6"    # Optional: override Devil's model (default: model.default)
+  flag_threshold: 0
+  warn_threshold: 2
+
+# ── Tribunal (Multi-Model Consensus) ──
+# Optional — if omitted, Tribunal auto-detects from available models.
+tribunal:
+  # The judge that synthesises the final verdict
+  chief:
+    name: "deepseek-v4-pro"
+    provider: "deepseek"
+
+  # The panel of judges that evaluate independently
+  bench:
+    - name: "deepseek-v4-flash"
+      provider: "deepseek"
+      role: "analyst"
+    - name: "MiniMax-M3"
+      provider: "minimax"
+      role: "creative"
+    # Add more judges as needed:
+    # - name: "claude-sonnet-4"
+    #   provider: "anthropic"
+    #   role: "cautious"
