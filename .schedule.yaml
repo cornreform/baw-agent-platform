@@ -1,0 +1,28 @@
+- command: '!cd /app && python3 -c "import sys; sys.path.insert(0, \"/app\"); from core.evolve import analyze, auto_optimize, flush_behavior; flush_behavior(); r=analyze(); print(f\"[Evolve] {r[\\\"tool_calls\\\"]} tool calls, {r[\\\"success_rate\\\"]}% success, {len(r[\\\"recommendations\\\"])} patterns\"); o=auto_optimize(dry_run=True); print(f\"[Evolve] optimize dry-run: {len(o[\\\"patches\\\"])} patches\")"'
+  cron: 0 */6 * * *
+  description: 每 6 小時自動 analyze + auto_optimize dry-run
+  enabled: true
+  name: evolve-analyze
+  skill: ''
+  skill_args: ''
+- command: baw --skill-run system-health
+  cron: 0 * * * *
+  description: 每小時系統健康檢查 (CPU/記憶體/磁碟)
+  enabled: true
+  name: system-health-check
+  skill: ''
+  skill_args: ''
+- command: baw --skill-run platform-test
+  cron: 0 9 * * *
+  description: 每日 BAW Platform 完整測試
+  enabled: true
+  name: daily-platform-test
+  skill: ''
+  skill_args: ''
+- command: baw --skill-run daily-git-push
+  cron: 30 23 * * *
+  description: 每晚自動 push git commits
+  enabled: true
+  name: daily-git-push
+  skill: ''
+  skill_args: ''

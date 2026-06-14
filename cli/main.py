@@ -290,6 +290,21 @@ COMMANDS: dict[str, dict] = {
         "aliases": ["tchat", "tc"],
         "usage": "baw tui-chat",
     },
+    "evolve": {
+        "short": "🧬  Self-evolution engine — analyze & optimize",
+        "long": (
+            "Run BAW's self-evolution pipeline: analyze behavior logs,\n"
+            "detect patterns, and optionally auto-optimize SOUL.md + config.\n"
+            "  analyze    — Scan last 7 days of behavior logs for patterns\n"
+            "  optimize   — Dry-run auto-optimization (add --apply to write)\n"
+            "  stats      — One-line evolution summary"
+        ),
+        "example": "baw evolve analyze",
+        "category": "monitor",
+        "aliases": ["evo", "ev"],
+        "usage": "baw evolve [analyze|optimize|stats]",
+        "subcommands": ["analyze", "optimize", "stats"],
+    },
     "restart": {
         "short": "🔄  Restart the BAW container",
         "long": (
@@ -545,6 +560,9 @@ def main():
         elif canonical == "court":
             from cli.commands.court_cmd import main as _court_main
             _court_main([subcommand] + args if subcommand else [])
+        elif canonical == "evolve":
+            from cli.commands.evolve_cmd import main as _evolve_main
+            _evolve_main([subcommand] + args if subcommand else [])
     except KeyboardInterrupt:
         console.print("\n[baw.dim]👋 Bye.[/baw.dim]")
     except Exception as e:
