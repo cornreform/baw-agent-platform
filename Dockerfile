@@ -4,6 +4,8 @@ FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # useradd cached (never changes)
@@ -28,7 +30,7 @@ RUN mkdir -p /home/baw/.local/bin && \
 
 USER baw
 ENV HOME=/home/baw
-ENV PATH=/home/baw/.local/bin:$PATH
+ENV PATH=/home/baw/.local/bin:/home/baw/npm/node_modules/.bin:$PATH
 # Default log level: INFO. Override with BAW_LOG_LEVEL=DEBUG for verbose.
 ENV BAW_LOG_LEVEL=INFO
 

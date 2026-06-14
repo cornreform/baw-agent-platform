@@ -13,8 +13,28 @@ SENSITIVE_PATHS = [
 ]
 
 def _is_sensitive(cmd: str) -> tuple[bool, str]:
-    """Check if command tries to read sensitive system files."""
+    """Check if command tries to read sensitive files or execute dangerous operations."""
     cmd_lower = cmd.lower().strip()
+
+    # Dangerous command prefixes (destructive operations)
+    DANGEROUS_PREFIXES = [
+        "rm -rf", "rm -fr", "rm --recursive --force",
+        "sudo ", "su -", "su root",
+        "dd if=", "mkfs", "mkfs.ext", "mkfs.ntfs",
+        "> /dev/sda", "> /dev/nvme", "> /dev/hd",
+        "curl .*\|.*sh", "wget .*\|.*sh",  # pipe-to-shell
+        "eval\b", "exec\b",
+        "chmod 777 /", "chmod -R 777 /",
+        "chown -R root", "chown -R 0:0",
+        "systemctl stop", "systemctl disable",
+        "kill -9 1", "kill -9 init",
+        "reboot", "shutdown", "poweroff", "halt",
+        "del /f /s /q", "rd /s /q",  # Windows destructive
+    ]
+    for dp in DANGEROUS_PREFIXES:
+        if dp in cmd_lower:
+            return True, f"❌ Blocked — dangerous command detected: '{dp.strip()}'"
+
     # Block cat/less/more/head/tail of sensitive files
     for sp in SENSITIVE_PATHS:
         if sp in cmd_lower:
