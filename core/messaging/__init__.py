@@ -530,6 +530,14 @@ class BaseConnector(ABC):
                 except Exception as e:
                     return f"❌ Evolution stats error: {e}"
 
+            # ── Doctor / selftest ──
+            if cmd in ("doctor", "dr", "health"):
+                try:
+                    from tools.selftest import selftest as _st
+                    return _st(full=True)
+                except Exception as e:
+                    return f"❌ Self-test error: {e}"
+
             # ── Set config value (persist to config.yaml) ──
             if cmd == "set" and arg:
                 parts = arg.strip().split(maxsplit=1)

@@ -207,7 +207,12 @@ class Scheduler:
         return fired
 
     def _execute(self, task: ScheduledTask, now: datetime) -> str:
-        """Delegate a scheduled task to the background executor."""
+        """Delegate a scheduled task to the background executor.
+
+        Supports two modes:
+          - Normal: runs through BAW agent loop (default)
+          - Shell:  if command starts with '!', runs as raw shell command
+        """
         task_id = f"sched-{int(now.timestamp())}-{uuid.uuid4().hex[:6]}"
         task_dir = self.data_dir / TASKS_DIR / task_id
         task_dir.mkdir(parents=True, exist_ok=True)
@@ -221,7 +226,21 @@ class Scheduler:
         (task_dir / "prompt.txt").write_text(prompt or task.name, encoding="utf-8")
         (task_dir / "status.txt").write_text("running", encoding="utf-8")
 
-        # Spawn background
+        # Shell command mode: if command starts with '!', run directly
+        raw_cmd = prompt or task.name
+        if raw_cmd.startswith("!"):
+            shell_cmd = raw_cmd[1:].strip()
+            import subprocess as sp
+            sp.Popen(
+                shell_cmd,
+                shell=True,
+                stdout=(task_dir / "stdout.txt").open("w"),
+                stderr=(task_dir / "stderr.txt").open("w"),
+                cwd=str(self.data_dir.parent),
+            )
+            return task_id
+
+        # BAW agent mode
         import subprocess as sp
         baw_path = __import__("sys").argv[0] if __import__("sys").argv else "baw"
         sp.Popen(

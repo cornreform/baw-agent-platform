@@ -182,6 +182,15 @@ Examples:
     for c in connectors:
         c.start()
 
+    # ── Start background scheduler (cron tasks) ──
+    try:
+        from core.scheduler import Scheduler
+        _sched = Scheduler(Path.home() / ".baw")
+        _sched.start()
+        logger.info("[Scheduler] Background daemon started")
+    except Exception as e:
+        logger.warning(f"[Scheduler] Failed to start: {e}")
+
     logger.info(f"🤖 BAW Bot running ({len(connectors)} connector(s))")
 
     # ── System guards: config validation + session auto-save (kimi B1+B2) ──
