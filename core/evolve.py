@@ -9,6 +9,8 @@ Layer 3 — Auto-Optimization: patch SOUL.md, config, or prompts based on detect
 import json
 import time
 import re
+import threading
+import subprocess as _sp
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
@@ -252,12 +254,175 @@ def _empty_analysis() -> dict:
     }
 
 
+# ── Safety: Git Snapshot ─────────────────────────────────────────
+
+import subprocess as _sp
+
+_GIT_LOCK = threading.Lock() if "threading" in dir() else None
+
+
+def _git_snapshot(tag_reason: str = "auto-optimize") -> dict:
+    """Create a git snapshot before any modifications.
+
+    Returns {"ok": bool, "commit": str, "error": str}.
+    """
+    data_dir = _data_dir()
+    git_dir = data_dir.parent if (data_dir.parent / ".git").exists() else data_dir
+    if not (git_dir / ".git").exists():
+        return {"ok": False, "commit": "", "error": "Not a git repo"}
+
+    try:
+        # Stage any current changes first for a clean snapshot
+        _sp.run(["git", "-C", str(git_dir), "add", "-A"], capture_output=True, timeout=10)
+        result = _sp.run(
+            ["git", "-C", str(git_dir), "commit", "-m", f"[evolve-snapshot] {tag_reason}", "--allow-empty"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode in (0, 1):
+            # Get the commit hash
+            hash_res = _sp.run(
+                ["git", "-C", str(git_dir), "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=10,
+            )
+            commit_hash = hash_res.stdout.strip() if hash_res.returncode == 0 else ""
+            return {"ok": True, "commit": commit_hash, "error": ""}
+        return {"ok": False, "commit": "", "error": result.stderr[:200]}
+    except Exception as e:
+        return {"ok": False, "commit": "", "error": str(e)[:200]}
+
+
+def _git_rollback(commit_hash: str, reason: str = "auto-rollback") -> dict:
+    """Revert to a previous git snapshot.
+
+    Returns {"ok": bool, "error": str}.
+    """
+    data_dir = _data_dir()
+    git_dir = data_dir.parent if (data_dir.parent / ".git").exists() else data_dir
+    if not (git_dir / ".git").exists():
+        return {"ok": False, "error": "Not a git repo"}
+
+    try:
+        _sp.run(
+            ["git", "-C", str(git_dir), "revert", "HEAD", "--no-edit", "--autocommit"],
+            capture_output=True, text=True, timeout=15,
+        )
+        return {"ok": True, "error": ""}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
+# ── Safety: Cross-Check Verify ───────────────────────────────────
+
+def _verify_soul(path: Path) -> dict:
+    """Verify SOUL.md is valid markdown and contains required sections."""
+    errors = []
+    if not path.exists():
+        return {"ok": False, "errors": ["File not found"]}
+    try:
+        text = path.read_text(encoding="utf-8")
+        if not text.strip():
+            errors.append("Empty file")
+        if "# " not in text:
+            errors.append("Missing heading")
+        if "BAW" not in text:
+            errors.append("Missing BAW identity reference")
+    except Exception as e:
+        errors.append(str(e))
+    return {"ok": not errors, "errors": errors}
+
+
+def _verify_config(path: Path) -> dict:
+    """Verify config.yaml is valid YAML."""
+    errors = []
+    if not path.exists():
+        return {"ok": False, "errors": ["File not found"]}
+    try:
+        import yaml
+        yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        errors.append(f"YAML syntax error: {e}")
+    return {"ok": not errors, "errors": errors}
+
+
+# ── Pending Approval Queue (P3-1) ─────────────────────────────────
+
+_PEND_PATH = _log_dir() / "pending_approvals.json"
+
+
+def _load_pending() -> list[dict]:
+    if not _PEND_PATH.exists():
+        return []
+    try:
+        return json.loads(_PEND_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _save_pending(pending: list[dict]):
+    _PEND_PATH.write_text(json.dumps(pending, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def queue_for_approval(recommendations: list[dict]) -> list[dict]:
+    """Queue auto-optimization recommendations for user approval.
+
+    Returns the list of newly queued items.
+    """
+    pending = _load_pending()
+    newly_queued = []
+    for rec in recommendations:
+        # Deduplicate by signature
+        sig = f"{rec.get('type')}:{rec.get('tool', '')}:{rec.get('suggestion', '')[:60]}"
+        if not any(p.get("_sig") == sig for p in pending):
+            item = dict(rec)
+            item["_sig"] = sig
+            item["queued_at"] = time.time()
+            item["status"] = "pending"
+            newly_queued.append(item)
+            pending.append(item)
+    if newly_queued:
+        _save_pending(pending)
+    return newly_queued
+
+
+def get_pending_approvals() -> list[dict]:
+    """Return all pending approvals."""
+    return [p for p in _load_pending() if p.get("status") == "pending"]
+
+
+def approve_pending(index: int, approved: bool = True) -> dict:
+    """Approve or reject a pending optimization by index.
+
+    Returns {"ok": bool, "action": str, "error": str}.
+    """
+    pending = _load_pending()
+    active = [p for p in pending if p.get("status") == "pending"]
+    if index < 0 or index >= len(active):
+        return {"ok": False, "action": "", "error": "Invalid index"}
+
+    target = active[index]
+    target["status"] = "approved" if approved else "rejected"
+    target["decided_at"] = time.time()
+    _save_pending(pending)
+
+    if approved:
+        # Re-run auto_optimize for just this recommendation (not dry_run)
+        result = auto_optimize_single(target)
+        return {"ok": result.get("ok", True), "action": "applied", "error": result.get("error", "")}
+    return {"ok": True, "action": "rejected", "error": ""}
+
+
 # ── Layer 3: Auto-Optimization ────────────────────────────────────
 
 def auto_optimize(dry_run: bool = False) -> dict:
     """Run analysis and apply optimizations based on detected patterns.
 
-    Called during weekly dreaming.
+    Safety-first flow:
+      1. Git snapshot before any writes (P3-4)
+      2. Dry-run collects patches; real run needs explicit --apply (P3-1)
+      3. After each write, cross-check verify (P3-3)
+      4. On verify failure, auto-rollback (P3-2)
+
+    Called during weekly dreaming or cron analyze.
     Returns a report of what was changed.
     """
     # Flush any buffered entries first
@@ -270,6 +435,9 @@ def auto_optimize(dry_run: bool = False) -> dict:
         "soul_patched": False,
         "config_patched": False,
         "patches": [],
+        "snapshot": None,
+        "rolled_back": False,
+        "verify_errors": [],
     }
 
     # Only act if there are meaningful patterns
@@ -277,60 +445,152 @@ def auto_optimize(dry_run: bool = False) -> dict:
     if not recs:
         return result
 
+    # ── P3-1: Dry-run approval queue ──
+    if dry_run:
+        queued = queue_for_approval(recs)
+        result["patches"] = [f"[QUEUED for approval] {r.get('suggestion', '')}" for r in queued]
+        result["queued_count"] = len(queued)
+        return result
+
+    # ── P3-4: Git snapshot before writes ──
+    snapshot = _git_snapshot(tag_reason="evolve-auto-optimize")
+    result["snapshot"] = snapshot
+    if not snapshot.get("ok"):
+        result["patches"].append(f"[WARNING] Git snapshot failed: {snapshot.get('error', '')}")
+        # Continue anyway — snapshot is best-effort safety net
+
+    soul_path = _data_dir() / "SOUL.md"
+    cfg_path = _data_dir() / "config.yaml"
+    files_modified = []
+
     # ── Patch SOUL.md based on frequent corrections ──
     correction_recs = [r for r in recs if r.get("type") == "frequent_corrections"]
-    if correction_recs and not dry_run:
+    if correction_recs:
         correction_count = correction_recs[0].get("count", 0)
-        if correction_count >= 5:
-            soul_path = _data_dir() / "SOUL.md"
-            if soul_path.exists():
-                soul = soul_path.read_text(encoding="utf-8")
-                # Inject a learning section if not already present
-                learn_marker = "<!-- evolve:learned-preferences -->"
-                if learn_marker not in soul:
-                    correction_texts = correction_recs[0].get("examples", [])
-                    pref_note = (
-                        f"\n\n{learn_marker}\n"
-                        f"## Evolving Preferences (auto-detected {datetime.now().strftime('%Y-%m-%d')})\n"
-                        f"\n"
-                        f"Recent corrections suggest adjusting response style:\n"
-                        + "\n".join(f"- User said: '{c[:60]}'" for c in correction_texts[:3])
-                        + "\n"
-                    )
-                    soul += pref_note
-                    soul_path.write_text(soul, encoding="utf-8")
-                    result["soul_patched"] = True
-                    result["patches"].append(
-                        f"Added evolving preferences to SOUL.md ({correction_count} corrections detected)"
-                    )
+        if correction_count >= 5 and soul_path.exists():
+            soul = soul_path.read_text(encoding="utf-8")
+            learn_marker = "<!-- evolve:learned-preferences -->"
+            if learn_marker not in soul:
+                correction_texts = correction_recs[0].get("examples", [])
+                pref_note = (
+                    f"\n\n{learn_marker}\n"
+                    f"## Evolving Preferences (auto-detected {datetime.now().strftime('%Y-%m-%d')})\n"
+                    f"\n"
+                    f"Recent corrections suggest adjusting response style:\n"
+                    + "\n".join(f"- User said: '{c[:60]}'" for c in correction_texts[:3])
+                    + "\n"
+                )
+                soul += pref_note
+                soul_path.write_text(soul, encoding="utf-8")
+                files_modified.append(soul_path)
+                result["soul_patched"] = True
+                result["patches"].append(
+                    f"Added evolving preferences to SOUL.md ({correction_count} corrections detected)"
+                )
 
     # ── Patch config based on failure patterns ──
     failure_recs = [r for r in recs if r.get("type") == "high_failure_rate"]
-    if failure_recs and not dry_run:
+    if failure_recs and cfg_path.exists():
+        import yaml
+        config = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        config.setdefault("evolve", {}).setdefault("known_issues", [])
+        for r in failure_recs:
+            issue = {
+                "tool": r["tool"],
+                "rate": r["rate"],
+                "detected": datetime.now().isoformat(),
+            }
+            existing = [i for i in config["evolve"]["known_issues"] if i.get("tool") == r["tool"]]
+            if not existing:
+                config["evolve"]["known_issues"].append(issue)
+                result["patches"].append(f"Logged failure issue for tool '{r['tool']}' ({r['rate']})")
+                result["config_patched"] = True
+
+        if result["config_patched"]:
+            cfg_path.write_text(
+                yaml.dump(config, default_flow_style=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            files_modified.append(cfg_path)
+
+    # ── P3-3: Cross-check verify ──
+    verify_errors = []
+    if soul_path in files_modified:
+        v = _verify_soul(soul_path)
+        if not v["ok"]:
+            verify_errors.extend([f"SOUL.md: {e}" for e in v["errors"]])
+    if cfg_path in files_modified:
+        v = _verify_config(cfg_path)
+        if not v["ok"]:
+            verify_errors.extend([f"config.yaml: {e}" for e in v["errors"]])
+
+    result["verify_errors"] = verify_errors
+
+    # ── P3-2: Auto-rollback on verify failure ──
+    if verify_errors and snapshot.get("ok"):
+        rollback = _git_rollback(snapshot["commit"], reason="verify-failure")
+        result["rolled_back"] = rollback.get("ok", False)
+        if result["rolled_back"]:
+            result["patches"].append(f"[ROLLBACK] Reverted due to verify errors: {'; '.join(verify_errors)}")
+            result["soul_patched"] = False
+            result["config_patched"] = False
+        else:
+            result["patches"].append(f"[ROLLBACK FAILED] {rollback.get('error', '')}")
+
+    return result
+
+
+def auto_optimize_single(rec: dict) -> dict:
+    """Apply a single approved recommendation (used by approval queue)."""
+    rec_type = rec.get("type", "")
+    result = {"ok": True, "error": "", "applied": False}
+
+    # Re-use the same safety flow
+    snapshot = _git_snapshot(tag_reason="evolve-approved-item")
+
+    if rec_type == "frequent_corrections":
+        soul_path = _data_dir() / "SOUL.md"
+        if soul_path.exists():
+            soul = soul_path.read_text(encoding="utf-8")
+            learn_marker = "<!-- evolve:learned-preferences -->"
+            if learn_marker not in soul:
+                pref_note = (
+                    f"\n\n{learn_marker}\n"
+                    f"## Evolving Preferences (approved {datetime.now().strftime('%Y-%m-%d')})\n"
+                    f"\n"
+                    f"Recent corrections suggest adjusting response style.\n"
+                )
+                soul += pref_note
+                soul_path.write_text(soul, encoding="utf-8")
+                v = _verify_soul(soul_path)
+                if not v["ok"]:
+                    _git_rollback(snapshot.get("commit", "HEAD"), reason="verify-failure")
+                    return {"ok": False, "error": "; ".join(v["errors"])}
+                result["applied"] = True
+
+    elif rec_type == "high_failure_rate":
         import yaml
         cfg_path = _data_dir() / "config.yaml"
         if cfg_path.exists():
             config = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-            # Log failures in config for transparency (don't auto-disable tools)
             config.setdefault("evolve", {}).setdefault("known_issues", [])
-            for r in failure_recs:
-                issue = {
-                    "tool": r["tool"],
-                    "rate": r["rate"],
-                    "detected": datetime.now().isoformat(),
-                }
-                # Avoid duplicates
-                existing = [i for i in config["evolve"]["known_issues"] if i.get("tool") == r["tool"]]
-                if not existing:
-                    config["evolve"]["known_issues"].append(issue)
-                    result["patches"].append(f"Logged failure issue for tool '{r['tool']}' ({r['rate']})")
-                    result["config_patched"] = True
-
-            if result["config_patched"]:
+            issue = {
+                "tool": rec.get("tool", ""),
+                "rate": rec.get("rate", ""),
+                "detected": datetime.now().isoformat(),
+            }
+            existing = [i for i in config["evolve"]["known_issues"] if i.get("tool") == rec.get("tool")]
+            if not existing:
+                config["evolve"]["known_issues"].append(issue)
                 cfg_path.write_text(
                     yaml.dump(config, default_flow_style=False, allow_unicode=True),
                     encoding="utf-8",
                 )
+                v = _verify_config(cfg_path)
+                if not v["ok"]:
+                    _git_rollback(snapshot.get("commit", "HEAD"), reason="verify-failure")
+                    return {"ok": False, "error": "; ".join(v["errors"])}
+                result["applied"] = True
 
     return result
 
