@@ -538,13 +538,21 @@ class BaseConnector(ABC):
                 except Exception as e:
                     return f"❌ Self-test error: {e}"
 
-            # ── Test suite ──
-            if cmd in ("test", "t"):
+            # ── Real-World Validator ──
+            if cmd in ("validate", "val", "v"):
                 try:
-                    from core.test_runner import dispatch_test_command
-                    return dispatch_test_command(arg)
+                    from core.validator import validate_command
+                    return validate_command(arg)
                 except Exception as e:
-                    return f"❌ Test runner error: {e}"
+                    return f"❌ Validator error: {e}"
+
+            # ── Tribunal (multi-model consensus) ──
+            if cmd == "tribunal":
+                try:
+                    from core.tribunal import tribunal_command
+                    return tribunal_command(arg)
+                except Exception as e:
+                    return f"❌ Tribunal error: {e}"
 
             # ── Watchdog alerts ──
             if cmd in ("watchdog", "wd"):
@@ -2137,11 +2145,16 @@ class BaseConnector(ABC):
             "/set `<key>` `<value>` — Persist config to config.yaml\n"
             "/reload — Hot-reload tools & config (no restart)\n"
             "/capability `<cmd>` — Manage capabilities\n\n"
-            "**🧪 Tests:**\n"
-            "/test — Quick health check\n"
-            "/test all — Run full test suite\n"
-            "/test unit — Unit tests only\n"
-            "/test config|evolve|memory|watchdog|scheduler|git — Module tests\n\n"
+            "**🧪 Validate (REAL tests):**\n"
+            "/validate — Run all real-world validations\n"
+            "/validate api — DeepSeek + MiniMax live API calls\n"
+            "/validate evolve — Evolve logging (real write + read)\n"
+            "/validate memory — Memory read/write\n"
+            "/validate telegram — Bot connectivity\n"
+            "/validate disk — Disk space check\n"
+            "/validate git — Git status\n\n"
+            "**🏛️ Tribunal (multi-model consensus):**\n"
+            "/tribunal <question> — Ask multiple judges, get unified verdict\n\n"
             "**🧠 Memory:**\n"
             "/memory `<text>` — Save a memory\n"
             "/search `<query>` — Search memories\n"
