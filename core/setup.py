@@ -522,20 +522,105 @@ def cmd_setup(data_dir: Path):
         fc = _input("Fact check mode", default=current_fc)
     cfg.setdefault("fact_check", {})["mode"] = fc
 
-    # ── 6. Messaging (optional) ──
-    _print_section("6. Messaging Platform (optional)")
-    _print_note("Connect BAW to Telegram, Discord, etc. Skip this for CLI-only use.")
-    if _confirm("Configure Telegram bot?", default=False):
-        token = os.environ.get("BAW_TELEGRAM_TOKEN", "")
-        if not token:
-            token = input(f"  {C.CYAN}?{C.RESET} Telegram Bot Token: ").strip()
-        if token:
-            cfg.setdefault("telegram", {})["token"] = token
-            _ok("Telegram configured")
+    # ── 6. Messaging Platforms (optional) ──
+    _print_section("6. Messaging Platforms (optional)")
+    _print_note("Connect BAW to chat platforms. Skip for CLI-only use.")
+    _print_note("You can configure multiple platforms. BAW will run all of them.")
+
+    platforms_configured = []
+
+    while True:
+        _print_note("")
+        _print_note("Available platforms:")
+        _print_note("  1. Telegram")
+        _print_note("  2. Discord")
+        _print_note("  3. Slack (Socket Mode)")
+        _print_note("  4. Matrix")
+        _print_note("  5. Signal")
+        _print_note("  6. WhatsApp")
+        _print_note("  0. Done / Skip")
+        choice = _input("Configure platform (0-6)", default="0")
+
+        if choice == "0" or choice == "":
+            break
+        elif choice == "1":
+            token = os.environ.get("BAW_TELEGRAM_TOKEN", "")
+            if not token:
+                token = input(f"  {C.CYAN}?{C.RESET} Telegram Bot Token: ").strip()
+            if token:
+                cfg.setdefault("telegram", {})["token"] = token
+                _ok("Telegram configured")
+                platforms_configured.append("Telegram")
+            else:
+                _print_note("No token — skipped")
+        elif choice == "2":
+            token = os.environ.get("BAW_DISCORD_TOKEN", "")
+            if not token:
+                token = input(f"  {C.CYAN}?{C.RESET} Discord Bot Token: ").strip()
+            if token:
+                prefix = _input("  Command prefix (e.g. 'baw ')", default="baw ")
+                cfg.setdefault("discord", {})["token"] = token
+                cfg["discord"]["prefix"] = prefix
+                _ok("Discord configured")
+                platforms_configured.append("Discord")
+            else:
+                _print_note("No token — skipped")
+        elif choice == "3":
+            bot_token = os.environ.get("BAW_SLACK_BOT_TOKEN", "")
+            if not bot_token:
+                bot_token = input(f"  {C.CYAN}?{C.RESET} Slack Bot Token (xoxb-...): ").strip()
+            app_token = os.environ.get("BAW_SLACK_APP_TOKEN", "")
+            if not app_token:
+                app_token = input(f"  {C.CYAN}?{C.RESET} Slack App Token (xapp-...): ").strip()
+            if bot_token and app_token:
+                cfg.setdefault("slack", {})["bot_token"] = bot_token
+                cfg["slack"]["app_token"] = app_token
+                _ok("Slack configured (Socket Mode)")
+                platforms_configured.append("Slack")
+            else:
+                _print_note("Both tokens required — skipped")
+        elif choice == "4":
+            homeserver = _input("Matrix homeserver", default="https://matrix.org")
+            username = input(f"  {C.CYAN}?{C.RESET} Matrix username (@user:matrix.org): ").strip()
+            token = input(f"  {C.CYAN}?{C.RESET} Access token (or leave blank for password): ").strip()
+            if username:
+                cfg.setdefault("matrix", {})["homeserver"] = homeserver
+                cfg["matrix"]["username"] = username
+                if token:
+                    cfg["matrix"]["access_token"] = token
+                else:
+                    pwd = input(f"  {C.CYAN}?{C.RESET} Password: ").strip()
+                    if pwd:
+                        cfg["matrix"]["password"] = pwd
+                _ok("Matrix configured")
+                platforms_configured.append("Matrix")
+            else:
+                _print_note("No username — skipped")
+        elif choice == "5":
+            phone = input(f"  {C.CYAN}?{C.RESET} Signal phone number (+1555...): ").strip()
+            if phone:
+                cfg.setdefault("signal", {})["phone"] = phone
+                _ok("Signal configured (requires signal-cli daemon)")
+                platforms_configured.append("Signal")
+            else:
+                _print_note("No phone — skipped")
+        elif choice == "6":
+            token = input(f"  {C.CYAN}?{C.RESET} WhatsApp Cloud API token: ").strip()
+            phone_id = input(f"  {C.CYAN}?{C.RESET} Phone Number ID: ").strip()
+            if token and phone_id:
+                cfg.setdefault("whatsapp", {})["token"] = token
+                cfg["whatsapp"]["phone_number_id"] = phone_id
+                _ok("WhatsApp configured (requires public webhook)")
+                platforms_configured.append("WhatsApp")
+            else:
+                _print_note("Both token and phone ID required — skipped")
         else:
-            _print_note("No token provided — skip Telegram for now")
+            _warn("Invalid choice — enter 0-6")
+
+    if platforms_configured:
+        _print_note(f"Configured: {', '.join(platforms_configured)}")
     else:
-        _print_note("Skipped. Add later: baw --cfg set telegram.token <token>")
+        _print_note("No messaging platforms configured. Add later: baw --cfg set <platform>.<key> <value>")
 
     # ── Save ──
     save_config(data_dir, cfg)
@@ -549,8 +634,8 @@ def cmd_setup(data_dir: Path):
     _print_note("  1. Run 'baw --doctor'     — verify everything works")
     _print_note("  2. Run 'baw \"hello\"'      — test the agent")
     _print_note("  3. Run 'baw --cfg list'   — review all settings")
-    if cfg.get("telegram", {}).get("token"):
-        _print_note("  4. Send /start to your bot — test Telegram")
+    if platforms_configured:
+        _print_note(f"  4. Start messaging: baw-bot — run {', '.join(platforms_configured)}")
     print()
 
 

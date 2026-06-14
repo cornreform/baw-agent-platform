@@ -92,11 +92,22 @@ Next steps:
 | **Court** | true / false | 是否啟用 Angel/Devil 法庭 |
 | **Fact check** | off / normal / strict | 事實查證級別 |
 
-### 2.5 Messaging（可選）
+### 2.5 Messaging Platforms（可選）
 
-Telegram bot token 放在最後，是選填項。純 CLI 使用可以直接 skip。
+BAW 支援多個聊天平台，可以同時運行。純 CLI 使用可以全部 skip。
 
-> 💡 之後可以用 `baw --cfg set telegram.token <token>` 補加。
+設定精靈會顯示平台選單（1-6），你可以配置多個：
+
+| 平台 | 需要什麼 | 難度 |
+|------|---------|------|
+| Telegram | Bot Token（@BotFather）| ⭐ 最簡單 |
+| Discord | Bot Token + 邀請 bot 入 server | ⭐⭐ |
+| Slack | Bot Token + App Token（Socket Mode）| ⭐⭐ |
+| Matrix | Homeserver + username + token | ⭐⭐ |
+| Signal | signal-cli daemon + 電話號碼 | ⭐⭐⭐ |
+| WhatsApp | Meta Developer 帳戶 + webhook | ⭐⭐⭐⭐ |
+
+> 💡 之後可以用 `baw --cfg set <platform>.<key> <value>` 補加或修改。
 
 ---
 
@@ -142,6 +153,18 @@ A: API key 錯誤或已過期。到 provider 網站檢查或重新生成。
 
 **Q: `⚠️ No Telegram token`**
 A: 這是警告不是錯誤。純 CLI 使用不需要 Telegram。
+
+**Q: `❌ Slack 連接失敗`**
+A: 確認兩個 token 都有：bot_token （xoxb-）和 app_token （xapp-）。在 Slack API 網站檢查 Socket Mode 是否啟用。
+
+**Q: `❌ Discord 無法讀取消息`**
+A: 確認在 Discord Developer Portal 啟用了 "Message Content Intent"。
+
+**Q: `❌ Matrix 登入失敗`**
+A: 嘗試用 access_token 而不是 password。在 Element 設定 → Help & About → Access Token 可以找到。
+
+**Q: `❌ signal-cli not found`**
+A: Signal 需要獨立安裝 signal-cli daemon。見 https://github.com/AsamK/signal-cli
 
 ---
 

@@ -110,6 +110,7 @@ Examples:
     from core.messaging.signal import SignalConnector
     from core.messaging.whatsapp import WhatsAppConnector
     from core.messaging.matrix import MatrixConnector
+    from core.messaging.slack import SlackConnector
 
     # Force registration by importing all connector modules
     # (The @register decorator auto-registers them)

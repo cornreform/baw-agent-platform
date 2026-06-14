@@ -292,9 +292,10 @@ baw --cfg check                   # Validate required sections
 <table>
   <tr><th>Platform</th><th>Status</th><th>Setup</th></tr>
   <tr><td>📱 Telegram</td><td>✅ Full (voice STT, TTS, images)</td><td><code>@BotFather</code> → token → <code>baw-bot</code></td></tr>
-  <tr><td>💬 Discord</td><td>✅ Full support</td><td>Discord Developer Portal → token</td></tr>
-  <tr><td>🔊 Signal</td><td>⚙️ signal-cli required</td><td><code>signal-cli</code> daemon + config</td></tr>
-  <tr><td>💚 WhatsApp</td><td>⚙️ Cloud/Business API</td><td>Meta Developer account</td></tr>
+  <tr><td>💬 Discord</td><td>✅ Full support</td><td>Discord Developer Portal → token → prefix</td></tr>
+  <tr><td>💚 Slack</td><td>✅ Socket Mode (no public URL)</td><td>Slack API → bot + app token</td></tr>
+  <tr><td>📢 Signal</td><td>⚙️ signal-cli required</td><td><code>signal-cli</code> daemon + config</td></tr>
+  <tr><td>💚 WhatsApp</td><td>⚙️ Cloud/Business API</td><td>Meta Developer account → webhook</td></tr>
   <tr><td>🧩 Matrix</td><td>✅ Full support</td><td>Any Matrix account + homeserver</td></tr>
 </table>
 
@@ -304,12 +305,84 @@ baw-bot
 
 # Start specific platform
 baw-bot --platform telegram
+baw-bot --platform discord
+baw-bot --platform slack
 
 # List available connectors
 baw-bot --list
 
-# Quick Telegram setup with CLI token
-baw-bot --token "***"</pre>
+# Quick setup with CLI token
+baw-bot --token "YOUR_TELEGRAM_TOKEN"</pre>
+
+<h4>Platform Quick Setup</h4>
+
+<details>
+<summary>📱 Telegram</summary>
+<ol>
+  <li>Message <code>@BotFather</code> on Telegram → <code>/newbot</code></li>
+  <li>Copy the token (looks like <code>123456:ABC-DEF...</code>)</li>
+  <li>Run <code>baw --setup</code> → select Telegram → paste token</li>
+  <li>Start: <code>baw-bot</code></li>
+</ol>
+</details>
+
+<details>
+<summary>💬 Discord</summary>
+<ol>
+  <li>Go to <a href="https://discord.com/developers/applications">Discord Developer Portal</a> → New Application → Bot</li>
+  <li>Enable "Message Content Intent"</li>
+  <li>Copy Bot Token</li>
+  <li>Run <code>baw --setup</code> → select Discord → paste token → set prefix</li>
+  <li>Invite bot to your server with <code>bot</code> + <code>Send Messages</code> scopes</li>
+  <li>Start: <code>baw-bot --platform discord</code></li>
+</ol>
+</details>
+
+<details>
+<summary>💚 Slack (Socket Mode)</summary>
+<ol>
+  <li>Go to <a href="https://api.slack.com/apps">Slack API</a> → Create New App → From scratch</li>
+  <li>Enable <strong>Socket Mode</strong> → Generate App-Level Token (scope: <code>connections:write</code>)</li>
+  <li>OAuth & Permissions → Add Bot Token Scopes: <code>chat:write</code>, <code>app_mentions:read</code>, <code>im:history</code></li>
+  <li>Install to workspace → copy <strong>Bot User OAuth Token</strong> (<code>xoxb-...</code>)</li>
+  <li>Basic Info → copy <strong>App-Level Token</strong> (<code>xapp-...</code>)</li>
+  <li>Run <code>baw --setup</code> → select Slack → paste both tokens</li>
+  <li>Start: <code>baw-bot --platform slack</code></li>
+</ol>
+</details>
+
+<details>
+<summary>🧩 Matrix</summary>
+<ol>
+  <li>Register account on any homeserver (e.g. <a href="https://matrix.org">matrix.org</a>)</li>
+  <li>Get access token: Settings → Help & About → Access Token</li>
+  <li>Run <code>baw --setup</code> → select Matrix → enter homeserver + username + token</li>
+  <li>Start: <code>baw-bot --platform matrix</code></li>
+</ol>
+</details>
+
+<details>
+<summary>📢 Signal</summary>
+<ol>
+  <li>Install <code>signal-cli</code>: <code>https://github.com/AsamK/signal-cli</code></li>
+  <li>Register: <code>signal-cli -u +1555... register</code></li>
+  <li>Verify: <code>signal-cli -u +1555... verify &lt;code&gt;</code></li>
+  <li>Start daemon: <code>signal-cli -u +1555... daemon</code></li>
+  <li>Run <code>baw --setup</code> → select Signal → enter phone number</li>
+  <li>Start: <code>baw-bot --platform signal</code></li>
+</ol>
+</details>
+
+<details>
+<summary>💚 WhatsApp</summary>
+<ol>
+  <li>Go to <a href="https://developers.facebook.com">Meta Developers</a> → Create App → WhatsApp → Setup</li>
+  <li>Copy <strong>Phone Number ID</strong> and <strong>Permanent Access Token</strong></li>
+  <li>Configure webhook endpoint (requires public URL + reverse proxy)</li>
+  <li>Run <code>baw --setup</code> → select WhatsApp → paste token + phone ID</li>
+  <li>Start: <code>baw-bot --platform whatsapp</code></li>
+</ol>
+</details>
 
 <hr>
 
