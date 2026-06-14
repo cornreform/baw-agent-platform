@@ -1773,6 +1773,8 @@ def run_agent(
                 _same_step_fails.clear()  # Reset same-step skip counter
 
             except Exception as _e:
+                from core.exception_tracker import record_exception
+                record_exception(_e, context=f"step:{_step_desc_short[:60]}")
                 while len(_delegation_results) <= _step_idx:
                     _delegation_results.append("")
                 _delegation_results[_step_idx] = f"[FAILED] {_step_desc_short}: {_e}"

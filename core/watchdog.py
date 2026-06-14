@@ -103,6 +103,7 @@ class Watchdog:
         results.append(self._check_memory())
         results.append(self._check_tools())
         results.append(self._check_network())
+        results.append(self._check_exceptions())
 
         self._last_results = [r.to_dict() for r in results]
 
@@ -120,6 +121,21 @@ class Watchdog:
                 pass
 
         return results
+
+    def _check_exceptions(self) -> HealthAlert:
+        try:
+            from core.exception_tracker import count_recent
+            count_1h, _ = count_recent(hours=1)
+            count_24h, entries = count_recent(hours=24)
+            if count_1h >= 5:
+                return HealthAlert("exceptions", "fail", f"{count_1h} exceptions in last 1h (threshold: 5)")
+            if count_1h >= 2:
+                return HealthAlert("exceptions", "warn", f"{count_1h} exceptions in last 1h")
+            if count_24h >= 20:
+                return HealthAlert("exceptions", "warn", f"{count_24h} exceptions in last 24h")
+            return HealthAlert("exceptions", "pass", f"{count_24h} exceptions in 24h, {count_1h} in 1h")
+        except Exception as e:
+            return HealthAlert("exceptions", "warn", f"Could not check exceptions: {e}")
 
     def _check_config(self) -> HealthAlert:
         cfg_path = self.data_dir / "config.yaml"
