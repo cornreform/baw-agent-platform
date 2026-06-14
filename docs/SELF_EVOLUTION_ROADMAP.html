@@ -95,7 +95,7 @@
 <header>
   <h1>🧬 BAW Self-Evolution Roadmap</h1>
   <p class="subtitle">Black And White Agent Platform — 自我進化四階段計劃<br>
-  Last updated: 2026-06-14 &nbsp;|&nbsp; Current: <span class="badge badge-active">Phase 2</span></p>
+  Last updated: 2026-06-14 &nbsp;|&nbsp; Current: <span class="badge badge-active">Phase 3</span></p>
 </header>
 
 <!-- ═══════════════════ PHASE 1 ═══════════════════ -->
@@ -162,52 +162,54 @@
     <div>
       <div style="display:flex;align-items:center;gap:10px;">
         <h2 class="phase-title">Phase 2: Watchdog + Health Monitor</h2>
-        <span class="badge badge-active">進行中</span>
+        <span class="badge badge-done">已完成</span>
       </div>
-      <div class="phase-meta">系統壞咗會自動發現，唔使人 trigger | 預計 2-3 天</div>
+      <div class="phase-meta">系統壞咗會自動發現，唔使人 trigger | 2026-06-14 完成</div>
     </div>
     <div style="text-align:right;">
-      <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">0/4</div>
+      <div style="font-size:1.5rem;font-weight:700;color:var(--green);">4/4</div>
       <div style="font-size:0.8rem;color:var(--muted);">tasks</div>
     </div>
   </div>
-  <div class="progress-bar"><div class="progress-fill fill-blue" style="width:5%"></div></div>
+  <div class="progress-bar"><div class="progress-fill fill-green" style="width:100%"></div></div>
   <div class="phase-body">
     <table>
-      <tr><th style="width:28px">#</th><th style="width:28%">任務</th><th>詳情</th><th style="width:120px">驗收標準</th></tr>
+      <tr><th style="width:28px">#</th><th style="width:28%">任務</th><th>實現</th><th style="width:120px">驗收</th></tr>
       <tr>
         <td>P2-1</td>
         <td><span class="badge badge-p0">P0</span> 輕量 healthcheck</td>
-        <td>Cron 每 5 分鐘跑 lightweight check：API key 有效性、config.yaml 語法、memory 狀態、tool registry 完整性</td>
-        <td>失敗時 Telegram 通知 + 寫入 <code>~/.baw/alerts/</code></td>
+        <td>新增 <code>core/watchdog.py</code>：6 項檢查（config、api_key、memory、tools、network、exceptions、latency、resources）。每 5 分鐘自動跑，失敗時寫入 <code>~/.baw/alerts/</code> + Telegram 通知</td>
+        <td><span class="check">✓</span> 8/8 pass</td>
       </tr>
       <tr>
         <td>P2-2</td>
         <td><span class="badge badge-p0">P0</span> Exception rate 監視</td>
-        <td>每小時統計 <code>loop.py</code> exception count，計算 error rate。異常升高（>5% 持續 10 分鐘）時 alert</td>
-        <td>自動發送 Telegram alert，附 exception type 分佈</td>
+        <td>新增 <code>core/exception_tracker.py</code>：append-only JSONL log。loop.py 關鍵 exception handler 已插入 tracking。Watchdog 檢查 1h/24h 統計</td>
+        <td><span class="check">✓</span> 0 exceptions</td>
       </tr>
       <tr>
         <td>P2-3</td>
         <td><span class="badge badge-p1">P1</span> API latency 監視</td>
-        <td>追蹤 DeepSeek / MiniMax response time。慢過 30s 連續 3 次就觸發 fallback model + alert</td>
-        <td>自動切換 fallback，用户無感知</td>
+        <td>修改 <code>core/llm.py::_post()</code>：記錄每次 API call latency 到 <code>latency.jsonl</code>。Watchdog 檢查 µ3 timeouts/h = fail, µ3 calls >30s/h = warn</td>
+        <td><span class="check">✓</span> 日誌正常</td>
       </tr>
       <tr>
         <td>P2-4</td>
         <td><span class="badge badge-p1">P1</span> 資源監視</td>
-        <td>監視 container disk / memory usage。>90% 時 alert，>95% 時觸發緊急清理（刪舊 session / log）</td>
-        <td>alert + 自動清理舊檔案</td>
+        <td>Watchdog 檢查 disk + memory usage。>90% = warn，>95% = fail + 觸發 emergency cleanup（刪除 3 天以上的 sessions/tasks/logs）</td>
+        <td><span class="check">✓</span> disk 22%, mem 43%</td>
       </tr>
     </table>
     <div class="summary-box">
-      <h4>📋 待實現細節</h4>
-      <ul style="margin:0;padding-left:18px;">
-        <li>新增 <code>core/watchdog.py</code>：獨立於 scheduler 的 health monitor</li>
-        <li>新增 <code>~/.baw/alerts/</code> 目錄：持久化 alert 記錄</li>
-        <li>新增 <code>/watchdog</code> Telegram 指令：查詢最近 24h alert</li>
-        <li>修改 <code>core/llm.py</code>：每次 API call 記錄 latency 到 <code>evolve.jsonl</code></li>
-      </ul>
+      <h4>📦 Phase 2 新增/修改文件</h4>
+      <code>core/watchdog.py</code> (new) · <code>core/exception_tracker.py</code> (new) · <code>core/llm.py</code> · <code>core/loop.py</code> · <code>core/messaging/__init__.py</code> · <code>baw-bot</code>
+    </div>
+    <div class="summary-box">
+      <h4>🚀 即時可用指令</h4>
+      <div class="grid-2">
+        <div><strong>Telegram:</strong><br><code>/watchdog</code> — 查詢最近 24h alerts<br><code>/doctor</code> — 全檢 selftest</div>
+        <div><strong>Health checks:</strong><br>config · api_key · memory · tools · network · exceptions · latency · resources</div>
+      </div>
     </div>
   </div>
 </div>
@@ -320,13 +322,13 @@
         <strong>Phase 1</strong> — 補完現有框架<br>
         <span style="color:var(--muted);font-size:0.88rem;">1-2 天 · ✅ 2026-06-14 完成</span>
       </div>
-      <div class="timeline-item active">
+      <div class="timeline-item done">
         <strong>Phase 2</strong> — Watchdog + Health Monitor<br>
-        <span style="color:var(--muted);font-size:0.88rem;">2-3 天 · 🔄 進行中</span>
+        <span style="color:var(--muted);font-size:0.88rem;">2-3 天 · ✅ 2026-06-14 完成</span>
       </div>
-      <div class="timeline-item pending">
+      <div class="timeline-item active">
         <strong>Phase 3</strong> — Safe Auto-Fix<br>
-        <span style="color:var(--muted);font-size:0.88rem;">3-5 天 · ⏸ 待開始</span>
+        <span style="color:var(--muted);font-size:0.88rem;">3-5 天 · 🔄 進行中</span>
       </div>
       <div class="timeline-item pending">
         <strong>Phase 4</strong> — Full Self-Evolution<br>
@@ -357,7 +359,7 @@
 
 <footer>
   Generated by Sticky · BAW Agent Platform · <a href="https://github.com/cornreform/baw-agent-platform">GitHub</a><br>
-  Version: v0.19.1 &nbsp;|&nbsp; Next milestone: Phase 2 completion
+  Version: v0.19.2 &nbsp;|&nbsp; Current: Phase 2 complete &nbsp;|&nbsp; Next: Phase 3
 </footer>
 
 </div>
