@@ -865,3 +865,363 @@ def get_evolve_stats() -> str:
     if recs:
         parts.append(f"{recs} patterns detected")
     return " | ".join(parts)
+
+
+# ── Phase 5: Deep SOUL Revision ───────────────────────────────────
+
+def _analyze_memory_for_preferences(days_back: int = 7) -> dict:
+    """Read memory store and extract user preferences + behavioral patterns.
+
+    Returns structured analysis for SOUL.md revision.
+    """
+    from core.memory import MemoryStore
+    store = MemoryStore(_data_dir())
+    cutoff = time.time() - days_back * 86400
+
+    recent_entries = []
+    for entry in store._cache:
+        try:
+            ts = datetime.fromisoformat(entry.get("created", "")).timestamp()
+        except Exception:
+            continue
+        if ts >= cutoff:
+            recent_entries.append(entry)
+
+    if not recent_entries:
+        return {"has_data": False, "reason": "no recent memories"}
+
+    # Categorize entries
+    preferences = []
+    corrections = []
+    habits = []
+    topics = []
+
+    for entry in recent_entries:
+        content = entry.get("content", "")
+        tags = entry.get("tags", [])
+
+        if "user" in tags or entry.get("source") == "user":
+            if any(k in content for k in ["喜歡", "偏好", "想", "要", "用", "用緊", "想要", "喜歡", "偏好", "設定", "prefer", "want", "like", "always", "usually", "never", "不要", "勿", "禁止"]):
+                preferences.append(content)
+            elif any(k in content for k in ["修正", "改", "錯", "不對", "問題", "fix", "wrong", "incorrect", "change", "唔好", "不好"]):
+                corrections.append(content)
+            else:
+                habits.append(content)
+
+        # Extract topics from high-score entries
+        if entry.get("score", 0) > 0.7:
+            topics.append(content[:100])
+
+    # Extract recurring themes via keyword frequency
+    all_text = " ".join(e.get("content", "") for e in recent_entries)
+    cjk_chars = [c for c in all_text if '\u4e00' <= c <= '\u9fff']
+    from collections import Counter
+    char_freq = Counter(cjk_chars)
+    common_themes = [char for char, count in char_freq.most_common(10) if count >= 3]
+
+    return {
+        "has_data": True,
+        "period_days": days_back,
+        "total_entries": len(recent_entries),
+        "preferences": preferences[:10],
+        "corrections": corrections[:10],
+        "habits": habits[:10],
+        "high_value_topics": topics[:10],
+        "common_themes": common_themes,
+    }
+
+
+def _generate_soul_revisions(analysis: dict) -> list[dict]:
+    """Generate specific SOUL.md revision suggestions based on memory analysis.
+
+    Each suggestion has: section, content, priority
+    """
+    revisions = []
+
+    if not analysis.get("has_data"):
+        return revisions
+
+    # Preference-based rules
+    prefs = analysis.get("preferences", [])
+    corrections = analysis.get("corrections", [])
+
+    # Language preference
+    tc_signals = sum(1 for p in prefs if any(k in p for k in ["繁體", "繁体", "中文", "traditional", "粤語", "廣東話", "白話"]))
+    sc_signals = sum(1 for p in prefs if any(k in p for k in ["簡體", "简体", "simplified"]))
+    if tc_signals > sc_signals and tc_signals >= 2:
+        revisions.append({
+            "section": "Communication Style",
+            "content": "- **Language**: 使用繁體中文，術語保留英文 (英文術語不翻譯)\n",
+            "priority": "high",
+            "reason": f"{tc_signals} 次偏好繁體中文訊號",
+        })
+
+    # Response length preference
+    short_signals = sum(1 for p in prefs + corrections if any(k in p for k in ["簡短", "短一點", "精簡", "concise", "short", "唔好長", "太長", "短啟", "brief", "精簡", "控制長度"]))
+    if short_signals >= 2:
+        revisions.append({
+            "section": "Response Style",
+            "content": "- **Length**: 偏好精簡回應，避免重複和多餘解釋\n",
+            "priority": "high",
+            "reason": f"{short_signals} 次要求簡短回應",
+        })
+
+    # Format preference
+    no_table = sum(1 for p in prefs + corrections if any(k in p for k in ["難複製", "表格", "table", "彈窗", "複雜", "難讀", "難看", "複製", "copy", "複製", "輸出", "format"]))
+    if no_table >= 2:
+        revisions.append({
+            "section": "Response Style",
+            "content": "- **Format**: 避免複雜表格，使用簡單清單或標籤對\n",
+            "priority": "high",
+            "reason": f"{no_table} 次討厭複雜格式",
+        })
+
+    # Model preference
+    cheap_signals = sum(1 for p in prefs if any(k in p for k in ["慣亟", "省", "便宜", "廉價", "cheap", "save", "成本", "cost", "免費", "free"]))
+    if cheap_signals >= 2:
+        revisions.append({
+            "section": "Cost Awareness",
+            "content": "- **Cost**: 用戶偏好低成本方案，非必要時避免使用高價 model\n",
+            "priority": "medium",
+            "reason": f"{cheap_signals} 次提到成本/價格",
+        })
+
+    # Tone preference
+    casual_signals = sum(1 for p in prefs if any(k in p for k in ["友好", "親切", "隨和", "純晴", "傾計", "casual", "友善", "輕鬆", "隨意", "放鬆", "有趣"]))
+    formal_signals = sum(1 for p in prefs if any(k in p for k in ["正式", "嚴謹", "專業", "尊重", "formal", "嚴肅", "結構", "規範", "正規", "標準"]))
+    if casual_signals > formal_signals and casual_signals >= 2:
+        revisions.append({
+            "section": "Communication Style",
+            "content": "- **Tone**: 保持輕鬆友好，像朋友一樣交流\n",
+            "priority": "medium",
+            "reason": f"{casual_signals} 次偏好輕鬆 tone",
+        })
+    elif formal_signals > casual_signals and formal_signals >= 2:
+        revisions.append({
+            "section": "Communication Style",
+            "content": "- **Tone**: 保持專業正式，注重准確性和完整性\n",
+            "priority": "medium",
+            "reason": f"{formal_signals} 次偏好正式 tone",
+        })
+
+    # Correction-based avoid rules
+    avoid_patterns = []
+    for c in corrections[:5]:
+        if any(k in c for k in ["不好", "錯", "問題", "修正", "改"]):
+            avoid_patterns.append(f"  - 避免: {c[:80]}\n")
+    if avoid_patterns:
+        revisions.append({
+            "section": "Avoid Behaviors",
+            "content": "- **Learned Avoidances**:\n" + "".join(avoid_patterns[:3]),
+            "priority": "high",
+            "reason": f"基於 {len(corrections)} 次用戶修正",
+        })
+
+    # High-value topics (interests)
+    topics = analysis.get("high_value_topics", [])
+    if topics:
+        topic_lines = [f"  - {t[:60]}\n" for t in topics[:5]]
+        revisions.append({
+            "section": "User Interests",
+            "content": "- **Recent Focus**:\n" + "".join(topic_lines),
+            "priority": "low",
+            "reason": f"基於 {len(topics)} 個高分記憶",
+        })
+
+    return revisions
+
+
+def _apply_soul_revisions(revisions: list[dict]) -> dict:
+    """Apply generated revisions to SOUL.md safely.
+
+    Uses git snapshot + rollback on failure.
+    """
+    soul_path = _data_dir() / "SOUL.md"
+    if not soul_path.exists():
+        return {"ok": False, "error": "SOUL.md not found", "applied": 0}
+
+    snapshot = _git_snapshot(tag_reason="deep-soul-revision")
+
+    try:
+        soul = soul_path.read_text(encoding="utf-8")
+        original = soul
+        applied = 0
+        changes = []
+
+        # Find or create the auto-evolution section
+        marker = "<!-- AUTO-EVOLVE: 每週自我修訂 -->"
+        section_start = soul.find(marker)
+
+        if section_start == -1:
+            # Append new section at end
+            new_section = f"\n\n{marker}\n## 🧬 自動進化偏好 (每週更新)\n\n"
+            soul += new_section
+            section_start = soul.find(marker)
+        else:
+            # Find end of section (next ## or end of file)
+            next_header = soul.find("\n## ", section_start + len(marker))
+            if next_header == -1:
+                next_header = len(soul)
+            # Remove old content after header, keep marker
+            soul = soul[:section_start + len(marker)] + "\n## 🧬 自動進化偏好 (每週更新)\n\n"
+
+        # Group revisions by section
+        by_section = {}
+        for rev in revisions:
+            sec = rev.get("section", "General")
+            by_section.setdefault(sec, []).append(rev)
+
+        # Build new section content
+        new_content = "\n"
+        for sec_name, revs in by_section.items():
+            new_content += f"### {sec_name}\n\n"
+            for rev in sorted(revs, key=lambda x: x.get("priority", ""), reverse=True):
+                new_content += rev["content"]
+                new_content += f"  <!-- 原因: {rev.get('reason', '')} -->\n"
+            new_content += "\n"
+
+        new_content += "\n_最後更新: " + datetime.now().strftime('%Y-%m-%d %H:%M') + "_\n"
+
+        # Reconstruct soul
+        next_header = original.find("\n## ", section_start + len(marker))
+        if next_header == -1:
+            next_header = len(original)
+        soul = original[:section_start + len(marker)] + new_content + original[next_header:]
+
+        # Write
+        soul_path.write_text(soul, encoding="utf-8")
+
+        # Verify
+        v = _verify_soul(soul_path)
+        if not v["ok"]:
+            if snapshot.get("ok"):
+                _git_rollback(snapshot["commit"], reason="soul-verify-failure")
+            return {"ok": False, "error": "; ".join(v["errors"]), "applied": 0}
+
+        return {
+            "ok": True,
+            "applied": len(revisions),
+            "changes": [f"{r['section']}: {r['reason']}" for r in revisions],
+            "snapshot": snapshot.get("commit", "")[:8],
+        }
+
+    except Exception as e:
+        if snapshot.get("ok"):
+            _git_rollback(snapshot.get("commit", "HEAD"), reason="exception")
+        return {"ok": False, "error": str(e)[:200], "applied": 0}
+
+
+def run_weekly_evolution() -> dict:
+    """Main entry point for weekly self-evolution cron job.
+
+    1. Analyze memory for user preferences
+    2. Generate SOUL.md revision suggestions
+    3. Apply revisions safely (with git snapshot + verify)
+    4. Run standard pattern analysis
+    5. Return summary report
+    """
+    result = {
+        "ok": True,
+        "timestamp": datetime.now().isoformat(),
+        "memory_analysis": {},
+        "soul_revision": {},
+        "pattern_analysis": {},
+        "summary": "",
+    }
+
+    # Step 1: Memory analysis
+    mem_analysis = _analyze_memory_for_preferences(days_back=7)
+    result["memory_analysis"] = {
+        "has_data": mem_analysis.get("has_data", False),
+        "entries": mem_analysis.get("total_entries", 0),
+        "preferences": len(mem_analysis.get("preferences", [])),
+        "corrections": len(mem_analysis.get("corrections", [])),
+    }
+
+    # Step 2: Generate revisions
+    revisions = _generate_soul_revisions(mem_analysis)
+    result["soul_revision"] = {
+        "suggestions_count": len(revisions),
+        "suggestions": [f"{r['section']} ({r['priority']}): {r['reason']}" for r in revisions[:5]],
+    }
+
+    # Step 3: Apply if we have data
+    if revisions and mem_analysis.get("has_data"):
+        applied = _apply_soul_revisions(revisions)
+        result["soul_revision"]["applied"] = applied.get("applied", 0)
+        result["soul_revision"]["ok"] = applied.get("ok", False)
+        if not applied.get("ok"):
+            result["ok"] = False
+            result["soul_revision"]["error"] = applied.get("error", "")
+    else:
+        result["soul_revision"]["applied"] = 0
+        result["soul_revision"]["note"] = "無足夠資料進行修訂" if not mem_analysis.get("has_data") else "無需修訂"
+
+    # Step 4: Standard pattern analysis
+    pattern = analyze(hours_back=168)
+    result["pattern_analysis"] = {
+        "success_rate": pattern.get("success_rate", 0),
+        "tool_calls": pattern.get("tool_calls", 0),
+        "corrections": pattern.get("corrections", 0),
+        "recommendations": len(pattern.get("recommendations", [])),
+    }
+
+    # Build summary
+    lines = ["🧬 週度自我進化報告"]
+    lines.append(f"  記憶分析: {result['memory_analysis']['entries']} 筆記錄, "
+                f"{result['memory_analysis']['preferences']} 偏好, "
+                f"{result['memory_analysis']['corrections']} 修正")
+    if result["soul_revision"].get("applied", 0) > 0:
+        lines.append(f"  SOUL.md: 已應用 {result['soul_revision']['applied']} 項修訂")
+        for c in result["soul_revision"].get("suggestions", [])[:3]:
+            lines.append(f"    • {c}")
+    else:
+        lines.append(f"  SOUL.md: {result['soul_revision'].get('note', '無修訂')}")
+    lines.append(f"  系統表現: {pattern.get('success_rate', 0)}% 成功率, "
+                f"{pattern.get('corrections', 0)} 次用戶修正")
+
+    result["summary"] = "\n".join(lines)
+    return result
+
+
+# ── CLI Entry Point ──────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import sys
+    import argparse
+
+    parser = argparse.ArgumentParser(description="BAW Self-Evolution Engine")
+    parser.add_argument("--auto-evolve", action="store_true", help="Run weekly self-evolution (cron)")
+    parser.add_argument("--analyze", action="store_true", help="Analyze recent behavior patterns")
+    parser.add_argument("--stats", action="store_true", help="Show evolution stats")
+    parser.add_argument("--soul-revision", action="store_true", help="Run deep SOUL revision only")
+    args = parser.parse_args()
+
+    if args.auto_evolve:
+        result = run_weekly_evolution()
+        print(result["summary"])
+        sys.exit(0 if result["ok"] else 1)
+
+    if args.analyze:
+        result = analyze(hours_back=168)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        sys.exit(0)
+
+    if args.stats:
+        print(get_evolve_stats())
+        sys.exit(0)
+
+    if args.soul_revision:
+        mem = _analyze_memory_for_preferences(days_back=7)
+        revs = _generate_soul_revisions(mem)
+        if revs:
+            applied = _apply_soul_revisions(revs)
+            print(f"已生成 {len(revs)} 項修訂, 應用: {applied.get('applied', 0)}")
+            for r in revs:
+                print(f"  [{r['priority']}] {r['section']}: {r['reason']}")
+        else:
+            print("無需修訂")
+        sys.exit(0)
+
+    # Default: show help
+    parser.print_help()

@@ -1163,7 +1163,7 @@ def run_agent(
             })
     
     if not _execution_plan:
-        _execution_plan.append({"group": "A", "step": 1, "desc": plan_text[:200], "group_name": ""})
+        _execution_plan.append({"group": "A", "step": 1, "desc": plan_text[:400], "group_name": ""})
         _group_step_count["A"] = 1
     
     # Post-process: fill group_total, compute global_index
@@ -1233,7 +1233,7 @@ def run_agent(
                     _seen.add(_m)
                     _facts.append(f"  URL: {_m}")
             # Extract file paths
-            for _m in _re2.findall(r'(/(?:home|tmp|etc|usr)/[^\s:,"\']+)', _txt):
+            for _m in _re2.findall(r'(/(?:home|tmp|etc|usr)/[^\s:,"\'\`]+)', _txt):
                 if _m not in _seen:
                     _seen.add(_m)
                     _facts.append(f"  PATH: {_m}")
@@ -1474,7 +1474,7 @@ def run_agent(
                                             "desc": _fmr.group(2).strip(), "group_name": "",
                                             "step_in_group": _rg_counts["A"]})
             if not _execution_plan:
-                _execution_plan.append({"group": "A", "step": 1, "desc": (_plan_resp.content or "")[:200],
+                _execution_plan.append({"group": "A", "step": 1, "desc": (_plan_resp.content or "")[:400],
                                         "group_name": "", "step_in_group": 1})
                 _rg_counts["A"] = 1
             # Post-process group_totals
@@ -1501,7 +1501,7 @@ def run_agent(
         while _step_idx < len(_execution_plan) and not _pursuit_failed:
             logger.info(
                 f"[loop] step {_step_idx + 1}/{len(_execution_plan)}: "
-                f"{_execution_plan[_step_idx]['desc'][:60]!r}"
+                f"{_execution_plan[_step_idx]['desc'][:120]!r}"
             )
             # Cross-pursuit permanent skip
             if _step_idx in _permanent_skip:
@@ -1523,7 +1523,7 @@ def run_agent(
 
             # Show step progress for all steps (including step 1)
             if progress_callback:
-                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal[:80],
+                progress_callback("delegate", "", {"step": _step_idx + 1, "total": len(_execution_plan), "goal": _step_goal[:300],
                                                    "group": _g, "step_in_group": _si, "group_total": _gt})
 
             _step_ctx = ""
@@ -1549,7 +1549,7 @@ def run_agent(
                     "- Note any ambiguity in the query and state your assumptions."
                 )
 
-            _step_desc_short = _step['desc'][:80]
+            _step_desc_short = _step['desc'][:200]
             if verbose:
                 print(f"  🗺️ Step {_g} {_si}/{_gt}: {_step_desc_short}")
 
@@ -1661,9 +1661,9 @@ def run_agent(
                                     "CompletedProcess", "returncode=",
                                     "args=", "stderr= b''", "stdout= b''"]
                                 if any(m in (_result or "").lower() for m in _fake_markers):
-                                    _result = f"[FAILED-FAKE-OUTPUT] step '{_step_goal[:60]}' generated placeholder text instead of real command output. Raw: {_result[:200]}"
+                                    _result = f"[FAILED-FAKE-OUTPUT] step '{_step_goal[:120]}' generated placeholder text instead of real command output. Raw: {_result[:200]}"
                         except Exception as _exec_e:
-                            _result = f"[INLINE EXEC] {_step_goal[:60]}: {_exec_e}"
+                            _result = f"[INLINE EXEC] {_step_goal[:120]}: {_exec_e}"
                     except Exception as _ie:
                         raise RuntimeError(f"Inline execution failed: {_ie}") from _ie
                 else:
@@ -1774,7 +1774,7 @@ def run_agent(
 
             except Exception as _e:
                 from core.exception_tracker import record_exception
-                record_exception(_e, context=f"step:{_step_desc_short[:60]}")
+                record_exception(_e, context=f"step:{_step_desc_short[:120]}")
                 while len(_delegation_results) <= _step_idx:
                     _delegation_results.append("")
                 _delegation_results[_step_idx] = f"[FAILED] {_step_desc_short}: {_e}"
@@ -1782,7 +1782,7 @@ def run_agent(
                 _result = _delegation_results[_step_idx]
 
                 # ── Same-step skip: don't retry the exact same thing forever ──
-                _same_key = _step_desc_short[:60]  # use first 60 chars as key
+                _same_key = _step_desc_short[:120]  # use first 120 chars as key
                 _same_step_fails[_same_key] = _same_step_fails.get(_same_key, 0) + 1
                 _position_fails[_step_idx] = _position_fails.get(_step_idx, 0) + 1
 
@@ -1817,7 +1817,7 @@ def run_agent(
                     import re as _vrf_re
                     _expected_files = set()
                     for _src in (_result or "", _step_goal):
-                        for _m in _vrf_re.findall(r'(/(?:tmp|home|var|usr)/[^\s:,"\']+\.\w+)', _src):
+                        for _m in _vrf_re.findall(r'(/(?:tmp|home|var|usr)/[^\s:,"\'\`]+\.\w+)', _src):
                             _expected_files.add(_m)
                     # Verify each file actually exists
                     from pathlib import Path as _VrfPath
@@ -1880,7 +1880,7 @@ def run_agent(
                     break
 
                 if progress_callback:
-                    progress_callback("recalc", "", {"step": _step_idx + 1, "count": _recalc_count, "error": str(_e)[:60]})
+                    progress_callback("recalc", "", {"step": _step_idx + 1, "count": _recalc_count, "error": str(_e)[:120]})
 
                 _done_summary = "\n".join(
                     f"Step {i+1}: {r[:200]}" for i, r in enumerate(_synthesis_results)
@@ -2075,7 +2075,7 @@ def run_agent(
         try:
             import re as _re, httpx as _hx
             for _r in _delegation_results:
-                _urls = _re.findall(r'https?://[^\s\n\)]+', _r)
+                _urls = _re.findall(r'https?://[^\s\n\)\`\]]+', _r)
                 _url_sources.extend(_urls[:2])  # max 2 per result
             if _url_sources:
                 _test_url = _url_sources[0]
