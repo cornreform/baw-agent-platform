@@ -31,6 +31,10 @@ baw (CLI) → core/ (engine) → tools/ (built-ins)
 | `core/commands.py` | Slash commands | 60s cache on static commands |
 | `core/setup.py` | Setup wizard + Config CLI | Interactive English wizard, plan-based endpoints |
 | `core/doctor.py` | Health check (--doctor) | Validates config, deps, Docker, disk, API keys |
+| `core/tribunal.py` | Multi-model consensus | Judges evaluate independently; Chief Justice unifies |
+| `core/validator.py` | Real-world validation | Zero-mock: real API calls, file writes, execution |
+| `core/test_runner.py` | Telegram test suite | /test /validate /tribunal bot commands |
+| `core/watchdog.py` | Health monitor | Resource tracking, emergency cleanup |
 | `core/update.py` | Self-update (--update) | Git pull + Docker build + restart |
 | `core/backup.py` | Backup & restore | tar.gz of config/.env/memory/sessions |
 | `core/profile.py` | Profile management | Isolated config/memory/sessions per profile |
