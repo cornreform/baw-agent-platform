@@ -112,9 +112,15 @@ def main(argv: list[str] | None = None):
             _print(f"[baw.error]✗ Failed:[/baw.error] {res.get('error', '')}")
 
     elif subcommand == "stats":
+        from core.evolve import get_learned_lessons_summary
         _print(get_evolve_stats())
+        _print(get_learned_lessons_summary())
+
+    elif subcommand == "lessons":
+        from core.evolve import get_learned_lessons_summary
+        _print(get_learned_lessons_summary())
 
     else:
         _print("[baw.error]Unknown subcommand:[/baw.error] {subcommand}")
-        _print("Usage: baw evolve [analyze|optimize|stats]")
+        _print("Usage: baw evolve [analyze|optimize|stats|pending|approve|reject|lessons]")
         sys.exit(1)
