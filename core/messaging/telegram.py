@@ -540,6 +540,14 @@ class TelegramConnector(BaseConnector):
     def _handle_media_msg(self, chat_id: str, user_id, user_name: str, msg: dict, msg_type: str):
         """Single non-text message: acquire slot or queue (never drop)."""
         if self._acquire_slot():
+            # Per-chat sequential: if this chat already has a task, queue it
+            if self._is_chat_busy(chat_id):
+                with self._active_lock:
+                    self._active_count = max(0, self._active_count - 1)
+                pos = self._enqueue_message(chat_id, user_id, user_name, "", msg, msg_type=msg_type)
+                self.send(chat_id, f"⏳ Queued #{pos} — another task is running in this chat")
+                return
+            self._mark_chat_busy(chat_id)
             self._cancel_event.clear()
             if msg_type == "photo":
                 photo_data = max(msg.get("photo", []), key=lambda p: p.get("file_size", 0))
@@ -653,36 +661,51 @@ class TelegramConnector(BaseConnector):
             logger.error(f"[Telegram] Document processing error: {e}")
             self.send(chat_id, f"❌ Error processing document: {e}")
         finally:
-            self._release_slot()
+            self._release_slot(chat_id)
 
     def _process_image_file(self, chat_id: str, photo_data: dict, msg: dict):
-        """Download an image and analyze with MiniMax vision (not OCR). Inline edit — one message."""
+        """Download an image and analyze with vision AI (MiniMax API → Stepfun → OCR). Inline edit."""
         try:
             file_id = photo_data["file_id"]
             file_name = f"photo_{file_id[:8]}.jpg"
-
-            # ── Single inline-edited status message ──
             status_id = self.send(chat_id, "📥 Downloading image...")
-
             local_path = self._download_file(file_id, file_name)
 
-            import subprocess as sp
-            self.send(chat_id, "👁️ Analyzing with vision...", edit_msg_id=status_id)
+            from tools.vision import _vision_minimax, _vision_stepfun
+
+            self.send(chat_id, "👁️ Analyzing with MiniMax vision...", edit_msg_id=status_id)
+
+            # ── Primary: Direct MiniMax API (no CLI needed) ──
+            vision_result = ""
+            provider_used = ""
             try:
-                r = sp.run(
-                    ["mmx", "vision", "describe", local_path,
-                     "--question", "Describe this image in detail. What objects, text, brands, or products do you see? If it's a product, identify it and suggest where to buy it."],
-                    capture_output=True, text=True, timeout=60,
+                vision_result = _vision_minimax(
+                    local_path,
+                    "Describe this image in detail. What objects, text, brands, or products do you see?"
                 )
-                vision_result = r.stdout.strip() or r.stderr.strip() or "(vision returned nothing)"
-            except sp.TimeoutExpired:
-                vision_result = "(vision timeout)"
-            except FileNotFoundError:
-                content = self._extract_file_content(local_path)
-                vision_result = f"OCR: {content}"
+                if vision_result.startswith("Error:") or vision_result.startswith("MiniMax vision error:"):
+                    raise RuntimeError(vision_result)
+                provider_used = "MiniMax"
+            except Exception as mmx_e:
+                # ── Fallback: Stepfun multimodal ──
+                self.send(chat_id, "👁️ MiniMax API failed, trying Stepfun...", edit_msg_id=status_id)
+                try:
+                    vision_result = _vision_stepfun(
+                        local_path,
+                        "Describe this image in detail. What objects, text, brands, or products do you see?"
+                    )
+                    if vision_result.startswith("Error:") or vision_result.startswith("Stepfun vision error:"):
+                        raise RuntimeError(vision_result)
+                    provider_used = "Stepfun"
+                except Exception as step_e:
+                    # ── Final fallback: OCR ──
+                    self.send(chat_id, "📄 Falling back to OCR...", edit_msg_id=status_id)
+                    content = self._extract_file_content(local_path)
+                    vision_result = f"OCR: {content}"
+                    provider_used = "OCR"
 
             prompt = (
-                f"[Image analysis via MiniMax vision]\n"
+                f"[Image analysis via {provider_used}]\n"
                 f"File: {file_name}\n\n"
                 f"Vision result:\n{vision_result}\n\n"
                 f"---\n"
@@ -694,7 +717,6 @@ class TelegramConnector(BaseConnector):
 
             self.send(chat_id, "🤔 Analyzing with BAW...", edit_msg_id=status_id)
             response = self._run_baw(prompt, chat_id=chat_id)
-            # Delete the status message, send clean result
             try:
                 self._client.post(
                     f"{self._api_base}/deleteMessage",
@@ -710,7 +732,7 @@ class TelegramConnector(BaseConnector):
             logger.error(f"[Telegram] Image processing error: {e}")
             self.send(chat_id, f"❌ Error processing image: {e}")
         finally:
-            self._release_slot()
+            self._release_slot(chat_id)
 
     def _process_voice_file(self, chat_id: str, voice_data: dict, msg: dict):
         """Download audio, check STT capability, then transcribe or present options."""
@@ -1072,7 +1094,7 @@ class TelegramConnector(BaseConnector):
             logger.error(f"[Telegram] Voice processing error: {e}")
             self.send(chat_id, f"❌ 語音處理錯誤: {e}")
         finally:
-            self._release_slot()
+            self._release_slot(chat_id)
 
     @staticmethod
     def _scan_all_models(config: dict) -> list[dict]:
@@ -1260,6 +1282,17 @@ class TelegramConnector(BaseConnector):
                           f"   用 `/tts <voice_id>` 切換語音")
             return
 
+        # /selftest — run system diagnostics
+        if text.strip().lower().startswith("/selftest"):
+            self.send(chat_id, "🧪 Running self-test...")
+            try:
+                from tools.selftest import selftest as _st
+                report = _st(full=False)
+                self.send(chat_id, report)
+            except Exception as e:
+                self.send(chat_id, f"❌ Self-test failed: {e}")
+            return
+
         # Debounce window: suppress new threads right after /stop
         if self._debounce_until and time.time() < self._debounce_until:
             self.send(chat_id, "⏳ Please wait a moment before sending a new request.")
@@ -1270,6 +1303,15 @@ class TelegramConnector(BaseConnector):
             pos = self._enqueue_message(chat_id, user_id, user_name, text, msg)
             self.send(chat_id, f"⏳ Queued #{pos} — will process when a slot frees up ({self._active_count}/{self._max_concurrency} busy)")
             return
+
+        # Per-chat sequential: if this chat already has a task, queue it
+        if self._is_chat_busy(chat_id):
+            with self._active_lock:
+                self._active_count = max(0, self._active_count - 1)
+            pos = self._enqueue_message(chat_id, user_id, user_name, text, msg)
+            self.send(chat_id, f"⏳ Queued #{pos} — another task is running in this chat")
+            return
+        self._mark_chat_busy(chat_id)
 
         self._cancel_event.clear()
         threading.Thread(
@@ -1441,7 +1483,7 @@ class TelegramConnector(BaseConnector):
                 except Exception:
                     pass
         finally:
-            self._release_slot()
+            self._release_slot(chat_id)
     # ── Inline keyboard for model selection (hierarchical: provider → model) ──
 
     def _get_providers_config(self) -> dict:

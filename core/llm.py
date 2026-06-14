@@ -633,8 +633,21 @@ def call_llm_with_fallback(
 
 
 def _call_with_timeout(model, messages, tools, temperature, max_tokens):
-    """Single LLM call with configurable timeout."""
-    return call_llm(model, messages, tools, temperature, max_tokens)
+    """Single LLM call with hard wall-clock timeout.
+
+    The shared httpx client has a 120s read timeout, but slow-streaming
+    servers can reset that timer indefinitely. We wrap the call in a
+    thread with a hard timeout to prevent multi-minute hangs.
+    """
+    import concurrent.futures
+    LLM_TIMEOUT = 90  # seconds: hard cap per LLM call
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(call_llm, model, messages, tools, temperature, max_tokens)
+        try:
+            return future.result(timeout=LLM_TIMEOUT)
+        except concurrent.futures.TimeoutError:
+            raise RuntimeError(f"LLM API timeout after {LLM_TIMEOUT}s: {model.provider}/{model.id}")
 
 
 # ── Model router (based on message size) ───────────────────────
