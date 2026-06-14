@@ -99,6 +99,9 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>🛡️ 3-Level Permission Engine</td><td>High (block) / Medium (warn) / Low (allow)</td></tr>
   <tr><td>🗺️ Route Plan Execution</td><td>Multi-step plan with 60s timeout + anti-stuck skip</td></tr>
   <tr><td>🎯 Per-Task Model Routing</td><td>keyword matching routes sub-agents to optimal models</td></tr>
+  <tr><td>🏛️ Tribunal Consensus</td><td>Multi-model courtroom — judges evaluate independently, Chief Justice unifies verdict</td></tr>
+  <tr><td>🧪 Real-World Validator</td><td>Zero-mock validation — real API calls, real file writes, real execution verification</td></tr>
+  <tr><td>🧘 Self-Evolution</td><td>4-phase learning: behavior tracking → health monitor → auto-fix → pattern optimization</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates dark-themed system dashboard</td></tr>
   <tr><td>📁 File History + Auto Git</td><td>Every write logged with SHA256 + auto commit</td></tr>
   <tr><td>👨‍⚕️ Doctor Health Check</td><td><code>--doctor [--fix]</code> — validate config, deps, Docker, disk, API keys</td></tr>
@@ -206,20 +209,24 @@ baw/                        ← Code repo
 │   ├── memory.py           JSONL memory + scoring
 │   ├── fact_checker.py     3-mode fact verification
 │   ├── tone.py             Tone profiles
-│   ├── scheduler.py        Cron scheduler daemon
-│   ├── skills.py           YAML skill system
-│   ├── learn.py            Self-learning skills
-│   ├── board.py            HTML Dashboard generator
-│   ├── task_manager.py     Async task manager
-│   ├── github.py           GitHub integration
-│   ├── search.py           Open search provider registry
-│   ├── setup.py            Setup wizard + Config CLI
-│   ├── commands.py         Slash commands
-│   ├── display.py          Step display formatter
-│   ├── dream.py            Weekly self-curation + self-evolution
-│   ├── evolve.py           3-layer self-evolution engine
-│   ├── checkpoint.py       Checkpoint / rollback
-│   ├── degradation.py      Tool degradation chains
+│   ├─── scheduler.py        Cron scheduler daemon
+│   ├─── tribunal.py         Tribunal consensus engine
+│   ├─── validator.py        Real-world validator (zero-mock)
+│   ├─── test_runner.py      Telegram test suite
+│   ├─── watchdog.py         Health monitor + emergency cleanup
+│   ├─── skills.py           YAML skill system
+│   ├─── learn.py            Self-learning skills
+│   ├─── board.py            HTML Dashboard generator
+│   ├─── task_manager.py     Async task manager
+│   ├─── github.py           GitHub integration
+│   ├─── search.py           Open search provider registry
+│   ├─── setup.py            Setup wizard + Config CLI
+│   ├─── commands.py         Slash commands
+│   ├─── display.py          Step display formatter
+│   ├─── dream.py            Weekly self-curation + self-evolution
+│   ├─── evolve.py           3-layer self-evolution engine
+│   ├─── checkpoint.py       Checkpoint / rollback
+│   └─── degradation.py      Tool degradation chains
 │   ├── file_history.py     File SHA256 history
 │   ├── autosave.py         Auto git commit
 │   ├── render.py           HTML renderer
@@ -367,7 +374,9 @@ baw                    # 互動式 Chat 模式
   <tr><td>🐙 GitHub 整合</td><td>issues / PRs / CI / repos 直接操作</td></tr>
   <tr><td>🔍 開放 Search Provider</td><td>內置 DuckDuckGo（免費），可 pluggable 升級</td></tr>
   <tr><td>💾 統一記憶</td><td>JSONL append‑only + edges.json 圖譜 + 2-hop 關聯</td></tr>
-  <tr><td>🧬 自我進化</td><td>三層學習：行為追蹤 → 模式偵測 → 自動優化</td></tr>
+  <tr><td>🏛️ Tribunal 共識引擎</td><td>多模型法庭 — 法官獨立判決，首席法官統一意見</td></tr>
+  <tr><td>🧪 現實驗證器</td><td>零 mock — 真實 API 呼叫、真實寫檔、真實執行驗證</td></tr>
+  <tr><td>🧘 自我進化</td><td>4 階段學習：行為追蹤 → 健康監控 → 自動修復 → 模式優化</td></tr>
   <tr><td>🤖 Agent Delegation</td><td>主腦拆任務 → 子 agent 執行 → 綜合報告</td></tr>
   <tr><td>🎙️ Voice STT</td><td>Telegram 語音自動檢測，auto-probe OpenAI/SSE 協議，本地 faster-whisper fallback</td></tr>
   <tr><td>👨‍⚕️ 健康檢查</td><td><code>--doctor [--fix]</code> — config、依賴、Docker、Disk、API key 全面檢查</td></tr>
@@ -456,17 +465,21 @@ baw/                        ← Code repo
 │   ├── permission.py       三級權限引擎
 │   ├── memory.py           JSONL 記憶 + 評分
 │   ├── fact_checker.py     事實查證（三級）
-│   ├── tone.py             語氣 profile
-│   ├── scheduler.py        Cron 排程 daemon
-│   ├── skills.py           YAML skill 系統
-│   ├── learn.py            自我學習技能
-│   ├── board.py            HTML Dashboard
-│   ├── task_manager.py     背景 Task 管理
-│   ├── github.py           GitHub 整合
-│   ├── search.py           開放 search provider
-│   ├── setup.py            設定精靈 + Config CLI
-│   ├── doctor.py           健康檢查 (--doctor)
-│   ├── update.py           自更新 + 版本
+│   ├─── tone.py             語氣 profile
+│   ├─── scheduler.py        Cron 排程 daemon
+│   ├─── tribunal.py         Tribunal 共識引擎
+│   ├─── validator.py        現實驗證器（零 mock）
+│   ├─── test_runner.py      Telegram 測試套件
+│   ├─── watchdog.py         健康監控 + 緊急清理
+│   ├─── skills.py           YAML skill 系統
+│   ├─── learn.py            自我學習技能
+│   ├─── board.py            HTML Dashboard
+│   ├─── task_manager.py     背景 Task 管理
+│   ├─── github.py           GitHub 整合
+│   ├─── search.py           開放 search provider
+│   ├─── setup.py            設定精靈 + Config CLI
+│   ├─── doctor.py           健康檢查 (--doctor)
+│   ├─── update.py           自更新 + 版本
 │   ├── backup.py           備份還原
 │   ├── profile.py          Profile 管理
 │   ├── diagnostics.py      系統除錯
@@ -517,9 +530,25 @@ baw --setup          # → Guided setup wizard</pre>
 <tr><td><code>baw --cfg set &lt;k&gt; &lt;v&gt;</code></td><td>⚙️ Change setting</td></tr>
 <tr><td><code>baw --cfg edit</code></td><td>⚙️ Open in editor</td></tr>
 <tr><td><code>baw --cfg check</code></td><td>⚙️ Validate config</td></tr>
+<tr><td><code>baw --board</code></td><td>📊 Generate HTML system dashboard</td></tr>
+<tr><td><code>baw --delegate &lt;task&gt;</code></td><td>👥 Background task delegation</td></tr>
+<tr><td><code>baw --mode [quick|hybrid|tight]</code></td><td>⚡ Set execution mode</td></tr>
+<tr><td><code>baw --tone [casual|business|...]</code></td><td>🎭 Set response tone</td></tr>
+<tr><td><code>baw --learn-skill &lt;topic&gt;</code></td><td>📖 Auto-generate YAML skill</td></tr>
+<tr><td><code>baw --tribunal &lt;question&gt;</code></td><td>🏛️ Multi-model consensus</td></tr>
+<tr><td><code>baw --validate [subcmd]</code></td><td>🧪 Real-world validation</td></tr>
 </table>
 
 <h2>📝 Changelog</h2>
+
+<h3>v0.20.2 — 2026-06-14</h3>
+<ul>
+  <li><strong>新功能</strong>: Tribunal 共識引擎 — 多模型法庭判決</li>
+  <li><strong>新功能</strong>: 現實驗證器 — 零 mock，真實 API + 檔案驗證</li>
+  <li><strong>新功能</strong>: Telegram 測試套件 — /test /validate /tribunal 指令</li>
+  <li><strong>改進</strong>: CLI 安裝流程全面重寫 — 自動裝 uv、Python、加 PATH、即時驗證</li>
+  <li><strong>改進</strong>: Setup 精靈重寫 — API key 即時測試、Plan 說明、每個設定有上下文</li>
+</ul>
 
 <h3>v0.14.0 — 2026-06-13 (穩定版本)</h3>
 <ul>

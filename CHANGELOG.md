@@ -2,6 +2,64 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v0.20.2 — 2026-06-14
+
+### 🔧 CLI Installation UX Overhaul
+
+- **Version consistency**: all files now report `v0.20.2` (install.sh, baw, setup.py, README badge)
+- **install.sh**: auto-detects/installs `uv`, auto-installs Python 3.12 via uv, uses `uv pip`, auto-adds PATH, verifies `baw --version` at end
+- **setup.py**: API keys validated in real-time (test request sent immediately), Telegram moved to optional last step, plan types explained before asking, every setting includes context
+- **SETUP.md**: rewritten as full step-by-step guide (200+ lines) with model comparison table, API key reference, FAQ
+
+## v0.20.1 — 2026-06-14
+
+### 🏛️ Tribunal Model-Agnostic
+
+- Tribunal no longer hardcodes any models
+- Reads `tribunal.bench` and `tribunal.chief` from `config.yaml`
+- Auto-detects from available models if `tribunal:` section missing
+- Chief Justice optional — falls back to highest-confidence judge
+- `/tribunal bench` shows current configuration
+- `config.yaml`: added `tribunal:` section with examples
+
+## v0.20.0 — 2026-06-14
+
+### 🏛️ Tribunal — Multi-Model Consensus Engine
+
+- Courtroom-inspired consensus: multiple "judges" evaluate independently, "Chief Justice" synthesises unified verdict
+- Parallel execution via ThreadPoolExecutor
+- Consensus scoring via semantic keyword overlap
+- Minority opinion detection
+- Cost estimation per ruling
+- Telegram: `/tribunal <question>`
+- Court integration: auto-triggered on Tier-2 disputes
+
+### 🧪 Real-World Validator
+
+- Zero mocks — every test hits REAL APIs, writes REAL files
+- Validates: config, DeepSeek API, MiniMax API, evolve logging, memory R/W, Telegram bot, disk space, git repo, scheduler, watchdog
+- Telegram: `/validate [subcommand]`
+
+## v0.19.6 — 2026-06-14
+
+### 🖼️ Telegram Test Suite
+
+- `/test` — quick health check (7 items)
+- `/test all` — full pytest suite (87 tests)
+- `/test unit` — unit tests only
+- `/test config|evolve|memory|watchdog|scheduler|git` — module tests
+
+## v0.19.5 — 2026-06-14
+
+### 🧘 Self-Evolution Roadmap Complete
+
+- **Phase 1**: track_tool_call wired to loop.py, cron analyze every 6h, /doctor selftest, dry-run logic
+- **Phase 2**: lightweight healthcheck, resource monitor, emergency cleanup
+- **Phase 3**: dry-run approval system, pending_approvals queue
+- **Phase 4**: behavior pattern detection, pattern library, auto-optimization proposals
+
+---
+
 ## v0.19.0 — 2026-06-14
 
 ### ⚠️ Critical Fixes
