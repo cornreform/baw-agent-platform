@@ -321,31 +321,24 @@ class AdversarialCourt:
         }
 
     def synthesize(self, verdict: dict) -> str:
-        """Synthesize both voices into a neutral analysis.
-
-        BAW does NOT side with either voice — presents both perspectives
-        honestly and lets the user decide.
-        """
+        """Synthesize both voices into a neutral analysis."""
         devil = verdict["devil"]
         angel = verdict["angel"]
         gap = verdict["score_gap"]
 
-        # Highlighting based on gap
         if gap <= 2:
-            gap_desc = "Both voices are largely aligned."
+            gap_desc = "意見一致，無重大分歧。"
         elif gap <= 4:
-            gap_desc = "The voices diverge — significant difference in perspective."
+            gap_desc = "有分歧，建議仔細考慮。"
         else:
-            gap_desc = "Strong disagreement between the two voices."
+            gap_desc = "意見相左，需要進一步討論。"
+
+        # Truncate devil/angel content to max 200 chars each for brevity
+        d_txt = devil["content"][:200].strip()
+        a_txt = angel["content"][:200].strip()
 
         return (
-            f"👿 **Devil (Independent Critique)** — Risk: {devil['score']}/10\n\n"
-            f"{devil['content']}\n\n"
-            f"😇 **Angel (Independent Support)** — Feasibility: {angel['score']}/10\n\n"
-            f"{angel['content']}\n\n"
-            f"━━━ **Neutral Assessment** ───\n"
-            f"{gap_desc}\n"
-            f"BAW's view: Both perspectives are heard. "
-            f"I will give you my honest assessment below, "
-            f"and I'm open to discussing it further."
+            f"👿 Devil ({devil['score']}/10): {d_txt}\n"
+            f"😇 Angel ({angel['score']}/10): {a_txt}\n"
+            f"━━━ {gap_desc}"
         )
