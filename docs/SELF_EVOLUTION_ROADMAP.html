@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BAW Self-Evolution Roadmap | Phase 1-4</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --elevated: #1c2128;
+    --text: #c9d1d9; --muted: #8b949e; --dim: #484f58;
+    --gold: #e3b341; --purple: #a371f7; --red: #f85149;
+    --green: #3fb950; --orange: #d29922; --blue: #58a6ff;
+    --border: #30363d; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.65;
+  }
+  .container { max-width: 980px; margin: 0 auto; padding: 40px 24px; }
+  header { text-align: center; padding-bottom: 32px; border-bottom: 1px solid var(--border); margin-bottom: 32px; }
+  h1 { font-size: 2.2rem; margin: 0 0 8px; color: var(--gold); letter-spacing: -0.5px; }
+  .subtitle { color: var(--muted); font-size: 1.05rem; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.78rem;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .badge-done { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+  .badge-active { background: rgba(87,171,255,0.15); color: var(--blue); border: 1px solid rgba(87,171,255,0.3); }
+  .badge-pending { background: rgba(139,148,158,0.12); color: var(--muted); border: 1px solid var(--dim); }
+  .badge-p0 { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+  .badge-p1 { background: rgba(211,153,34,0.15); color: var(--orange); border: 1px solid rgba(211,153,34,0.3); }
+  .badge-p2 { background: rgba(163,113,247,0.15); color: var(--purple); border: 1px solid rgba(163,113,247,0.3); }
+
+  .phase { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 28px; overflow: hidden; }
+  .phase-header {
+    padding: 18px 24px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border); background: var(--elevated);
+  }
+  .phase-title { font-size: 1.3rem; font-weight: 700; margin: 0; }
+  .phase-meta { font-size: 0.88rem; color: var(--muted); margin-top: 2px; }
+  .phase-body { padding: 20px 24px; }
+
+  .progress-bar { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; margin: 12px 0; }
+  .progress-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+  .fill-green { background: var(--green); }
+  .fill-blue { background: var(--blue); }
+  .fill-orange { background: var(--orange); }
+  .fill-muted { background: var(--dim); }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.92rem; }
+  th { text-align: left; padding: 10px 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  code {
+    font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.85rem;
+    background: var(--elevated); padding: 2px 6px; border-radius: 4px; color: var(--gold);
+  }
+  .check { color: var(--green); font-weight: 700; }
+  .cross { color: var(--red); font-weight: 700; }
+  .warn { color: var(--orange); font-weight: 700; }
+
+  .timeline { position: relative; padding-left: 24px; margin: 16px 0; }
+  .timeline::before {
+    content: ""; position: absolute; left: 6px; top: 4px; bottom: 4px;
+    width: 2px; background: var(--border); border-radius: 999px;
+  }
+  .timeline-item { position: relative; margin-bottom: 16px; padding-left: 18px; }
+  .timeline-item::before {
+    content: ""; position: absolute; left: -21px; top: 7px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--surface); border: 2px solid var(--dim);
+  }
+  .timeline-item.done::before { border-color: var(--green); background: var(--green); }
+  .timeline-item.active::before { border-color: var(--blue); background: var(--blue); box-shadow: 0 0 0 4px rgba(87,171,255,0.15); }
+  .timeline-item.pending::before { border-color: var(--dim); }
+
+  .summary-box {
+    background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 20px; margin: 16px 0;
+  }
+  .summary-box h4 { margin: 0 0 10px; color: var(--gold); font-size: 1rem; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  footer { text-align: center; padding: 32px 0; color: var(--dim); font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 24px; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>🧬 BAW Self-Evolution Roadmap</h1>
+  <p class="subtitle">Black And White Agent Platform — 自我進化四階段計劃<br>
+  Last updated: 2026-06-14 &nbsp;|&nbsp; Current: <span class="badge badge-active">Phase 2</span></p>
+</header>
+
+<!-- ═══════════════════ PHASE 1 ═══════════════════ -->
+<div class="phase">
+  <div class="phase-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <h2 class="phase-title">Phase 1: 補完現有框架</h2>
+        <span class="badge badge-done">已完成</span>
+      </div>
+      <div class="phase-meta">讓 evolve.py 從「擺設」變「可用」 | 2026-06-14 完成</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:1.5rem;font-weight:700;color:var(--green);">4/4</div>
+      <div style="font-size:0.8rem;color:var(--muted);">tasks</div>
+    </div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill fill-green" style="width:100%"></div></div>
+  <div class="phase-body">
+    <table>
+      <tr><th style="width:28px">#</th><th style="width:28%">任務</th><th>實現</th><th style="width:90px">驗收</th></tr>
+      <tr>
+        <td>P1-1</td>
+        <td><code>track_tool_call</code> 接入 loop</td>
+        <td>原本已存在於 <code>core/tools.py::execute_tool()</code>，每次 tool call 自動記錄 success / timeout / error 狀態</td>
+        <td><span class="check">✓</span> 4070 條事件記錄</td>
+      </tr>
+      <tr>
+        <td>P1-2</td>
+        <td>Cron 每 6h 自動 analyze</td>
+        <td>新增 <code>evolve-analyze</code> 排程任務（cron: <code>0 */6 * * *</code>），啟動 Scheduler daemon 於 <code>baw-bot</code>，執行 <code>analyze() + auto_optimize(dry_run=True)</code></td>
+        <td><span class="check">✓</span> 日誌確認</td>
+      </tr>
+      <tr>
+        <td>P1-3</td>
+        <td><code>/doctor</code> 指令</td>
+        <td>Telegram 新增 <code>/doctor</code> / <code>/dr</code> / <code>/health</code> slash commands，觸發 <code>selftest(full=True)</code></td>
+        <td><span class="check">✓</span> 7/7 pass</td>
+      </tr>
+      <tr>
+        <td>P1-4</td>
+        <td>修復 dry-run 邏輯</td>
+        <td>驗證 <code>auto_optimize(dry_run=True)</code> 正確阻擋所有 filesystem 寫入，只輸出報告</td>
+        <td><span class="check">✓</span> 無寫入</td>
+      </tr>
+    </table>
+    <div class="summary-box">
+      <h4>📦 Phase 1 新增/修改文件</h4>
+      <code>cli/commands/evolve_cmd.py</code> (new) · <code>cli/main.py</code> · <code>core/messaging/__init__.py</code> · <code>core/scheduler.py</code> · <code>baw-bot</code> · <code>.baw/schedule.yaml</code>
+    </div>
+    <div class="summary-box">
+      <h4>🚀 即時可用指令</h4>
+      <div class="grid-2">
+        <div><strong>Telegram:</strong><br><code>/doctor</code> — 全檢 selftest<br><code>/evolve</code> — evolution stats</div>
+        <div><strong>CLI:</strong><br><code>baw evolve analyze</code><br><code>baw evolve optimize</code><br><code>baw evolve stats</code></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ PHASE 2 ═══════════════════ -->
+<div class="phase">
+  <div class="phase-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <h2 class="phase-title">Phase 2: Watchdog + Health Monitor</h2>
+        <span class="badge badge-active">進行中</span>
+      </div>
+      <div class="phase-meta">系統壞咗會自動發現，唔使人 trigger | 預計 2-3 天</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">0/4</div>
+      <div style="font-size:0.8rem;color:var(--muted);">tasks</div>
+    </div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill fill-blue" style="width:5%"></div></div>
+  <div class="phase-body">
+    <table>
+      <tr><th style="width:28px">#</th><th style="width:28%">任務</th><th>詳情</th><th style="width:120px">驗收標準</th></tr>
+      <tr>
+        <td>P2-1</td>
+        <td><span class="badge badge-p0">P0</span> 輕量 healthcheck</td>
+        <td>Cron 每 5 分鐘跑 lightweight check：API key 有效性、config.yaml 語法、memory 狀態、tool registry 完整性</td>
+        <td>失敗時 Telegram 通知 + 寫入 <code>~/.baw/alerts/</code></td>
+      </tr>
+      <tr>
+        <td>P2-2</td>
+        <td><span class="badge badge-p0">P0</span> Exception rate 監視</td>
+        <td>每小時統計 <code>loop.py</code> exception count，計算 error rate。異常升高（>5% 持續 10 分鐘）時 alert</td>
+        <td>自動發送 Telegram alert，附 exception type 分佈</td>
+      </tr>
+      <tr>
+        <td>P2-3</td>
+        <td><span class="badge badge-p1">P1</span> API latency 監視</td>
+        <td>追蹤 DeepSeek / MiniMax response time。慢過 30s 連續 3 次就觸發 fallback model + alert</td>
+        <td>自動切換 fallback，用户無感知</td>
+      </tr>
+      <tr>
+        <td>P2-4</td>
+        <td><span class="badge badge-p1">P1</span> 資源監視</td>
+        <td>監視 container disk / memory usage。>90% 時 alert，>95% 時觸發緊急清理（刪舊 session / log）</td>
+        <td>alert + 自動清理舊檔案</td>
+      </tr>
+    </table>
+    <div class="summary-box">
+      <h4>📋 待實現細節</h4>
+      <ul style="margin:0;padding-left:18px;">
+        <li>新增 <code>core/watchdog.py</code>：獨立於 scheduler 的 health monitor</li>
+        <li>新增 <code>~/.baw/alerts/</code> 目錄：持久化 alert 記錄</li>
+        <li>新增 <code>/watchdog</code> Telegram 指令：查詢最近 24h alert</li>
+        <li>修改 <code>core/llm.py</code>：每次 API call 記錄 latency 到 <code>evolve.jsonl</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ PHASE 3 ═══════════════════ -->
+<div class="phase">
+  <div class="phase-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <h2 class="phase-title">Phase 3: Safe Auto-Fix</h2>
+        <span class="badge badge-pending">待開始</span>
+      </div>
+      <div class="phase-meta">修完會驗證，修壞會 rollback | 預計 3-5 天</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:1.5rem;font-weight:700;color:var(--muted);">0/4</div>
+      <div style="font-size:0.8rem;color:var(--muted);">tasks</div>
+    </div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill fill-muted" style="width:0%"></div></div>
+  <div class="phase-body">
+    <table>
+      <tr><th style="width:28px">#</th><th style="width:28%">任務</th><th>詳情</th><th style="width:120px">驗收標準</th></tr>
+      <tr>
+        <td>P3-1</td>
+        <td><span class="badge badge-p0">P0</span> Dry-run approval</td>
+        <td>任何 auto-optimize 建議先 show diff，等 user approve。新增 <code>--apply</code> flag 先寫入。默認行為改為 read-only</td>
+        <td><code>auto_optimize()</code> 無 flag 時絕不改檔案</td>
+      </tr>
+      <tr>
+        <td>P3-2</td>
+        <td><span class="badge badge-p0">P0</span> Auto-rollback</td>
+        <td>Patch 後跑 <code>selftest()</code>，fail 就自動 <code>git checkout</code> 還原。最多嘗試 3 次，第 3 次仍 fail 則放棄並 alert</td>
+        <td>修壞後 60 秒內自動還原</td>
+      </tr>
+      <tr>
+        <td>P3-3</td>
+        <td><span class="badge badge-p1">P1</span> Cross-check verify</td>
+        <td>修復後用獨立 sub-agent 驗證結果。例如「修復 read_file」後用 sub-agent test 讀檔確認正常</td>
+        <td>驗證通過先算「真正完成」</td>
+      </tr>
+      <tr>
+        <td>P3-4</td>
+        <td><span class="badge badge-p1">P1</span> Git snapshot</td>
+        <td>每次 auto-fix 前自動 <code>git stash</code> 或開 branch（<code>auto-fix-{timestamp}</code>）。確保有退路</td>
+        <td>每次修改都有 git 記錄</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════ PHASE 4 ═══════════════════ -->
+<div class="phase">
+  <div class="phase-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <h2 class="phase-title">Phase 4: Full Self-Evolution</h2>
+        <span class="badge badge-pending">待開始</span>
+      </div>
+      <div class="phase-meta">學習 + 優化 | 預計 5-7 天</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:1.5rem;font-weight:700;color:var(--muted);">0/4</div>
+      <div style="font-size:0.8rem;color:var(--muted);">tasks</div>
+    </div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill fill-muted" style="width:0%"></div></div>
+  <div class="phase-body">
+    <table>
+      <tr><th style="width:28px">#</th><th style="width:28%">任務</th><th>詳情</th><th style="width:120px">驗收標準</th></tr>
+      <tr>
+        <td>P4-1</td>
+        <td><span class="badge badge-p0">P0</span> Correction learning</td>
+        <td>用戶講「唔好」「錯咗」時，自動記錄 pattern 到 <code>evolve.jsonl</code>。同類錯誤不再犯</td>
+        <td>同一錯誤 7 天內重複率 &lt;10%</td>
+      </tr>
+      <tr>
+        <td>P4-2</td>
+        <td><span class="badge badge-p1">P1</span> Prompt auto-tune</td>
+        <td>根據 user feedback 分數，自動調整 system prompt（A/B test）。response 質素持續提升</td>
+        <td>feedback 平均分數逐週上升</td>
+      </tr>
+      <tr>
+        <td>P4-3</td>
+        <td><span class="badge badge-p1">P1</span> Model routing optimization</td>
+        <td>根據 task success rate，自動調整 <code>task_rules</code>。code task 失敗率高時自動換 model</td>
+        <td>自動選擇最佳 model 組合</td>
+      </tr>
+      <tr>
+        <td>P4-4</td>
+        <td><span class="badge badge-p2">P2</span> Behavioral drift detection</td>
+        <td>發現 BAW 行為偏離 SOUL.md 時自動 alert。例如「開始長篇大論」時自我糾正</td>
+        <td>偏離檢測準確率 >80%</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════ TIMELINE ═══════════════════ -->
+<div class="phase">
+  <div class="phase-header">
+    <div>
+      <h2 class="phase-title">📅 總時間線</h2>
+      <div class="phase-meta">預計總計 2-3 週達到完整自我進化</div>
+    </div>
+  </div>
+  <div class="phase-body">
+    <div class="timeline">
+      <div class="timeline-item done">
+        <strong>Phase 1</strong> — 補完現有框架<br>
+        <span style="color:var(--muted);font-size:0.88rem;">1-2 天 · ✅ 2026-06-14 完成</span>
+      </div>
+      <div class="timeline-item active">
+        <strong>Phase 2</strong> — Watchdog + Health Monitor<br>
+        <span style="color:var(--muted);font-size:0.88rem;">2-3 天 · 🔄 進行中</span>
+      </div>
+      <div class="timeline-item pending">
+        <strong>Phase 3</strong> — Safe Auto-Fix<br>
+        <span style="color:var(--muted);font-size:0.88rem;">3-5 天 · ⏸ 待開始</span>
+      </div>
+      <div class="timeline-item pending">
+        <strong>Phase 4</strong> — Full Self-Evolution<br>
+        <span style="color:var(--muted);font-size:0.88rem;">5-7 天 · ⏸ 待開始</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ GLOSSARY ═══════════════════ -->
+<div class="phase">
+  <div class="phase-header">
+    <h2 class="phase-title">📚 術語表</h2>
+  </div>
+  <div class="phase-body">
+    <table>
+      <tr><th>術語</th><th>解釋</th></tr>
+      <tr><td><code>evolve.py</code></td><td>BAW 自我進化引擎核心。三層架構：L1 行為記錄、L2 模式分析、L3 自動優化</td></tr>
+      <tr><td><code>analyze()</code></td><td>掃描最近 N 小時行為記錄，統計 tool call 成功率、錯誤模式、用戶修正</td></tr>
+      <tr><td><code>auto_optimize()</code></td><td>根據 analyze 結果自動 patch SOUL.md 或 config.yaml。<code>dry_run=True</code> 時只報告不改檔案</td></tr>
+      <tr><td><code>selftest()</code></td><td>端到端健康檢查：config、tool、memory、API key、網絡連通性</td></tr>
+      <tr><td>Scheduler</td><td>Cron-based 背景排程器，每 60 秒 poll 一次，支援 shell command 和 BAW skill</td></tr>
+      <tr><td>Watchdog</td><td>持續監視系統健康狀態，異常時自動 alert（Phase 2 目標）</td></tr>
+      <tr><td>dry-run</td><td>只模擬執行、輸出 diff，不實際修改檔案的安全模式</td></tr>
+    </table>
+  </div>
+</div>
+
+<footer>
+  Generated by Sticky · BAW Agent Platform · <a href="https://github.com/cornreform/baw-agent-platform">GitHub</a><br>
+  Version: v0.19.1 &nbsp;|&nbsp; Next milestone: Phase 2 completion
+</footer>
+
+</div>
+</body>
+</html>
