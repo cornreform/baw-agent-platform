@@ -191,6 +191,26 @@ Examples:
     except Exception as e:
         logger.warning(f"[Scheduler] Failed to start: {e}")
 
+    # ── Start health watchdog ──
+    try:
+        from core.watchdog import Watchdog
+
+        def _notify_telegram(text: str):
+            for c in connectors:
+                if hasattr(c, "send") and hasattr(c, "config"):
+                    tg_cfg = c.config.get("telegram", {})
+                    admin_chat = tg_cfg.get("admin_chat_id", "")
+                    if admin_chat:
+                        c.send(str(admin_chat), text)
+                        return
+            logger.warning("[Watchdog] No admin_chat_id configured for alerts")
+
+        _watchdog = Watchdog(Path.home() / ".baw", notify_fn=_notify_telegram)
+        _watchdog.start()
+        logger.info("[Watchdog] Health monitor started (5min interval)")
+    except Exception as e:
+        logger.warning(f"[Watchdog] Failed to start: {e}")
+
     logger.info(f"🤖 BAW Bot running ({len(connectors)} connector(s))")
 
     # ── System guards: config validation + session auto-save (kimi B1+B2) ──

@@ -538,6 +538,26 @@ class BaseConnector(ABC):
                 except Exception as e:
                     return f"❌ Self-test error: {e}"
 
+            # ── Watchdog alerts ──
+            if cmd in ("watchdog", "wd"):
+                try:
+                    from core.watchdog import Watchdog
+                    wd = Watchdog(Path.home() / ".baw")
+                    alerts = wd.recent_alerts(hours=24)
+                    if not alerts:
+                        return "🐾 No alerts in the last 24h. All systems healthy."
+                    lines = [f"🚨 {len(alerts)} alert(s) in last 24h:"]
+                    for a in alerts[:10]:
+                        ts = a.get("timestamp", "?")[:16]
+                        status = a.get("status", "?")
+                        check = a.get("check", "?")
+                        detail = a.get("detail", "")
+                        icon = {"pass": "✅", "warn": "⚠️", "fail": "🚨"}.get(status, "❓")
+                        lines.append(f"  {icon} [{ts}] {check}: {detail}")
+                    return "\n".join(lines)
+                except Exception as e:
+                    return f"❌ Watchdog error: {e}"
+
             # ── Set config value (persist to config.yaml) ──
             if cmd == "set" and arg:
                 parts = arg.strip().split(maxsplit=1)
