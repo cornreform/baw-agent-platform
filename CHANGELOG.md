@@ -2,6 +2,23 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v0.20.3 — 2026-06-14
+
+### 💬 Multi-Platform Messaging
+
+- **Slack connector** (`core/messaging/slack.py`)
+  - Socket Mode via WebSocket — no public URL needed
+  - Auto-reconnect, DM + @mention response, channel/user allowlists
+  - Message splitting for Slack 4K limit, full ack/envelope handling
+- **Multi-platform setup wizard** (`core/setup.py`)
+  - Interactive menu (1-6) for Telegram, Discord, Slack, Matrix, Signal, WhatsApp
+  - Configure multiple platforms in one session
+  - Environment variable fallbacks for all tokens
+- **Full platform documentation**
+  - README.md: per-platform `<details>` quick-setup guides for all 6 platforms
+  - SETUP.md: platform difficulty table + platform-specific FAQ
+  - config.sample.yaml: commented examples for all platforms
+
 ## v0.20.2 — 2026-06-14
 
 ### 🔧 CLI Installation UX Overhaul

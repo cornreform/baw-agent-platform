@@ -177,7 +177,7 @@ fi
 # ── Done ──
 echo ""
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
-echo -e "${GREEN}${BOLD}  ✅  BAW v0.20.1 installed successfully!${NC}"
+echo -e "${GREEN}${BOLD}  ✅  BAW v0.20.3 installed successfully!${NC}"
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
 echo ""
 echo -e "  ${BOLD}Next steps:${NC}"
