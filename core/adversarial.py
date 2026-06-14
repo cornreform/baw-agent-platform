@@ -282,16 +282,33 @@ class AdversarialCourt:
 
         cost = calculate_cost(self.model, resp.input_tokens, resp.output_tokens)
 
+        # Split the text into Devil and Angel sections
+        devil_text = text
+        angel_text = text
+        try:
+            # Find [DEVIL: X/10] and [ANGEL: X/10] markers
+            d_marker = re.search(r"\[DEVIL:\s*\d+(?:\.\d+)?\s*/\s*10\]", text)
+            a_marker = re.search(r"\[ANGEL:\s*\d+(?:\.\d+)?\s*/\s*10\]", text)
+            gap_marker = re.search(r"\[GAP:\s*\d+\]", text)
+            if d_marker and a_marker:
+                d_start = d_marker.start()
+                a_start = a_marker.start()
+                gap_start = gap_marker.start() if gap_marker else len(text)
+                devil_text = text[d_start:a_start].strip()
+                angel_text = text[a_start:gap_start].strip()
+        except Exception:
+            pass  # fallback to full text
+
         return {
             "devil": {
-                "content": text,
+                "content": devil_text,
                 "score": devil_score,
                 "tokens_in": resp.input_tokens,
                 "tokens_out": resp.output_tokens,
                 "cost": cost,
             },
             "angel": {
-                "content": text,
+                "content": angel_text,
                 "score": angel_score,
                 "tokens_in": resp.input_tokens,
                 "tokens_out": resp.output_tokens,

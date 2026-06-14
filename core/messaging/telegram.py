@@ -159,10 +159,6 @@ class TelegramConnector(BaseConnector):
             self._send_model_selector_text(chat_id, text)
             return ""
         try:
-            # ── Truncate long messages (unless config says full) ──
-            if len(text) > 2000 and self._should_truncate():
-                text = self._truncate_output(text)
-
             # ── Extract MEDIA: tags ──
             import re as _re
             media_files = _re.findall(r'^MEDIA:(.+)$', text, _re.MULTILINE)
@@ -180,6 +176,7 @@ class TelegramConnector(BaseConnector):
             # ── Send new text ──
             msg_id = ""
             if text:
+                # Telegram max 4096 chars — split into multiple messages if needed
                 if len(text) > MAX_MESSAGE_LENGTH:
                     parts = []
                     remaining = text
@@ -204,36 +201,6 @@ class TelegramConnector(BaseConnector):
         except Exception as e:
             logger.error(f"[Telegram] send error: {e}")
             return ""
-
-    @staticmethod
-    def _should_truncate() -> bool:
-        """Check config: truncate long output unless display.output_mode=full."""
-        try:
-            import yaml
-            from pathlib import Path
-            cfg_path = Path.home() / ".baw" / "config.yaml"
-            if cfg_path.exists():
-                cfg = yaml.safe_load(cfg_path.read_text()) or {}
-                display = cfg.get("display", {})
-                if display.get("output_mode") == "full":
-                    return False
-        except Exception:
-            pass
-        return True
-
-    @staticmethod
-    def _truncate_output(text: str) -> str:
-        """Truncate long output to first ~1800 chars + summary note."""
-        MAX_SHORT = 1800
-        if len(text) <= MAX_SHORT:
-            return text
-        # Try to find a natural break
-        cut = text.rfind("\n\n", 0, MAX_SHORT)
-        if cut < 100:
-            cut = text.rfind("\n", 0, MAX_SHORT)
-        if cut < 100:
-            cut = MAX_SHORT
-        return text[:cut] + f"\n\n... (output truncated, {len(text) - cut} more chars)\nSet `/set display.output_mode full` to see full output."
 
     def _resolve_media_path(self, fpath: str) -> str:
         """Resolve a MEDIA file path. Verifies the file actually exists
