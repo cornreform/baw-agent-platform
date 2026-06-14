@@ -179,7 +179,8 @@ Examples:
     if not connectors:
         logger.warning("No connectors started. Check your config.yaml")
         logger.info("Available: " + ", ".join(c.name for c in available))
-        sys.exit(1)
+        logger.info("BAW bot will idle. Use /reload or restart after configuring connectors.")
+        # Don't exit — idle so user can fix config without container restart loop
 
     # Start all connectors
     for c in connectors:
