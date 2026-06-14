@@ -150,6 +150,8 @@ Examples:
         config.setdefault("telegram", {})["token"] = args.token
     elif os.environ.get("BAW_TELEGRAM_TOKEN"):
         config.setdefault("telegram", {})["token"] = os.environ["BAW_TELEGRAM_TOKEN"]
+    elif os.environ.get("TELEGRAM_BOT_TOKEN"):
+        config.setdefault("telegram", {})["token"] = os.environ["TELEGRAM_BOT_TOKEN"]
 
     # Determine which platforms to start
     platforms = args.platform or list(config.keys())
