@@ -191,3 +191,63 @@ tribunal:
     # - name: "claude-sonnet-4"
     #   provider: "anthropic"
     #   role: "cautious"
+
+# ── Messaging Platforms ──────────────────────────────────────────────────────────
+# Uncomment and configure the platforms you want to use.
+# BAW can run multiple platforms simultaneously.
+
+# ── Telegram ──
+# telegram:
+#   token: "YOUR_BOT_TOKEN"           # From @BotFather
+#   # Optional: restrict to specific chats
+#   # allowed_chats: ["123456789", "-1001234567890"]
+
+# ── Discord ──
+# discord:
+#   token: "YOUR_BOT_TOKEN"           # From Discord Developer Portal
+#   # Optional: restrict to specific channels
+#   # allowed_channels: ["1234567890123456789"]
+#   # Command prefix (e.g. "baw " means only respond to "baw hello")
+#   prefix: "baw "
+
+# ── Slack (Socket Mode) ──
+# slack:
+#   bot_token: "xoxb-YOUR-BOT-TOKEN"  # Bot User OAuth Token
+#   app_token: "xapp-YOUR-APP-TOKEN"  # App-Level Token (Socket Mode)
+#   # Optional: respond only in these channels
+#   # allowed_channels: ["C1234567890"]
+#   # Optional: respond only to these users
+#   # allowed_users: ["U1234567890"]
+#   # Optional: command prefix (empty = respond to DMs and @mentions)
+#   prefix: ""
+
+# ── Matrix ──
+# matrix:
+#   homeserver: "https://matrix.org"
+#   username: "@baw:matrix.org"
+#   # Use either password OR access_token (token is preferred)
+#   password: "YOUR_PASSWORD"
+#   # access_token: "YOUR_ACCESS_TOKEN"
+
+# ── Signal ──
+# signal:
+#   phone: "+15551234567"             # Your Signal phone number
+#   signal_cli_path: "signal-cli"     # Path to signal-cli binary
+#   # Note: signal-cli daemon must be running separately for receiving messages
+
+# ── WhatsApp (Cloud API) ──
+# whatsapp:
+#   token: "YOUR_PERMANENT_TOKEN"     # From Meta Developer Portal
+#   phone_number_id: "YOUR_PHONE_ID"  # WhatsApp Business phone number ID
+#   # webhook_secret: "YOUR_VERIFY_TOKEN"  # For webhook verification
+#   # Note: Requires a public webhook URL (use nginx/Caddy reverse proxy)
+
+# ── Multi-platform behaviour ──
+# Optional: platform-specific overrides
+# platform_settings:
+#   telegram:
+#     max_message_length: 4096
+#   slack:
+#     max_message_length: 4000
+#   discord:
+#     max_message_length: 1900

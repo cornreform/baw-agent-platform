@@ -15,6 +15,9 @@ tavily-python>=0.5
 edge-tts>=6.0
 faster-whisper>=1.1
 
+# ── WebSocket — Slack Socket Mode ──
+websocket-client>=1.7
+
 # ── CLI / Dashboard UI ──
 rich>=13.0
 textual>=0.52
