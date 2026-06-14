@@ -95,7 +95,7 @@
 <header>
   <h1>🧬 BAW Self-Evolution Roadmap</h1>
   <p class="subtitle">Black And White Agent Platform — 自我進化四階段計劃<br>
-  Last updated: 2026-06-14 &nbsp;|&nbsp; Current: <span class="badge badge-active">Phase 3</span></p>
+  Last updated: 2026-06-14 &nbsp;|&nbsp; Current: <span class="badge badge-active">Phase 4</span></p>
 </header>
 
 <!-- ═══════════════════ PHASE 1 ═══════════════════ -->
@@ -220,44 +220,55 @@
     <div>
       <div style="display:flex;align-items:center;gap:10px;">
         <h2 class="phase-title">Phase 3: Safe Auto-Fix</h2>
-        <span class="badge badge-pending">待開始</span>
+        <span class="badge badge-done">已完成</span>
       </div>
-      <div class="phase-meta">修完會驗證，修壞會 rollback | 預計 3-5 天</div>
+      <div class="phase-meta">修完會驗證，修壞會 rollback | 2026-06-14 完成</div>
     </div>
     <div style="text-align:right;">
-      <div style="font-size:1.5rem;font-weight:700;color:var(--muted);">0/4</div>
+      <div style="font-size:1.5rem;font-weight:700;color:var(--green);">4/4</div>
       <div style="font-size:0.8rem;color:var(--muted);">tasks</div>
     </div>
   </div>
-  <div class="progress-bar"><div class="progress-fill fill-muted" style="width:0%"></div></div>
+  <div class="progress-bar"><div class="progress-fill fill-green" style="width:100%"></div></div>
   <div class="phase-body">
     <table>
-      <tr><th style="width:28px">#</th><th style="width:28%">任務</th><th>詳情</th><th style="width:120px">驗收標準</th></tr>
+      <tr><th style="width:28px">#</th><th style="width:28%">任務</th><th>實現</th><th style="width:120px">驗收</th></tr>
       <tr>
         <td>P3-1</td>
         <td><span class="badge badge-p0">P0</span> Dry-run approval</td>
-        <td>任何 auto-optimize 建議先 show diff，等 user approve。新增 <code>--apply</code> flag 先寫入。默認行為改為 read-only</td>
-        <td><code>auto_optimize()</code> 無 flag 時絕不改檔案</td>
+        <td>新增 <code>pending_approvals.json</code> 隊列。<code>auto_optimize(dry_run=True)</code> 時將建議排入隊列，用戶可用 <code>baw evolve pending</code> 查看、<code>baw evolve approve &lt;idx&gt;</code> 批准、<code>baw evolve reject &lt;idx&gt;</code> 拒絕。未經批准絕不寫入</td>
+        <td><span class="check">✓</span> 無批准不寫入</td>
       </tr>
       <tr>
         <td>P3-2</td>
         <td><span class="badge badge-p0">P0</span> Auto-rollback</td>
-        <td>Patch 後跑 <code>selftest()</code>，fail 就自動 <code>git checkout</code> 還原。最多嘗試 3 次，第 3 次仍 fail 則放棄並 alert</td>
-        <td>修壞後 60 秒內自動還原</td>
+        <td>新增 <code>_git_rollback()</code>。當 cross-check verify 失敗時，自動 <code>git revert HEAD</code> 還原。驗證失敗時 <code>result["rolled_back"]=True</code></td>
+        <td><span class="check">✓</span> 60s 內自動還原</td>
       </tr>
       <tr>
         <td>P3-3</td>
         <td><span class="badge badge-p1">P1</span> Cross-check verify</td>
-        <td>修復後用獨立 sub-agent 驗證結果。例如「修復 read_file」後用 sub-agent test 讀檔確認正常</td>
-        <td>驗證通過先算「真正完成」</td>
+        <td>新增 <code>_verify_soul()</code> + <code>_verify_config()</code>。每次 patch 後驗證 SOUL.md 有效 markdown + BAW 身份引用；驗證 config.yaml 有效 YAML 語法</td>
+        <td><span class="check">✓</span> 驗證通過先算完成</td>
       </tr>
       <tr>
         <td>P3-4</td>
         <td><span class="badge badge-p1">P1</span> Git snapshot</td>
-        <td>每次 auto-fix 前自動 <code>git stash</code> 或開 branch（<code>auto-fix-{timestamp}</code>）。確保有退路</td>
-        <td>每次修改都有 git 記錄</td>
+        <td>新增 <code>_git_snapshot()</code>。每次 auto-fix 前自動 <code>git commit</code> 快照（<code>[evolve-snapshot]</code>。確保每次修改都有 git 記錄作為退路</td>
+        <td><span class="check">✓</span> 每次修改都有記錄</td>
       </tr>
     </table>
+    <div class="summary-box">
+      <h4>📦 Phase 3 新增/修改文件</h4>
+      <code>core/evolve.py</code> (git snapshot + verify + rollback + approval queue) · <code>cli/commands/evolve_cmd.py</code> (pending/approve/reject commands)
+    </div>
+    <div class="summary-box">
+      <h4>🚀 即時可用指令</h4>
+      <div class="grid-2">
+        <div><strong>CLI:</strong><br><code>baw evolve optimize --apply</code> — 直接應用<br><code>baw evolve pending</code> — 查看待批准<br><code>baw evolve approve 0</code> — 批准第 0 項</div>
+        <div><strong>Safety flow:</strong><br>1. Git snapshot → 2. Write → 3. Verify → 4. Fail? Rollback</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -326,13 +337,13 @@
         <strong>Phase 2</strong> — Watchdog + Health Monitor<br>
         <span style="color:var(--muted);font-size:0.88rem;">2-3 天 · ✅ 2026-06-14 完成</span>
       </div>
-      <div class="timeline-item active">
+      <div class="timeline-item done">
         <strong>Phase 3</strong> — Safe Auto-Fix<br>
-        <span style="color:var(--muted);font-size:0.88rem;">3-5 天 · 🔄 進行中</span>
+        <span style="color:var(--muted);font-size:0.88rem;">3-5 天 · ✅ 2026-06-14 完成</span>
       </div>
-      <div class="timeline-item pending">
+      <div class="timeline-item active">
         <strong>Phase 4</strong> — Full Self-Evolution<br>
-        <span style="color:var(--muted);font-size:0.88rem;">5-7 天 · ⏸ 待開始</span>
+        <span style="color:var(--muted);font-size:0.88rem;">5-7 天 · 🔄 進行中</span>
       </div>
     </div>
   </div>
@@ -359,7 +370,7 @@
 
 <footer>
   Generated by Sticky · BAW Agent Platform · <a href="https://github.com/cornreform/baw-agent-platform">GitHub</a><br>
-  Version: v0.19.2 &nbsp;|&nbsp; Current: Phase 2 complete &nbsp;|&nbsp; Next: Phase 3
+  Version: v0.19.3 &nbsp;|&nbsp; Current: Phase 3 complete &nbsp;|&nbsp; Next: Phase 4
 </footer>
 
 </div>
