@@ -104,6 +104,7 @@ class Watchdog:
         results.append(self._check_tools())
         results.append(self._check_network())
         results.append(self._check_exceptions())
+        results.append(self._check_latency())
 
         self._last_results = [r.to_dict() for r in results]
 
@@ -136,6 +137,49 @@ class Watchdog:
             return HealthAlert("exceptions", "pass", f"{count_24h} exceptions in 24h, {count_1h} in 1h")
         except Exception as e:
             return HealthAlert("exceptions", "warn", f"Could not check exceptions: {e}")
+
+    def _check_latency(self) -> HealthAlert:
+        try:
+            import json
+            log_path = self.data_dir / "logs" / "latency.jsonl"
+            if not log_path.exists():
+                return HealthAlert("latency", "pass", "No latency data yet")
+
+            cutoff = time.time() - 3600  # last 1h
+            slow_count = 0
+            timeout_count = 0
+            total = 0
+            providers: dict[str, list[float]] = {}
+
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        e = json.loads(line)
+                        if e.get("ts", 0) < cutoff:
+                            continue
+                        total += 1
+                        prov = e.get("provider", "unknown")
+                        latency = e.get("latency", 0)
+                        status = e.get("status", "ok")
+                        providers.setdefault(prov, []).append(latency)
+                        if status == "timeout":
+                            timeout_count += 1
+                        elif latency > 30:
+                            slow_count += 1
+                    except json.JSONDecodeError:
+                        continue
+
+            if timeout_count >= 3:
+                return HealthAlert("latency", "fail", f"{timeout_count} timeouts in last 1h")
+            if slow_count >= 3:
+                return HealthAlert("latency", "warn", f"{slow_count} calls >30s in last 1h")
+            avg_str = ", ".join(f"{p}: {sum(v)/len(v):.1f}s" for p, v in providers.items() if v)
+            return HealthAlert("latency", "pass", f"{total} calls, avg: {avg_str or 'N/A'}")
+        except Exception as e:
+            return HealthAlert("latency", "warn", f"Could not check latency: {e}")
 
     def _check_config(self) -> HealthAlert:
         cfg_path = self.data_dir / "config.yaml"

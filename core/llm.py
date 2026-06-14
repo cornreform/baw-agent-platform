@@ -404,21 +404,54 @@ def _post(url: str, headers: dict, body: dict) -> dict:
     if _shutdown_requested:
         raise RuntimeError("Shutdown in progress - request aborted")
 
+    import time as _time
+    _start = _time.time()
+    _model_id = body.get("model", "unknown")
+    _provider = url.split("/")[2] if "/" in url else "unknown"
+
     client = _get_http_client()
     try:
         resp = client.post(url, headers=headers, json=body)
         resp.raise_for_status()
+        _latency = _time.time() - _start
+        _record_latency(_provider, _model_id, _latency, "ok")
         return resp.json()
+    except httpx.TimeoutException:
+        _latency = _time.time() - _start
+        _record_latency(_provider, _model_id, _latency, "timeout")
+        raise RuntimeError(f"LLM API timeout: {url}")
     except httpx.HTTPStatusError as e:
+        _latency = _time.time() - _start
+        _record_latency(_provider, _model_id, _latency, f"http_{e.response.status_code}")
         raise RuntimeError(
             f"LLM API error: {e.response.status_code}\n"
             f"URL: {url}\n"
             f"Response: {e.response.text[:500]}"
         )
-    except httpx.TimeoutException:
-        raise RuntimeError(f"LLM API timeout: {url}")
     except json.JSONDecodeError as e:
+        _latency = _time.time() - _start
+        _record_latency(_provider, _model_id, _latency, "json_error")
         raise RuntimeError(f"LLM API non-JSON response: {e}")
+
+
+def _record_latency(provider: str, model: str, latency: float, status: str):
+    """Append latency record to JSONL log."""
+    import json as _json, time as _time
+    from pathlib import Path as _Path
+    _log = _Path.home() / ".baw" / "logs" / "latency.jsonl"
+    _log.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "ts": _time.time(),
+        "provider": provider,
+        "model": model,
+        "latency": round(latency, 3),
+        "status": status,
+    }
+    try:
+        with open(_log, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(entry) + "\n")
+    except Exception:
+        pass
 
 
 # ── Register built-in protocols ────────────────────────────────
