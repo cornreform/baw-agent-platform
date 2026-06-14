@@ -57,12 +57,59 @@ def main(argv: list[str] | None = None):
         mode = "DRY-RUN" if dry_run else "APPLY"
         _print(f"[baw.gold]Auto-Optimize ({mode})[/baw.gold]")
         _print(f"  Patterns found: {result['patterns_found']}")
+        _print(f"  Queued: {result.get('queued_count', 0)}")
         _print(f"  Soul patched: {result['soul_patched']}")
         _print(f"  Config patched: {result['config_patched']}")
+        if result.get('snapshot'):
+            snap = result['snapshot']
+            _print(f"  Git snapshot: {snap['commit'][:8] if snap.get('commit') else 'FAILED'} {'✓' if snap.get('ok') else '✗'}")
+        if result.get('rolled_back'):
+            _print(f"  [baw.red]ROLLED BACK[/baw.red] due to verify errors")
         for p in result['patches']:
             _print(f"  • {p}")
         if dry_run:
-            _print("[baw.dim]  (Add --apply to write changes)[/baw.dim]")
+            _print("[baw.dim]  Run `baw evolve pending` to see queued items[/baw.dim]")
+
+    elif subcommand == "pending":
+        from core.evolve import get_pending_approvals
+        pending = get_pending_approvals()
+        if not pending:
+            _print("📜 No pending approvals")
+        else:
+            _print(f"[baw.gold]{len(pending)} Pending Approvals:[/baw.gold]")
+            for i, p in enumerate(pending):
+                _print(f"  [{i}] [{p.get('type', '')}] {p.get('suggestion', '')[:80]}")
+            _print("[baw.dim]  Run `baw evolve approve <index>` to apply[/baw.dim]")
+
+    elif subcommand == "approve":
+        from core.evolve import approve_pending
+        idx = 0
+        if len(args) > 1:
+            try:
+                idx = int(args[1])
+            except ValueError:
+                _print("[baw.error]Usage:[/baw.error] baw evolve approve <index>")
+                sys.exit(1)
+        res = approve_pending(idx, approved=True)
+        if res["ok"]:
+            _print(f"[baw.gold]✓ Approved and {res['action']}[/baw.gold]")
+        else:
+            _print(f"[baw.error]✗ Failed:[/baw.error] {res.get('error', '')}")
+
+    elif subcommand == "reject":
+        from core.evolve import approve_pending
+        idx = 0
+        if len(args) > 1:
+            try:
+                idx = int(args[1])
+            except ValueError:
+                _print("[baw.error]Usage:[/baw.error] baw evolve reject <index>")
+                sys.exit(1)
+        res = approve_pending(idx, approved=False)
+        if res["ok"]:
+            _print(f"[baw.gold]✓ Rejected[/baw.gold]")
+        else:
+            _print(f"[baw.error]✗ Failed:[/baw.error] {res.get('error', '')}")
 
     elif subcommand == "stats":
         _print(get_evolve_stats())
