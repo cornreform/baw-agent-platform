@@ -1778,6 +1778,8 @@ def run_agent(
                 while len(_delegation_results) <= _step_idx:
                     _delegation_results.append("")
                 _delegation_results[_step_idx] = f"[FAILED] {_step_desc_short}: {_e}"
+                # Ensure _result is defined for downstream verification code
+                _result = _delegation_results[_step_idx]
 
                 # ── Same-step skip: don't retry the exact same thing forever ──
                 _same_key = _step_desc_short[:60]  # use first 60 chars as key
