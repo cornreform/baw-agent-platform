@@ -538,6 +538,14 @@ class BaseConnector(ABC):
                 except Exception as e:
                     return f"❌ Self-test error: {e}"
 
+            # ── Test suite ──
+            if cmd in ("test", "t"):
+                try:
+                    from core.test_runner import dispatch_test_command
+                    return dispatch_test_command(arg)
+                except Exception as e:
+                    return f"❌ Test runner error: {e}"
+
             # ── Watchdog alerts ──
             if cmd in ("watchdog", "wd"):
                 try:
@@ -2129,6 +2137,11 @@ class BaseConnector(ABC):
             "/set `<key>` `<value>` — Persist config to config.yaml\n"
             "/reload — Hot-reload tools & config (no restart)\n"
             "/capability `<cmd>` — Manage capabilities\n\n"
+            "**🧪 Tests:**\n"
+            "/test — Quick health check\n"
+            "/test all — Run full test suite\n"
+            "/test unit — Unit tests only\n"
+            "/test config|evolve|memory|watchdog|scheduler|git — Module tests\n\n"
             "**🧠 Memory:**\n"
             "/memory `<text>` — Save a memory\n"
             "/search `<query>` — Search memories\n"
