@@ -105,6 +105,7 @@ class Watchdog:
         results.append(self._check_network())
         results.append(self._check_exceptions())
         results.append(self._check_latency())
+        results.append(self._check_resources())
 
         self._last_results = [r.to_dict() for r in results]
 
@@ -180,6 +181,65 @@ class Watchdog:
             return HealthAlert("latency", "pass", f"{total} calls, avg: {avg_str or 'N/A'}")
         except Exception as e:
             return HealthAlert("latency", "warn", f"Could not check latency: {e}")
+
+    def _check_resources(self) -> HealthAlert:
+        try:
+            import shutil
+            import os
+
+            # Disk usage
+            du = shutil.disk_usage(self.data_dir)
+            disk_pct = (du.used / du.total) * 100
+
+            # Memory usage (Linux /proc/meminfo)
+            mem_used_mb = 0
+            mem_total_mb = 1
+            try:
+                with open("/proc/meminfo") as f:
+                    meminfo = f.read()
+                for line in meminfo.splitlines():
+                    if line.startswith("MemTotal:"):
+                        mem_total_mb = int(line.split()[1]) / 1024
+                    elif line.startswith("MemAvailable:"):
+                        mem_avail_mb = int(line.split()[1]) / 1024
+                        mem_used_mb = mem_total_mb - mem_avail_mb
+            except Exception:
+                pass
+            mem_pct = (mem_used_mb / mem_total_mb) * 100 if mem_total_mb else 0
+
+            details = f"disk {disk_pct:.0f}%, memory {mem_pct:.0f}%"
+
+            # Emergency cleanup if >95%
+            if disk_pct > 95 or mem_pct > 95:
+                self._emergency_cleanup()
+                return HealthAlert("resources", "fail", f"{details} — emergency cleanup triggered")
+
+            if disk_pct > 90 or mem_pct > 90:
+                return HealthAlert("resources", "warn", details)
+
+            return HealthAlert("resources", "pass", details)
+        except Exception as e:
+            return HealthAlert("resources", "warn", f"Could not check resources: {e}")
+
+    def _emergency_cleanup(self):
+        """Delete old sessions and logs to free space."""
+        import shutil
+        dirs_to_clean = [
+            self.data_dir / "sessions",
+            self.data_dir / "tasks",
+            self.data_dir / "logs",
+        ]
+        for d in dirs_to_clean:
+            if not d.exists():
+                continue
+            for item in d.iterdir():
+                try:
+                    if item.is_file() and item.stat().st_mtime < (time.time() - 86400 * 3):
+                        item.unlink()
+                    elif item.is_dir() and item.stat().st_mtime < (time.time() - 86400 * 3):
+                        shutil.rmtree(item)
+                except Exception:
+                    pass
 
     def _check_config(self) -> HealthAlert:
         cfg_path = self.data_dir / "config.yaml"
