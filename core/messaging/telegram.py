@@ -7,9 +7,11 @@ Fully featured: commands, replies, error handling, reconnection.
 from __future__ import annotations
 import json
 import logging
+import os
 import threading
 import time
 import httpx
+from pathlib import Path
 from typing import Optional
 
 from . import BaseConnector, Message, register
@@ -72,6 +74,38 @@ class TelegramConnector(BaseConnector):
 
                     return True
             logger.error(f"[Telegram] getMe failed: {r.status_code} {r.text[:200]}")
+            # ── User-friendly fatal error notification ──
+            _err_msg = ""
+            if r.status_code == 401:
+                _err_msg = "**Telegram Bot 連接失敗**\n\n"
+                _err_msg += "原因: Bot Token 無效或已被撤銷\n"
+                _err_msg += "解決: 請去 @BotFather 重新生成 Token, 然後更新 ~/.baw/.env"
+            elif r.status_code == 404:
+                _err_msg = "**Telegram Bot 連接失敗**\n\n"
+                _err_msg += "原因: API 端點不存在 (404)\n"
+                _err_msg += "解決: 檢查網絡連線或 Telegram API 狀態"
+            elif r.status_code == 429:
+                _err_msg = "**Telegram 限流**\n\n"
+                _err_msg += "原因: 發送太多請求被限流\n"
+                _err_msg += "解決: 等幾分鐘後會自動恢復"
+            else:
+                _err_msg = f"**Telegram Bot 連接失敗**\n\n"
+                _err_msg += f"原因: HTTP {r.status_code}\n"
+                _err_msg += "解決: 檢查 .env 中的 TELEGRAM_BOT_TOKEN 是否正確"
+            # Try to notify admin if we know the chat_id
+            _admin_id = os.environ.get("BAW_ADMIN_CHAT_ID", "")
+            if _admin_id:
+                try:
+                    self._client.post(
+                        f"{self._api_base}/sendMessage",
+                        json={"chat_id": _admin_id, "text": _err_msg, "parse_mode": "Markdown"},
+                        timeout=10,
+                    )
+                except Exception:
+                    pass
+            # Also write to a visible file for admin
+            _fatal_path = Path.home() / ".baw" / "FATAL_ERROR.txt"
+            _fatal_path.write_text(_err_msg, encoding="utf-8")
             return False
         except Exception as e:
             logger.error(f"[Telegram] Connection error: {e}")
@@ -264,6 +298,7 @@ class TelegramConnector(BaseConnector):
                 )
         if r.status_code == 200:
             return message_id
+        logger.warning(f"[Telegram] editMessageText failed: {r.status_code} {r.text[:200]}")
         return ""
 
     def send_typing(self, chat_id: str) -> bool:
@@ -1341,7 +1376,7 @@ class TelegramConnector(BaseConnector):
         if not text.lstrip().startswith("/"):  # don't placeholder slash commands
             _placeholder_msg_id = self.send(
                 chat_id,
-                f"⚖️ 立案: {text[:60]}{'…' if len(text) > 60 else ''}\n_(庭審中…)_",
+                f"⚡ 處理中: {text[:50]}{'…' if len(text) > 50 else ''}",
             )
 
         # Typing indicator heartbeat (respects cancel event).
@@ -1416,11 +1451,16 @@ class TelegramConnector(BaseConnector):
                 return
             if not response or not response.strip():
                 logger.warning(f"[Telegram] Empty response from BAW for: {text[:80]}")
-                response = "✅ Done. (No additional output.)"
+                response = "✅ 已完成。如果你看不到預期結果，可能是因為：\n(1) 該操作沒有輸出 (如寫檔、設定配置)\n(2) 系統發生錯誤但未回傳\n\n請嘗試 `/status` 或 `/doctor` 檢查狀態。"
             if response:
+                logger.info(f"[Telegram] Sending response (len={len(response)}, placeholder={bool(_placeholder_msg_id)})")
                 # M2: edit the placeholder in-place if we sent one, else send fresh.
                 if _placeholder_msg_id:
-                    self.send(chat_id, response, edit_msg_id=_placeholder_msg_id)
+                    _edit_ok = self.send(chat_id, response, edit_msg_id=_placeholder_msg_id)
+                    if not _edit_ok:
+                        # Edit failed — send as new message so user still sees the result
+                        logger.warning(f"[Telegram] Placeholder edit failed, sending new message")
+                        self.send(chat_id, response)
                 else:
                     self.send(chat_id, response)
                 self._record_batch_result(chat_id, response[:200], "text")
@@ -1442,7 +1482,14 @@ class TelegramConnector(BaseConnector):
                 self._set_reaction(chat_id, _msg_id, "❌")
             if not self._cancel_event.is_set():
                 try:
-                    err_text = f"❌ Error: {e}"
+                    _err_str = str(e)
+                    # If error already has a friendly emoji header, use it directly
+                    if _err_str.startswith(("🚫", "⚠️", "✅", "ℹ️")):
+                        err_text = _err_str
+                    else:
+                        err_text = f"❌ {_err_str[:800]}"
+                        if len(_err_str) > 800:
+                            err_text += "\n\n(錯誤訊息已截斷, 完整記錄在 log 中)"
                     if _placeholder_msg_id:
                         self.send(chat_id, err_text, edit_msg_id=_placeholder_msg_id)
                     else:

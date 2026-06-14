@@ -792,24 +792,33 @@ class BaseConnector(ABC):
 
         # File: read (e.g. "讀取 /tmp/test.txt")
         if _direct_result is None and any(_kw in _lower for _kw in ["讀取", "讀檔", "讀下", "看下", "看看", "read file", "cat ", "看內容", "read "]):
-            _path_match = _re.search(r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\uff0c\u3002]+)', text)
-            if _path_match:
-                _fpath = _path_match.group(1)
-                # Safety: block sensitive paths even in direct shortcuts
-                from tools.read_file import _is_sensitive as _rf_sensitive
-                _blocked, _reason = _rf_sensitive(_fpath)
-                if _blocked:
-                    _direct_result = _reason
-                else:
-                    try:
-                        from tools.read_file import read_file as _rf
-                        _direct_result = _rf(_fpath)
-                    except Exception as _e:
-                        _direct_result = f"❌ 讀檔失敗：{_e}"
+            _all_paths = _re.findall(r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\`\uff0c\u3002]*)', text)
+            if _all_paths:
+                _read_results = []
+                from tools.read_file import _is_sensitive as _rf_sensitive, read_file as _rf
+                for _fpath in _all_paths:
+                    if not _fpath:
+                        continue
+                    _blocked, _reason = _rf_sensitive(_fpath)
+                    if _blocked:
+                        _read_results.append(f"📄 {_fpath}\n❌ {_reason}")
+                    else:
+                        try:
+                            _content = _rf(_fpath)
+                            # User-friendly error messages: replace technical "Error:" with plain language
+                            if _content.startswith("Error: file not found:"):
+                                _content = "未找到檔案 (可能尚未建立)"
+                            elif _content.startswith("Error: not a file:"):
+                                _content = "路徑不是檔案 (可能是目錄)"
+                            _read_results.append(f"📄 {_fpath}\n{_content}")
+                        except Exception as _e:
+                            _read_results.append(f"📄 {_fpath}\n❌ 讀檔失敗：{_e}")
+                if _read_results:
+                    _direct_result = "\n\n".join(_read_results)
 
         # File: write (e.g. "寫入 /tmp/test.txt 內容是 'hello'")
         if _direct_result is None and any(_kw in _lower for _kw in ["寫入", "寫檔", "建立檔案", "write file", "create file", "寫個檔案"]):
-            _path_match = _re.search(r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\uff0c\u3002]+)', text)
+            _path_match = _re.search(r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\`\uff0c\u3002]*)', text)
             if _path_match:
                 _fpath = _path_match.group(1)
                 _content_match = _re.search(r'["「'']([^"''\u300d]+)["''\u300d]', text)
@@ -1793,58 +1802,45 @@ class BaseConnector(ABC):
                     return
                 try:
                     if step_type == "plan":
-                        # Plan message — edit if exists, else new
                         meta = args or {}
                         total = meta.get("steps", 0)
-                        plan_text = f"📋 plan"
+                        plan_text = f"🔍 分析中... (預計 {total} 步)"
                         if _progress_msg_id:
-                            # Edit existing plan message (dynamic update)
                             self.send(chat_id, plan_text, edit_msg_id=_progress_msg_id)
                         else:
                             _progress_lines = [plan_text]
-                            _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines))
+                            _progress_msg_id = self.send(chat_id, plan_text)
                     elif step_type == "tool" and name:
-                        _progress_lines.append(f"🔧 `{name[:30]}`")
-                        _lines = _progress_lines[-6:]
-                        if len(_progress_lines) > 6:
-                            _lines.insert(0, "  ...")
+                        # Just update the current status line, don't accumulate
+                        _status = f"🔧 {name[:40]}"
                         if _progress_msg_id:
-                            self.send(chat_id, "\n".join(_lines),
-                                       edit_msg_id=_progress_msg_id)
+                            self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
                         else:
-                            _progress_msg_id = self.send(chat_id, "\n".join(_lines))
+                            _progress_msg_id = self.send(chat_id, _status)
                     elif step_type == "delegate":
                         meta = args or {}
                         s = meta.get("step", "")
                         t = meta.get("total", "")
-                        g = meta.get("goal", "")[:400]
+                        g = meta.get("goal", "")[:80]
+                        _status = f"📋 步驟 {s}/{t}"
                         if g:
-                            _progress_lines.append(f"✅ {g}")
-                        else:
-                            _progress_lines.append(f"✅ step {s}/{t}")
-                        # Keep last 6 lines only for inline editing
-                        _lines = _progress_lines[-6:]
-                        if len(_progress_lines) > 6:
-                            _lines.insert(0, "  ...")
+                            _status += f" \u00b7 {g}"
                         if _progress_msg_id:
-                            self.send(chat_id, "\n".join(_lines),
-                                       edit_msg_id=_progress_msg_id)
+                            self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
                         else:
-                            _progress_msg_id = self.send(chat_id, "\n".join(_lines))
+                            _progress_msg_id = self.send(chat_id, _status)
                     elif step_type == "recalc":
                         nonlocal _recalc_total
                         _recalc_total += 1
-                        meta = args or {}
                         if _recalc_total > _MAX_RECALC_THRESHOLD:
                             logger.warning(f"[Loop] {_recalc_total} recalculations — forcing stop")
                             self._cancel_event.set()
                             return
-                        _progress_lines.append(f"↻ {meta.get('goal', '')[:400]}" if meta.get('goal') else "↻ recalculating")
+                        _status = "🔄 重新計算中..."
                         if _progress_msg_id:
-                            self.send(chat_id, "\n".join(_progress_lines[-8:]),
-                                       edit_msg_id=_progress_msg_id)
+                            self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
                         else:
-                            _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines[-8:]))
+                            _progress_msg_id = self.send(chat_id, _status)
                 except Exception:
                     pass
 
@@ -2081,7 +2077,7 @@ class BaseConnector(ABC):
             if any(_hp in output.lower() for _hp in _hallucination_phrases):
                 # Try to extract file path from original prompt
                 _file_match = re.search(
-                    r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\u3002\uff0c？]+)',
+                    r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\`\u3002\uff0c？]+)',
                     prompt
                 )
                 if _file_match:
@@ -2091,6 +2087,9 @@ class BaseConnector(ABC):
                         _pp = _Path(_fpath).expanduser().resolve()
                         if not _pp.exists():
                             _fcontent = f"Error: file not found: {_fpath}"
+                        elif _pp.is_dir():
+                            _items = [p.name + ('/' if p.is_dir() else '') for p in _pp.iterdir()]
+                            _fcontent = f"Directory listing ({len(_items)} items):\n" + "\n".join(sorted(_items))
                         elif not _pp.is_file():
                             _fcontent = f"Error: not a file: {_fpath}"
                         else:

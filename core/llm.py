@@ -235,6 +235,11 @@ def call_llm(
     max_tokens: Optional[int] = None,
 ) -> LLMResponse:
     """Call LLM via configured protocol. Falls back to openai-chat if protocol unknown."""
+    if not model.api_key:
+        raise ValueError(
+            f"API key missing for provider '{model.provider}'. "
+            f"Check ~/.baw/.env or config.yaml"
+        )
     handler = _HANDLERS.get(model.protocol)
     if handler:
         return handler(model, messages, tools, temperature, max_tokens)
@@ -423,11 +428,39 @@ def _post(url: str, headers: dict, body: dict) -> dict:
     except httpx.HTTPStatusError as e:
         _latency = _time.time() - _start
         _record_latency(_provider, _model_id, _latency, f"http_{e.response.status_code}")
-        raise RuntimeError(
-            f"LLM API error: {e.response.status_code}\n"
-            f"URL: {url}\n"
-            f"Response: {e.response.text[:500]}"
-        )
+        _status = e.response.status_code
+        _body = e.response.text[:500]
+        # User-friendly error classification
+        if _status == 401:
+            raise RuntimeError(
+                f"API key 無效 (401)\n"
+                f"Provider: {_provider}\n"
+                f"解決: 檢查 ~/.baw/.env 中的 {_provider.upper()}_API_KEY 是否正確"
+            )
+        elif _status == 402:
+            raise RuntimeError(
+                f"API 配額已用盡 (402)\n"
+                f"Provider: {_provider}\n"
+                f"解決: 請去 {_provider} 平台充值或更換 API key"
+            )
+        elif _status == 429:
+            raise RuntimeError(
+                f"API 限流 (429)\n"
+                f"Provider: {_provider}\n"
+                f"解決: 等幾分鐘後重試, 或檢查配額"
+            )
+        elif _status == 503:
+            raise RuntimeError(
+                f"API 服務暫時不可用 (503)\n"
+                f"Provider: {_provider}\n"
+                f"解決: 等幾分鐘後重試"
+            )
+        else:
+            raise RuntimeError(
+                f"LLM API 錯誤: {_status}\n"
+                f"Provider: {_provider}\n"
+                f"詳情: {_body[:200]}"
+            )
     except json.JSONDecodeError as e:
         _latency = _time.time() - _start
         _record_latency(_provider, _model_id, _latency, "json_error")
@@ -659,10 +692,28 @@ def call_llm_with_fallback(
                     continue
 
         # Only when EVERY chat-capable model across ALL providers has failed
-        raise RuntimeError(
-            f"All models failed. Primary: {error_msg}\nFallback: {e}\n"
-            f"Tried: {sorted(_tried)}"
+        # Build a user-friendly summary of what went wrong
+        _provider_status = []
+        for _pname, _pcfg in _providers.items():
+            _key_env = _pcfg.get("api_key_env", "")
+            _has_key = bool(os.environ.get(_key_env, ""))
+            _models = [m.get("id", "") for m in _pcfg.get("models", [])]
+            _status = "✅ key set" if _has_key else "❌ no key"
+            _provider_status.append(f"  {_pname}: {_status} (模型: {', '.join(_models[:2])})")
+
+        _friendly = (
+            f"** 無可用的 AI 服務**\n\n"
+            f"所有配置的 LLM provider 均無法連線。\n\n"
+            f"Provider 狀態:\n"
+            + "\n".join(_provider_status) + "\n\n"
+            f"原始錯誤: {error_msg[:150]}\n\n"
+            f"解決方法:\n"
+            f"1. 檢查 ~/.baw/.env 是否有效的 API key\n"
+            f"2. 確認 API key 未過期或配額未用盡\n"
+            f"3. 網絡連線是否正常\n"
+            f"4. 使用 /doctor 指令檢查系統狀態"
         )
+        raise RuntimeError(_friendly)
 
 
 def _call_with_timeout(model, messages, tools, temperature, max_tokens):

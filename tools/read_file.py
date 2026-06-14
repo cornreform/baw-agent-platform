@@ -24,6 +24,9 @@ def read_file(path: str, offset: int = 1, limit: int = 500) -> str:
     p = Path(path).expanduser().resolve()
     if not p.exists():
         return f"Error: file not found: {path}"
+    if p.is_dir():
+        _items = [child.name + ('/' if child.is_dir() else '') for child in p.iterdir()]
+        return f"Directory listing ({len(_items)} items):\n" + "\n".join(sorted(_items))
     if not p.is_file():
         return f"Error: not a file: {path}"
     

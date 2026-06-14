@@ -337,8 +337,14 @@ class AdversarialCourt:
         d_txt = devil["content"][:200].strip()
         a_txt = angel["content"][:200].strip()
 
+        # Token usage summary
+        _total_in = devil.get("tokens_in", 0) + angel.get("tokens_in", 0)
+        _total_out = devil.get("tokens_out", 0) + angel.get("tokens_out", 0)
+        _total_cost = devil.get("cost", 0) + angel.get("cost", 0)
+
         return (
             f"👿 Devil ({devil['score']}/10): {d_txt}\n"
             f"😇 Angel ({angel['score']}/10): {a_txt}\n"
-            f"━━━ {gap_desc}"
+            f"━━━ {gap_desc}\n"
+            f"📊 Tokens: {_total_in:,}↑{_total_out:,}↓ | $約{_total_cost:.4f}"
         )

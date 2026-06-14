@@ -217,7 +217,7 @@ def read_mirror(mirror_path: str) -> Optional[str]:
     one-time setup cost.
     """
     p = Path(mirror_path)
-    if p.exists():
+    if p.exists() and p.is_file():
         return p.read_text(encoding="utf-8", errors="replace")
     return None
 
