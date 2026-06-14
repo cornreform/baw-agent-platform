@@ -537,6 +537,44 @@ def auto_optimize(dry_run: bool = False) -> dict:
         else:
             result["patches"].append(f"[ROLLBACK FAILED] {rollback.get('error', '')}")
 
+    # ── P4-1: Correction learning ──
+    if correction_recs and not result.get("rolled_back"):
+        lessons = _extract_correction_lessons(correction_recs[0].get("examples", []))
+        added = _write_learned_lessons(lessons)
+        if added:
+            result["patches"].append(f"[P4-1] Learned {added} new behavioral lessons")
+
+    # ── P4-2: Prompt auto-tune ──
+    tuning = _tune_prompt_style(analysis)
+    if tuning["suggestions"]:
+        for s in tuning["suggestions"]:
+            result["patches"].append(f"[P4-2] {s}")
+
+    # ── P4-3: Model routing optimization ──
+    routing = _optimize_model_routing(analysis)
+    for s in routing.get("suggestions", []):
+        result["patches"].append(f"[P4-3] {s['suggestion']}")
+
+    # ── P4-4: Behavioral drift detection ──
+    log_path = _log_dir() / "behavior.jsonl"
+    feedback_entries = []
+    if log_path.exists():
+        cutoff = time.time() - 168 * 3600
+        with open(log_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                    if e.get("ts", 0) >= cutoff and e.get("type") == "user_feedback":
+                        feedback_entries.append(e)
+                except Exception:
+                    continue
+    drift_alerts = _detect_behavioral_drift(feedback_entries)
+    for alert in drift_alerts:
+        result["patches"].append(f"[P4-4 ALERT] {alert['suggestion']}")
+
     return result
 
 
@@ -593,6 +631,211 @@ def auto_optimize_single(rec: dict) -> dict:
                 result["applied"] = True
 
     return result
+
+
+# ── Phase 4: Full Self-Evolution ──────────────────────────────────
+
+_LEARNED_PATH = _log_dir() / "learned_lessons.json"
+
+
+def _load_learned_lessons() -> list[dict]:
+    if not _LEARNED_PATH.exists():
+        return []
+    try:
+        return json.loads(_LEARNED_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _save_learned_lessons(lessons: list[dict]):
+    _LEARNED_PATH.write_text(json.dumps(lessons, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _extract_correction_lessons(correction_texts: list[str]) -> list[dict]:
+    """Extract specific behavioral lessons from user correction texts.
+
+    Looks for patterns like:
+      - "太長" / "簡短" / " concise" → lesson: response_length=short
+      - "用繁體" / "不要簡體" → lesson: language=traditional_chinese
+      - "唔好用 table" / "難複製" → lesson: format=no_tables
+      - "太貴" / "慳啲" → lesson: cost=save
+    """
+    lessons = []
+    seen_sigs = set()
+
+    for txt in correction_texts:
+        txt_lower = txt.lower()
+        lesson = None
+
+        if any(k in txt_lower for k in ["太長", "長篇", "簡短", "短啲", "concise", "簡潔", "啰嗦"]):
+            lesson = {"type": "response_length", "value": "short", "source": txt[:60]}
+        elif any(k in txt_lower for k in ["繁體", "不要簡體", "簡體中文", "traditional"]):
+            lesson = {"type": "language", "value": "traditional_chinese", "source": txt[:60]}
+        elif any(k in txt_lower for k in ["table", "表格", "難複製", "copy", "pipe"]):
+            lesson = {"type": "format", "value": "no_tables_use_bullets", "source": txt[:60]}
+        elif any(k in txt_lower for k in ["太貴", "慳啲", "save cost", "cheap", "minimax"]):
+            lesson = {"type": "cost", "value": "prefer_cheap_model", "source": txt[:60]}
+        elif any(k in txt_lower for k in ["唔好", "不要", "stop", "wrong", "incorrect", "fix"]):
+            lesson = {"type": "avoid_behavior", "value": txt[:80], "source": txt[:60]}
+
+        if lesson:
+            sig = f"{lesson['type']}:{lesson['value']}"
+            if sig not in seen_sigs:
+                seen_sigs.add(sig)
+                lesson["learned_at"] = int(time.time())
+                lessons.append(lesson)
+
+    return lessons
+
+
+def _write_learned_lessons(new_lessons: list[dict]) -> int:
+    """Merge new lessons into learned_lessons.json, deduplicate."""
+    existing = _load_learned_lessons()
+    existing_sigs = {f"{l.get('type')}:{l.get('value')}" for l in existing}
+    added = 0
+    for lesson in new_lessons:
+        sig = f"{lesson['type']}:{lesson['value']}"
+        if sig not in existing_sigs:
+            existing.append(lesson)
+            existing_sigs.add(sig)
+            added += 1
+    if added:
+        _save_learned_lessons(existing)
+    return added
+
+
+def _tune_prompt_style(analysis: dict) -> dict:
+    """P4-2: Auto-tune prompt style based on user corrections.
+
+    Analyzes correction patterns and returns tuning recommendations.
+    Does NOT modify prompts directly — returns suggestions for approval.
+    """
+    lessons = _load_learned_lessons()
+    tuning = {"suggestions": [], "style_patches": []}
+
+    # Count recent lessons by type
+    now = time.time()
+    recent = [l for l in lessons if (now - l.get("learned_at", 0)) < 7 * 86400]
+
+    length_lessons = [l for l in recent if l.get("type") == "response_length"]
+    if len(length_lessons) >= 3:
+        tuning["suggestions"].append(
+            f"User prefers SHORTER responses ({len(length_lessons)} corrections in 7 days)"
+        )
+        tuning["style_patches"].append({"target": "system_prompt", "action": "shorten"})
+
+    format_lessons = [l for l in recent if l.get("type") == "format"]
+    if len(format_lessons) >= 2:
+        tuning["suggestions"].append(
+            f"User dislikes tables/formats ({len(format_lessons)} corrections) — use bullet lists"
+        )
+        tuning["style_patches"].append({"target": "system_prompt", "action": "no_tables"})
+
+    cost_lessons = [l for l in recent if l.get("type") == "cost"]
+    if len(cost_lessons) >= 2:
+        tuning["suggestions"].append(
+            f"User prefers cheaper models ({len(cost_lessons)} corrections)"
+        )
+        tuning["style_patches"].append({"target": "model_routing", "action": "prefer_cheap"})
+
+    return tuning
+
+
+def _optimize_model_routing(analysis: dict) -> dict:
+    """P4-3: Recommend model routing changes based on success rates.
+
+    Looks at tool-level success rates and suggests model swaps.
+    Returns suggestions only — does NOT modify config directly.
+    """
+    log_path = _log_dir() / "behavior.jsonl"
+    if not log_path.exists():
+        return {"suggestions": []}
+
+    cutoff = time.time() - 7 * 86400
+    tool_model_stats: dict[str, dict[str, dict]] = {}
+
+    with open(log_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+                if e.get("ts", 0) < cutoff or e.get("type") != "tool_call":
+                    continue
+                tool = e.get("tool", "unknown")
+                model = e.get("model", "default")
+                success = e.get("success", False)
+                if tool not in tool_model_stats:
+                    tool_model_stats[tool] = {}
+                if model not in tool_model_stats[tool]:
+                    tool_model_stats[tool][model] = {"success": 0, "fail": 0}
+                if success:
+                    tool_model_stats[tool][model]["success"] += 1
+                else:
+                    tool_model_stats[tool][model]["fail"] += 1
+            except Exception:
+                continue
+
+    suggestions = []
+    for tool, models in tool_model_stats.items():
+        for model, stats in models.items():
+            total = stats["success"] + stats["fail"]
+            if total >= 5 and stats["fail"] / total > 0.5:
+                suggestions.append({
+                    "type": "model_routing",
+                    "tool": tool,
+                    "model": model,
+                    "rate": f"{stats['fail']}/{total}",
+                    "suggestion": f"Model '{model}' for '{tool}' failing {stats['fail']}/{total} — consider alternative",
+                })
+
+    return {"suggestions": suggestions}
+
+
+def _detect_behavioral_drift(feedback: list[dict]) -> list[dict]:
+    """P4-4: Detect when BAW behavior drifts from SOUL.md identity.
+
+    Looks for feedback indicating identity confusion or style drift.
+    """
+    drift_signals = []
+    drift_keywords = [
+        "語言模型", "language model", "ai 模型", "機械人", "robot",
+        "太機械", "無情", "像機器", "不像baw", "不像你", "身份", "identity",
+    ]
+
+    for f in feedback:
+        txt = f.get("text_sig", "").lower()
+        for kw in drift_keywords:
+            if kw in txt:
+                drift_signals.append({
+                    "text": f.get("text_sig", "")[:80],
+                    "keyword": kw,
+                    "ts": f.get("ts", 0),
+                })
+                break
+
+    alerts = []
+    if len(drift_signals) >= 3:
+        alerts.append({
+            "type": "behavioral_drift",
+            "count": len(drift_signals),
+            "examples": [d["text"] for d in drift_signals[:3]],
+            "suggestion": f"BAW identity drift detected ({len(drift_signals)} signals) — review SOUL.md adherence",
+        })
+
+    return alerts
+
+
+def get_learned_lessons_summary() -> str:
+    """Return a formatted summary of learned lessons for display."""
+    lessons = _load_learned_lessons()
+    if not lessons:
+        return "📚 No learned lessons yet"
+    lines = [f"📚 {len(lessons)} learned lessons:"]
+    for l in lessons[-5:]:
+        lines.append(f"  • [{l.get('type', '')}] {l.get('value', '')}")
+    return "\\n".join(lines)
 
 
 # ── Stats (for /status command) ──
