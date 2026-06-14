@@ -1817,7 +1817,7 @@ class BaseConnector(ABC):
                         meta = args or {}
                         s = meta.get("step", "")
                         t = meta.get("total", "")
-                        g = meta.get("goal", "")[:50]
+                        g = meta.get("goal", "")[:400]
                         if g:
                             _progress_lines.append(f"✅ {g}")
                         else:
@@ -1839,10 +1839,12 @@ class BaseConnector(ABC):
                             logger.warning(f"[Loop] {_recalc_total} recalculations — forcing stop")
                             self._cancel_event.set()
                             return
-                        _progress_lines.append(f"↻ {meta.get('goal', '')[:40]}" if meta.get('goal') else "↻ recalculating")
+                        _progress_lines.append(f"↻ {meta.get('goal', '')[:400]}" if meta.get('goal') else "↻ recalculating")
                         if _progress_msg_id:
                             self.send(chat_id, "\n".join(_progress_lines[-8:]),
                                        edit_msg_id=_progress_msg_id)
+                        else:
+                            _progress_msg_id = self.send(chat_id, "\n".join(_progress_lines[-8:]))
                 except Exception:
                     pass
 
