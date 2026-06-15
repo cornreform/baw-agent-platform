@@ -60,7 +60,7 @@ def get_error_rate(hours: int = 24) -> dict:
         "total": total,
         "by_provider": dict(by_provider),
         "period_hours": hours,
-        "rate_per_hour": round(total / hours, 1) if hours else 0,
+        "rate_per_hour": round(total / hours, 1) if hours and total else 0,
     }
 
 
