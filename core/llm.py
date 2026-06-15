@@ -622,102 +622,106 @@ def call_llm_with_fallback(
                 continue
             break  # non-retryable RuntimeError
 
-    if not fallback_id:
-        if error_msg:
-            raise RuntimeError(error_msg)
-        raise RuntimeError(f"Primary ({primary_id}) failed after {MAX_RETRIES + 1} attempts")
+    # ── Fallback chain ──
+    _providers = config.get("providers", {})
+    _tried = {primary_id}
+    if fallback_id:
+        _tried.add(fallback_id)
+    
+    if fallback_id:
+        # ── Try fallback ──
+        _record_fallback(primary_id, fallback_id, error_msg)
+        try:
+            fallback_model = get_model(config, fallback_id)
+            fb_temp = fallback_model.temperature
+            resp = _call_with_timeout(fallback_model, messages, tools, fb_temp, max_tokens)
+            _record_circuit_success(fallback_model.provider)
+            return FallbackResult(
+                response=resp,
+                model_used="fallback",
+                primary_model=primary_id,
+            )
+        except Exception as e:
+            _record_circuit_failure(fallback_id, "SecondTier")
+    else:
+        import logging as _logging
+        _logging.info(f"[LLM] {primary_id} failed (no fallback) → scanning all providers")
 
-    # ── Try fallback ──
-    _record_fallback(primary_id, fallback_id, error_msg)
-    try:
-        fallback_model = get_model(config, fallback_id)
-        fb_temp = fallback_model.temperature
-        resp = _call_with_timeout(fallback_model, messages, tools, fb_temp, max_tokens)
-        _record_circuit_success(fallback_model.provider)
-        return FallbackResult(
-            response=resp,
-            model_used="fallback",
-            primary_model=primary_id,
-        )
-    except Exception as e:
-        _record_circuit_failure(fallback_id, "SecondTier")
-        # ── Second-tier fallback: scan all providers for any working model ──
-        _providers = config.get("providers", {})
-        _tried = {primary_id, fallback_id}
-        _tried_providers = set()
-        for _m in _tried:
-            try:
-                _tried_providers.add(get_model(config, _m).provider)
-            except Exception:
-                pass
-        for _pname, _pcfg in _providers.items():
-            if _pname in _tried_providers:
+    # ── Second-tier fallback: scan all providers for any working model ──
+    _tried_providers = set()
+    for _m in list(_tried):
+        try:
+            _tried_providers.add(get_model(config, _m).provider)
+        except Exception:
+            pass
+    for _pname, _pcfg in _providers.items():
+        if _pname in _tried_providers:
+            continue
+        for _m in _pcfg.get("models", []):
+            _mid = _m.get("id", "")
+            if not _mid or _mid in _tried:
                 continue
-            for _m in _pcfg.get("models", []):
-                _mid = _m.get("id", "")
-                if not _mid or _mid in _tried:
-                    continue
-                if "chat" not in _m.get("capabilities", []):
-                    continue
-                _tried.add(_mid)
-                try:
-                    _fb2 = get_model(config, _mid)
-                    _resp = _call_with_timeout(_fb2, messages, tools, _fb2.temperature, max_tokens)
-                    _record_circuit_success(_pname)
-                    return FallbackResult(
-                        response=_resp,
-                        model_used=f"fallback2:{_mid}",
-                        primary_model=primary_id,
-                    )
-                except Exception as _e2:
-                    _sig = "SecondTier:" + (str(_e2)[:50] if str(_e2) else "Unknown")
-                    _record_circuit_failure(_mid, _sig)
-                    continue
+            if "chat" not in _m.get("capabilities", []):
+                continue
+            _tried.add(_mid)
+            try:
+                _fb2 = get_model(config, _mid)
+                _resp = _call_with_timeout(_fb2, messages, tools, _fb2.temperature, max_tokens)
+                _record_circuit_success(_pname)
+                return FallbackResult(
+                    response=_resp,
+                    model_used=f"fallback2:{_mid}",
+                    primary_model=primary_id,
+                )
+            except Exception as _e2:
+                _sig = "SecondTier:" + (str(_e2)[:50] if str(_e2) else "Unknown")
+                _record_circuit_failure(_mid, _sig)
+                continue
 
-        # ── Last resort: try ALL models in ALL providers regardless ──
-        for _pname, _pcfg in _providers.items():
-            for _m in _pcfg.get("models", []):
-                _mid = _m.get("id", "")
-                if not _mid or _mid in _tried:
-                    continue
-                if "chat" not in _m.get("capabilities", []):
-                    continue
-                _tried.add(_mid)
-                try:
-                    _fb3 = get_model(config, _mid)
-                    _resp = _call_with_timeout(_fb3, messages, tools, _fb3.temperature, max_tokens)
-                    _record_circuit_success(_pname)
-                    return FallbackResult(
-                        response=_resp,
-                        model_used=f"last-resort:{_mid}",
-                        primary_model=primary_id,
-                    )
-                except Exception:
-                    continue
+    # ── Last resort: try ALL models in ALL providers regardless ──
+    for _pname, _pcfg in _providers.items():
+        for _m in _pcfg.get("models", []):
+            _mid = _m.get("id", "")
+            if not _mid or _mid in _tried:
+                continue
+            if "chat" not in _m.get("capabilities", []):
+                continue
+            _tried.add(_mid)
+            try:
+                _fb3 = get_model(config, _mid)
+                _resp = _call_with_timeout(_fb3, messages, tools, _fb3.temperature, max_tokens)
+                _record_circuit_success(_pname)
+                return FallbackResult(
+                    response=_resp,
+                    model_used=f"last-resort:{_mid}",
+                    primary_model=primary_id,
+                )
+            except Exception:
+                continue
 
-        # Only when EVERY chat-capable model across ALL providers has failed
-        # Build a user-friendly summary of what went wrong
-        _provider_status = []
-        for _pname, _pcfg in _providers.items():
-            _key_env = _pcfg.get("api_key_env", "")
-            _has_key = bool(os.environ.get(_key_env, ""))
-            _models = [m.get("id", "") for m in _pcfg.get("models", [])]
-            _status = "✅ key set" if _has_key else "❌ no key"
-            _provider_status.append(f"  {_pname}: {_status} (模型: {', '.join(_models[:2])})")
+    # Only when EVERY chat-capable model across ALL providers has failed
+    # Build a user-friendly summary of what went wrong
+    _provider_status = []
+    for _pname, _pcfg in _providers.items():
+        _key_env = _pcfg.get("api_key_env", "")
+        _has_key = bool(os.environ.get(_key_env, ""))
+        _models = [m.get("id", "") for m in _pcfg.get("models", [])]
+        _status = "✅ key set" if _has_key else "❌ no key"
+        _provider_status.append(f"  {_pname}: {_status} (模型: {', '.join(_models[:2])})")
 
-        _friendly = (
-            f"** 無可用的 AI 服務**\n\n"
-            f"所有配置的 LLM provider 均無法連線。\n\n"
-            f"Provider 狀態:\n"
-            + "\n".join(_provider_status) + "\n\n"
-            f"原始錯誤: {error_msg[:150]}\n\n"
-            f"解決方法:\n"
-            f"1. 檢查 ~/.baw/.env 是否有效的 API key\n"
-            f"2. 確認 API key 未過期或配額未用盡\n"
-            f"3. 網絡連線是否正常\n"
-            f"4. 使用 /doctor 指令檢查系統狀態"
-        )
-        raise RuntimeError(_friendly)
+    _friendly = (
+        f"** 無可用的 AI 服務**\n\n"
+        f"所有配置的 LLM provider 均無法連線。\n\n"
+        f"Provider 狀態:\n"
+        + "\n".join(_provider_status) + "\n\n"
+        f"原始錯誤: {error_msg[:150]}\n\n"
+        f"解決方法:\n"
+        f"1. 檢查 ~/.baw/.env 是否有效的 API key\n"
+        f"2. 確認 API key 未過期或配額未用盡\n"
+        f"3. 網絡連線是否正常\n"
+        f"4. 使用 /doctor 指令檢查系統狀態"
+    )
+    raise RuntimeError(_friendly)
 
 
 def _call_with_timeout(model, messages, tools, temperature, max_tokens):
