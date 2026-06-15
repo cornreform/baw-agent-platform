@@ -272,10 +272,14 @@ capabilities:
 
 當用家叫你改 config（例如「用 Grok 做 STT」、「加一個新 API」）：
 
-1. 用 `write_file` 工具直接編輯 `~/.baw/config.yaml`
-2. 必要時用 `write_file` 或 `bash` 編輯 `~/.baw/.env` 加 API key
-3. 改完之後 call `/reload` 或者用 `bash` 執行 `kill -HUP <pid>`（但要知 PID）
-4. 最簡單：改完 config 後 send `/reload` message（但而家你係 agent，你冇辦法 send message 俾自己）
+1. 用 `config` 工具安全編輯 `~/.baw/config.yaml`：
+   - `config(action=set, path='providers.x.base_url', value='...')` — 加/改設定
+   - `config(action=get, path='model.default')` — 讀取現有值
+   - `config(action=validate)` — 檢查 YAML syntax
+   - **自動 backup + validation + rollback** — 唔會整爛 config
+2. NEVER 用 `write_file` 或 `bash` 直接改 config.yaml
+3. 必要時用 `write_file` 編輯 `~/.baw/.env` 加 API key（env file 冇 YAML syntax risk）
+4. 改完之後 call `/reload` 或者用 `bash` 執行 `kill -HUP <pid>`（但要知 PID）
 
 ### 🆕 自動模型發現（v0.14）
 
@@ -311,7 +315,7 @@ capabilities:
 
 ### 權限
 
-- `~/.baw/config.yaml` — medium risk（write_file 會 warn 但 allow）
+- `~/.baw/config.yaml` — 用 `config` tool 編輯（自動 backup + validate + rollback）
 - `~/.baw/.env` — medium risk（write_file 會 warn 但 allow）
 - 你唔可以直接 delete .env — 但可以 modify
 - 改完一定要 reload 先生效
@@ -320,7 +324,10 @@ capabilities:
 
 | 用家話：「加 Grok 做 STT 同 TTS」
 → 你應該：
-1. `write_file ~/.baw/config.yaml` 加入：
+1. 用 `config` tool 加入 provider + model：
+   `config(action=set, path='providers.grok.base_url', value='https://api.x.ai/v1')`
+   `config(action=set, path='providers.grok.api_key_env', value='GROK_API_KEY')`
+   然後：
    ```yaml
    providers:
      grok:
