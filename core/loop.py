@@ -351,6 +351,32 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     )
     system_prompt += safety_protocol
 
+    # ── SELF-CORRECTION PROTOCOL (Priority 1 — fix errors yourself) ──
+    self_correction = (
+        "\\n\\n## 🔵 SELF-CORRECTION PROTOCOL (Priority 1)\\n"
+        "YOU are responsible for fixing your own mistakes. NEVER report a tool error to the user\\n"
+        "unless you have tried at least 3 different approaches to fix it.\\n\\n"
+        "**When a tool call fails:**\\n"
+        "1. READ the error message. Understand what went wrong.\\n"
+        "2. FIX the command — try different syntax, different flags, different paths.\\n"
+        "3. RETRY immediately. Do NOT write text about the error — just fix and retry.\\n"
+        "4. If same approach fails twice, try a COMPLETELY DIFFERENT approach.\\n"
+        "5. Only after 3+ distinct strategies have failed, report to user WITH diagnosis.\\n\\n"
+        "**Examples of self-correction:**\\n"
+        "- `find /tmp -name '*.py'` fails → try `ls /tmp` then `find /tmp -type f`\\n"
+        "- `bash('cat file')` fails → try `read_file(path='file')`\\n"
+        "- `code_scan(path='/tmp')` empty → try `ls /tmp` to locate actual directory first\\n"
+        "- `pip install` fails → try `pip install --user` or `apt-get install`\\n\\n"
+        "**What NOT to do:**\\n"
+        "- ❌ Write 'the command failed with syntax error' and stop\\n"
+        "- ❌ Ask the user to fix it for you\\n"
+        "- ❌ Move on to something else without fixing the error\\n"
+        "- ❌ Say 'config.yaml needs manual fix' — YOU fix it\\n\\n"
+        "**Remember**: You have bash, read_file, write_file, code_scan, and 20+ tools.\\n"
+        "If one approach fails, another WILL work. Find it."
+    )
+    system_prompt += self_correction
+
     # ── Static core ends here — everything below is dynamic context ──
     # DeepSeek prefix cache: first N tokens (SOUL.md) are cacheable across turns.
 
