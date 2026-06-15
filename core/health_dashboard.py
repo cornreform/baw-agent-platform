@@ -197,21 +197,21 @@ def format_health_report(result: dict) -> str:
         "",
     ]
     for c in result["checks"]:
-        emoji = {"ok": "✅", "warning": "⚠️", "error": "❌", "missing": "❓", "unknown": "❓"}
-        e = emoji.get(c["status"], "❓")
+        emoji = {"ok": "[OK]", "warning": "[WARN]", "error": "[FAIL]", "missing": "[?]", "unknown": "[?]"}
+        e = emoji.get(c["status"], "[?]")
         detail = f" — {c['detail']}" if c.get("detail") else ""
         lines.append(f"  {e} **{c['name']}**: {c['status']}{detail}")
 
     # Overall assessment
     score = result["score"]
     if score >= 9:
-        assessment = "🟢 系統健康，一切正常"
+        assessment = "[OK] 系統健康，一切正常"
     elif score >= 7:
         assessment = "🟡 有小問題，建議檢查"
     elif score >= 5:
         assessment = "🟠 需要關注，部分系統異常"
     else:
-        assessment = "🔴 系統需要緊急修復"
+        assessment = "[CRITICAL] 系統需要緊急修復"
     lines.append(f"\n**{assessment}**")
 
     return "\n".join(lines)

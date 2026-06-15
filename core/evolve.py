@@ -831,8 +831,8 @@ def get_learned_lessons_summary() -> str:
     """Return a formatted summary of learned lessons for display."""
     lessons = _load_learned_lessons()
     if not lessons:
-        return "📚 No learned lessons yet"
-    lines = [f"📚 {len(lessons)} learned lessons:"]
+        return "[LEARN] No learned lessons yet"
+    lines = [f"[LEARN] {len(lessons)} learned lessons:"]
     for l in lessons[-5:]:
         lines.append(f"  • [{l.get('type', '')}] {l.get('value', '')}")
     return "\\n".join(lines)
@@ -844,7 +844,7 @@ def get_evolve_stats() -> str:
     """Return a single-line summary of evolution state."""
     log_path = _log_dir() / "behavior.jsonl"
     if not log_path.exists():
-        return "🧬 Evolution: no data yet"
+        return "[EVOLVE] Evolution: no data yet"
 
     try:
         with open(log_path) as f:
@@ -857,7 +857,7 @@ def get_evolve_stats() -> str:
     rate = analysis.get("success_rate", 0)
     corr = analysis.get("corrections", 0)
 
-    parts = [f"🧬 {total} events logged"]
+    parts = [f"[EVOLVE] {total} events logged"]
     if rate:
         parts.append(f"{rate}% success rate")
     if corr:
@@ -1054,7 +1054,7 @@ def _apply_soul_revisions(revisions: list[dict]) -> dict:
 
         if section_start == -1:
             # Append new section at end
-            new_section = f"\n\n{marker}\n## 🧬 自動進化偏好 (每週更新)\n\n"
+            new_section = f"\n\n{marker}\n## [EVOLVE] 自動進化偏好 (每週更新)\n\n"
             soul += new_section
             section_start = soul.find(marker)
         else:
@@ -1063,7 +1063,7 @@ def _apply_soul_revisions(revisions: list[dict]) -> dict:
             if next_header == -1:
                 next_header = len(soul)
             # Remove old content after header, keep marker
-            soul = soul[:section_start + len(marker)] + "\n## 🧬 自動進化偏好 (每週更新)\n\n"
+            soul = soul[:section_start + len(marker)] + "\n## [EVOLVE] 自動進化偏好 (每週更新)\n\n"
 
         # Group revisions by section
         by_section = {}
@@ -1167,7 +1167,7 @@ def run_weekly_evolution() -> dict:
     }
 
     # Build summary
-    lines = ["🧬 週度自我進化報告"]
+    lines = ["[EVOLVE] 週度自我進化報告"]
     lines.append(f"  記憶分析: {result['memory_analysis']['entries']} 筆記錄, "
                 f"{result['memory_analysis']['preferences']} 偏好, "
                 f"{result['memory_analysis']['corrections']} 修正")

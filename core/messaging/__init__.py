@@ -212,13 +212,13 @@ class BaseConnector(ABC):
             self._release_slot()
             with self._queue_lock:
                 self._message_queue.append(item)
-            self.send(chat_id, f"⏳ Still waiting — another task is running in this chat (re-queued)")
+            self.send(chat_id, f"[QUEUED] Still waiting — another task is running in this chat (re-queued)")
             return
         self._mark_chat_busy(chat_id)
         # Better queue UX: show position and ETA
         queue_pos = len(self._message_queue) + 1
         eta = queue_pos * 8  # rough 8s per task (conservative for mobile)
-        self.send(chat_id, f"⏳ Queued (#{queue_pos}, ~{eta}s)...")
+        self.send(chat_id, f"[QUEUED] Queued (#{queue_pos}, ~{eta}s)...")
         if msg_type == "text":
             self._process_message(
                 chat_id, item["user_id"], item["user_name"],
@@ -397,7 +397,7 @@ class BaseConnector(ABC):
         self._load_session_index()
         if not self._session_index:
             return "No saved tasks."
-        lines = ["📋 **Saved Tasks:**"]
+        lines = ["[PLAN] **Saved Tasks:**"]
         for sid, s in sorted(self._session_index.items(),
                              key=lambda x: x[1]["updated"], reverse=True):
             import datetime
@@ -506,17 +506,17 @@ class BaseConnector(ABC):
                 return self._run_baw("--version")
 
             if cmd in ("exit", "quit"):
-                return "👋 Goodbye!"
+                return "[BYE] Goodbye!"
 
             if cmd in ("stop",):
                 self._cancel_event.set()
                 self._busy = False
-                return "⏹ Stopped."
+                return "[STOP] Stopped."
 
             if cmd in ("restart",):
                 self._restart_requested = True
                 self._save_restart_chat_id(msg.chat_id)
-                return "🔄 Restarting BAW engine..."
+                return "[>] Restarting BAW engine..."
 
             if cmd in ("reload",):
                 return self._baw_reload()
@@ -545,7 +545,7 @@ class BaseConnector(ABC):
                     report = format_health_report(hc)
                     return report
                 except Exception as e:
-                    return f"❌ Self-test error: {e}"
+                    return f"[FAIL] Self-test error: {e}"
 
             # ── Real-World Validator ──
             if cmd in ("validate", "val", "v"):
@@ -553,7 +553,7 @@ class BaseConnector(ABC):
                     from core.validator import validate_command
                     return validate_command(arg)
                 except Exception as e:
-                    return f"❌ Validator error: {e}"
+                    return f"[FAIL] Validator error: {e}"
 
             # ── Tribunal (multi-model consensus) ──
             if cmd == "tribunal":
@@ -561,7 +561,7 @@ class BaseConnector(ABC):
                     from core.tribunal import tribunal_command
                     return tribunal_command(arg)
                 except Exception as e:
-                    return f"❌ Tribunal error: {e}"
+                    return f"[FAIL] Tribunal error: {e}"
 
             # ── Watchdog / Health ──
             if cmd in ("watchdog", "wd"):
@@ -570,7 +570,7 @@ class BaseConnector(ABC):
                     hc = health_check()
                     return format_health_report(hc)
                 except Exception as e:
-                    return f"❌ Health check error: {e}"
+                    return f"[FAIL] Health check error: {e}"
 
             # ── Backup ──
             if cmd in ("backup", "bk"):
@@ -580,21 +580,21 @@ class BaseConnector(ABC):
                         from core.backup import list_backups
                         bks = list_backups()
                         if not bks:
-                            return "📦 暫無備份。\n用 `/backup now` 建立第一個備份。"
-                        lines = [f"📦 **備份列表** ({len(bks)} 個)"]
+                            return "[PKG] 暫無備份。\n用 `/backup now` 建立第一個備份。"
+                        lines = [f"[PKG] **備份列表** ({len(bks)} 個)"]
                         for b in bks[:7]:
                             lines.append(f"  • `{b['name']}` — {b['size_mb']}MB ({b['created'][:16]})")
                         return "\n".join(lines)
                     elif subcmd == "restore":
                         from core.backup import restore_backup
                         r = restore_backup("latest")
-                        return f"🔄 還原: {r['status']}\n{r.get('detail', '')}\n檔案數: {r.get('files_restored', 0)}"
+                        return f"[>] 還原: {r['status']}\n{r.get('detail', '')}\n檔案數: {r.get('files_restored', 0)}"
                     else:  # default: create
                         from core.backup import create_backup
                         r = create_backup()
-                        return f"✅ 備份完成: `{r['path']}`\n📦 {r['size_mb']}MB"
+                        return f"[OK] 備份完成: `{r['path']}`\n[PKG] {r['size_mb']}MB"
                 except Exception as e:
-                    return f"❌ Backup error: {e}"
+                    return f"[FAIL] Backup error: {e}"
 
             # ── Monitoring ──
             if cmd in ("monitor", "mon"):
@@ -609,12 +609,12 @@ class BaseConnector(ABC):
                         health = get_health_score_history(days=1)
                         avg = round(sum(h['score'] for h in health) / len(health), 1) if health else 0
                         return (
-                            f"📊 **過去 24 小時**\n"
+                            f"[STATS] **過去 24 小時**\n"
                             f"  錯誤: {errors['total']} ({errors['rate_per_hour']}/hr)\n"
                             f"  健康度: {avg}/10"
                         )
                 except Exception as e:
-                    return f"❌ Monitor error: {e}"
+                    return f"[FAIL] Monitor error: {e}"
 
             # ── Queue status ──
             if cmd in ("queue", "q"):
@@ -655,9 +655,9 @@ class BaseConnector(ABC):
                         yaml.dump(cfg, default_flow_style=False, allow_unicode=True),
                         encoding="utf-8",
                     )
-                    return f"✅ `{key}` set to `{value}` (saved to config.yaml)"
+                    return f"[OK] `{key}` set to `{value}` (saved to config.yaml)"
                 except Exception as e:
-                    return f"❌ Failed to set `{key}`: {e}"
+                    return f"[FAIL] Failed to set `{key}`: {e}"
 
             # ── Cron job management ──
             if cmd == "cron":
@@ -684,27 +684,27 @@ class BaseConnector(ABC):
                         from croniter import croniter
                         ci = croniter(cron_expr, nxt)
                         nxt_str = ci.get_next(datetime).strftime("%H:%M %Y-%m-%d")
-                        return f"✅ Cron `{name}` added — `{cron_expr}`\n📅 Next: {nxt_str}"
+                        return f"[OK] Cron `{name}` added — `{cron_expr}`\n📅 Next: {nxt_str}"
 
                     if subcmd == "remove" and len(args) >= 2:
                         name = args[1]
                         if sched.remove_task(name):
-                            return f"🗑️ Removed cron `{name}`"
-                        return f"❌ Cron `{name}` not found"
+                            return f"[DEL]️ Removed cron `{name}`"
+                        return f"[FAIL] Cron `{name}` not found"
 
                     if subcmd == "enable" and len(args) >= 2:
                         if sched.toggle_task(args[1], enabled=True):
-                            return f"✅ Cron `{args[1]}` enabled"
-                        return f"❌ Cron `{args[1]}` not found"
+                            return f"[OK] Cron `{args[1]}` enabled"
+                        return f"[FAIL] Cron `{args[1]}` not found"
 
                     if subcmd == "disable" and len(args) >= 2:
                         if sched.toggle_task(args[1], enabled=False):
                             return f"⏸️ Cron `{args[1]}` disabled"
-                        return f"❌ Cron `{args[1]}` not found"
+                        return f"[FAIL] Cron `{args[1]}` not found"
 
                     return "Usage:\n`/cron` — list all\n`/cron add <name> \"<cron>\" <command>` — add\n`/cron remove <name>` — delete\n`/cron enable|disable <name>` — toggle"
                 except Exception as e:
-                    return f"❌ Cron error: {e}"
+                    return f"[FAIL] Cron error: {e}"
 
             # ── Top-level session aliases ──
             if cmd == "new":
@@ -720,7 +720,7 @@ class BaseConnector(ABC):
                     "id": new_sid, "name": "fresh",
                     "messages": [], "created": time.time(), "updated": time.time(),
                 }
-                return "🔄 Session reset — starting fresh."
+                return "[>] Session reset — starting fresh."
             if cmd == "list":
                 return self._handle_task_command(msg.chat_id, "list", "")
             if cmd == "resume" and arg:
@@ -736,7 +736,7 @@ class BaseConnector(ABC):
             if cmd == "mode" and arg:
                 cfg = self._chat_config.setdefault(msg.chat_id, {})
                 cfg["mode"] = arg
-                return f"✅ Chat mode set to: {arg}"
+                return f"[OK] Chat mode set to: {arg}"
 
             if cmd == "mode":
                 cc = self._chat_config.get(msg.chat_id, {})
@@ -749,7 +749,7 @@ class BaseConnector(ABC):
             if cmd == "tone" and arg:
                 cfg = self._chat_config.setdefault(msg.chat_id, {})
                 cfg["tone"] = arg
-                return f"✅ Chat tone set to: {arg}"
+                return f"[OK] Chat tone set to: {arg}"
 
             if cmd == "tone":
                 cc = self._chat_config.get(msg.chat_id, {})
@@ -763,7 +763,7 @@ class BaseConnector(ABC):
                 cfg = self._chat_config.setdefault(msg.chat_id, {})
                 cfg["model"] = clean_arg
                 return (
-                    f"✅ Chat model set to: `{clean_arg}`\n\n"
+                    f"[OK] Chat model set to: `{clean_arg}`\n\n"
                     f"💡 Set as default:  `/set model.default {clean_arg}`\n"
                     f"   Angel override: `/set adversarial.angel_model {clean_arg}`\n"
                     f"   Devil override: `/set adversarial.devil_model {clean_arg}`"
@@ -801,7 +801,7 @@ class BaseConnector(ABC):
                 from core.guards import bail
                 return bail("api_error", status="internal", message=str(e)[:200])
             except Exception:
-                return f"❌ BAW error — please try again.\n({str(e)[:100]})"
+                return f"[FAIL] BAW error — please try again.\n({str(e)[:100]})"
 
     # ── Unified task dispatch ──────────────────────────────────────────────
     def _dispatch_task(self, text: str, chat_id: str | None, _depth: int = 0) -> str:
@@ -820,7 +820,7 @@ class BaseConnector(ABC):
         _text_lower = text.lower()
         for _sp in _sensitive_paths:
             if _sp in _text_lower:
-                return f"❌ Blocked — {_sp} is a sensitive system file and cannot be accessed."
+                return f"[FAIL] Blocked — {_sp} is a sensitive system file and cannot be accessed."
 
         # ── Direct execution shortcuts ──────────────────────────────────────
         # MUST run BEFORE chat bypass — short commands like "read /tmp/x.txt"
@@ -860,7 +860,7 @@ class BaseConnector(ABC):
                     from tools.memory import memory_remember
                     _direct_result = memory_remember(_content, tags="user")
                 except Exception as _e:
-                    _direct_result = f"❌ 記憶儲存失敗：{_e}"
+                    _direct_result = f"[FAIL] 記憶儲存失敗：{_e}"
 
         # Memory: search (e.g. "搜尋記憶 拉麵" / "你記得我鍾意食咪嗎？")
         if _direct_result is None and any(_kw in _lower for _kw in ["搜尋記憶", "search memory", "搜尋記憶", "記得", "記唔記得", "你記得"]):
@@ -894,7 +894,7 @@ class BaseConnector(ABC):
                 else:
                     _direct_result = "唔好意思，我唔記得你講過呢樣嘅事。可以提示下我嗎？"
             except Exception as _e:
-                _direct_result = f"❌ 記憶搜尋失敗：{_e}"
+                _direct_result = f"[FAIL] 記憶搜尋失敗：{_e}"
 
         # File: read (e.g. "讀取 /tmp/test.txt")
         if _direct_result is None and any(_kw in _lower for _kw in ["讀取", "讀檔", "讀下", "看下", "看看", "read file", "cat ", "看內容", "read "]):
@@ -907,7 +907,7 @@ class BaseConnector(ABC):
                         continue
                     _blocked, _reason = _rf_sensitive(_fpath)
                     if _blocked:
-                        _read_results.append(f"📄 {_fpath}\n❌ {_reason}")
+                        _read_results.append(f"[FILE] {_fpath}\n[FAIL] {_reason}")
                     else:
                         try:
                             _content = _rf(_fpath)
@@ -916,9 +916,9 @@ class BaseConnector(ABC):
                                 _content = "未找到檔案 (可能尚未建立)"
                             elif _content.startswith("Error: not a file:"):
                                 _content = "路徑不是檔案 (可能是目錄)"
-                            _read_results.append(f"📄 {_fpath}\n{_content}")
+                            _read_results.append(f"[FILE] {_fpath}\n{_content}")
                         except Exception as _e:
-                            _read_results.append(f"📄 {_fpath}\n❌ 讀檔失敗：{_e}")
+                            _read_results.append(f"[FILE] {_fpath}\n[FAIL] 讀檔失敗：{_e}")
                 if _read_results:
                     _direct_result = "\n\n".join(_read_results)
 
@@ -935,7 +935,7 @@ class BaseConnector(ABC):
                         from tools.write_file import write_file as _wf
                         _direct_result = _wf(_fpath, _content_match.group(1))
                     except Exception as _e:
-                        _direct_result = f"❌ 寫檔失敗：{_e}"
+                        _direct_result = f"[FAIL] 寫檔失敗：{_e}"
 
         # Status: model query (e.g. "你而家用緊邊個 model")
         if _direct_result is None and any(_kw in _lower for _kw in ["用緊邊個 model", "用緊邊個", "用緊 model", "model 狀態", "狀態 model", "用紧边个", "用紧模型"]):
@@ -946,7 +946,7 @@ class BaseConnector(ABC):
                 _chat_m = config.get("capabilities", {}).get("chat", {}).get("model", _m)
                 _direct_result = f"⚡ 當前 model: `{_chat_m}` (chat) / `{_m}` (default)\n\n查更多: `/status`"
             except Exception as _e:
-                _direct_result = f"❌ 無法讀取 model 設定：{_e}"
+                _direct_result = f"[FAIL] 無法讀取 model 設定：{_e}"
 
         # Self-test (e.g. "幫我做自我測試" / "/selftest")
         if _direct_result is None and any(_kw in _lower for _kw in ["自我測試", "selftest", "自我檢查", "系統檢查", "健康檢查"]):
@@ -954,7 +954,7 @@ class BaseConnector(ABC):
                 from tools.selftest import selftest as _st
                 _direct_result = _st(full=False)
             except Exception as _e:
-                _direct_result = f"❌ Self-test error: {_e}"
+                _direct_result = f"[FAIL] Self-test error: {_e}"
 
         if _direct_result is not None:
             logger.info(f"[DirectShortcut] triggered for: {text[:60]}")
@@ -1088,7 +1088,7 @@ class BaseConnector(ABC):
                             _depth: int = 0) -> str:
         """Detect numbered tasks, execute each via _dispatch_task (recursive)."""
         if _depth >= 5:
-            return f"❌ Nesting too deep ({_depth}).\n{self._run_baw(text, chat_id=chat_id)}"
+            return f"[FAIL] Nesting too deep ({_depth}).\n{self._run_baw(text, chat_id=chat_id)}"
         import re as _re
         _sections = _re.split(
             _MULTITASK_SPLIT,
@@ -1106,17 +1106,17 @@ class BaseConnector(ABC):
                     _resp = self._dispatch_task(_task, chat_id, _depth + 1)
                     _results.append(f"## Task {_i}/{_total}: {_resp[:500]}")
                 except Exception as _e:
-                    _results.append(f"## Task {_i}/{_total}: ❌ Error — {_e}")
+                    _results.append(f"## Task {_i}/{_total}: [FAIL] Error — {_e}")
                 # Small delay between tasks to prevent API rate-limit and give UI breathing room
                 if _i < _total:
                     import time as _t2
                     _t2.sleep(0.5)
         finally:
             self._silent_mode = _prev
-        _pass = sum(1 for r in _results if "❌ Error" not in r)
+        _pass = sum(1 for r in _results if "[FAIL] Error" not in r)
         _fail = _total - _pass
         # ── Truth-check: don't call it "Pass" if the reply contains failure
-        #    indicators beyond just "❌ Error". The LLM often reports
+        #    indicators beyond just "[FAIL] Error". The LLM often reports
         #    "Done — 1/1 (100%)" after a real failure (syntax error, hallucination).
         _real_pass = 0
         _real_fail = 0
@@ -1126,7 +1126,7 @@ class BaseConnector(ABC):
             _body_lower = _body.lower()
             # Genuine success: tool output shows it worked
             _is_fail = (
-                "❌" in _r
+                "[FAIL]" in _r
                 or "error" in _body_lower
                 or "fail" in _body_lower
                 or "syntax error" in _body_lower
@@ -1152,7 +1152,7 @@ class BaseConnector(ABC):
             f"- Total: {_total}  |  Pass: {_real_pass}  |  Fail: {_real_fail}"
         )
         if _suspicious:
-            _summary += f"\n- ⚠️ Possibly fabricated tasks: {len(_suspicious)}"
+            _summary += f"\n- [WARN] Possibly fabricated tasks: {len(_suspicious)}"
             for _s in _suspicious:
                 _summary += f"\n  - `{_s}`"
         _summary += f"\n- Nesting depth: {_depth}\n"
@@ -1170,7 +1170,7 @@ class BaseConnector(ABC):
                 "messages": [], "created": time.time(), "updated": time.time(),
             }
             self._save_session_to_disk(self._sessions[chat_id])
-            return f"✅ New task started: **{name}** (`{new_sid[:12]}`)"
+            return f"[OK] New task started: **{name}** (`{new_sid[:12]}`)"
 
         elif action == "list" or action == "ls":
             return self._list_saved_sessions()
@@ -1202,20 +1202,20 @@ class BaseConnector(ABC):
                 ses["name"] = arg
             ses["updated"] = time.time()
             self._save_session_to_disk(ses)
-            return f"💾 Task saved: **{ses['name']}** (`{ses['id'][:12]}`)"
+            return f"[SAVE] Task saved: **{ses['name']}** (`{ses['id'][:12]}`)"
 
         elif action in ("forget", "delete", "rm"):
             sid = arg or ""
             if not sid:
                 return "Usage: /task forget <session_id>"
             if self._delete_session(sid):
-                return f"🗑️ Task `{sid[:12]}` deleted."
+                return f"[DEL]️ Task `{sid[:12]}` deleted."
             return f"Task `{sid[:12]}` not found."
 
         elif action in ("info", "show"):
             ses = self._get_or_create_session(chat_id)
             return (
-                f"📌 **Current Task**\n"
+                f"[TODO] **Current Task**\n"
                 f"  ID: `{ses['id'][:12]}`\n"
                 f"  Name: **{ses['name']}**\n"
                 f"  Messages: {len(ses['messages'])}\n"
@@ -1262,9 +1262,9 @@ class BaseConnector(ABC):
                 mode="quick",
                 fresh_start=True,
             )
-            return f"📋 **Session Summary** (`{ses['id'][:12]}`)\n\n{response}"
+            return f"[PLAN] **Session Summary** (`{ses['id'][:12]}`)\n\n{response}"
         except Exception as e:
-            return f"❌ Summarization failed: {e}"
+            return f"[FAIL] Summarization failed: {e}"
 
     def _pickup_last_session(self, chat_id: str) -> str:
         """Find the most recent interrupted session and resume it."""
@@ -1293,7 +1293,7 @@ class BaseConnector(ABC):
         # Load full session
         data = self._load_session_from_disk(target["id"])
         if not data:
-            return f"❌ Failed to load session `{target['id'][:12]}`."
+            return f"[FAIL] Failed to load session `{target['id'][:12]}`."
 
         # Load messages into current chat session
         self._sessions[chat_id] = {
@@ -1310,7 +1310,7 @@ class BaseConnector(ABC):
 
         context_lines = []
         for m in last_msgs:
-            role = "👤" if m["role"] == "user" else "🤖"
+            role = "👤" if m["role"] == "user" else "[BOT]"
             content = m.get("content", "")
             # Trim long content
             if len(content) > 200:
@@ -1326,7 +1326,7 @@ class BaseConnector(ABC):
             f"📂 **Picked Up:** `{data['id'][:12]}` — {data.get('name', 'untitled')}\n"
             f"   ({len(msgs)} msgs, last activity: {updated_dt})\n\n"
             f"**Last context:**\n{context}\n\n"
-            f"Continue chatting to pick up where you left off. 🚀"
+            f"Continue chatting to pick up where you left off. [GO]"
         )
 
     # ── In-process BAW engine (lazy-loaded) ──
@@ -1450,7 +1450,7 @@ class BaseConnector(ABC):
         try:
             config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
         except Exception as e:
-            return f"❌ Reload failed: config error: {e}"
+            return f"[FAIL] Reload failed: config error: {e}"
 
         tools_cfg = config.get("tools", {})
         _stub_enabled = lambda name: tools_cfg.get(name, {}).get("enabled", False)
@@ -1485,7 +1485,7 @@ class BaseConnector(ABC):
         try:
             config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
         except Exception as e:
-            return f"❌ Reload failed: config error: {e}"
+            return f"[FAIL] Reload failed: config error: {e}"
 
         # Re-load env vars
         env_file = data_dir / ".env"
@@ -1504,12 +1504,12 @@ class BaseConnector(ABC):
             _im.reload(_loop)
             run_agent = _loop.run_agent
         except Exception as e:
-            return f"❌ Reload failed: loop reload error: {e}"
+            return f"[FAIL] Reload failed: loop reload error: {e}"
 
         self._BAW = {"run_agent": run_agent, "config": config, "data_dir": data_dir}
-        status = f"✅ Reloaded {len(all_tool_names) - len(errors)}/{len(all_tool_names)} tools"
+        status = f"[OK] Reloaded {len(all_tool_names) - len(errors)}/{len(all_tool_names)} tools"
         if errors:
-            status += f" | ⚠️ {len(errors)} errors: {'; '.join(errors[:3])}"
+            status += f" | [WARN] {len(errors)} errors: {'; '.join(errors[:3])}"
         return status
 
     def _baw_cfg_set(self, key: str, value: str) -> str:
@@ -1537,18 +1537,18 @@ class BaseConnector(ABC):
             sync = sync.setdefault(k, {})
         sync[keys[-1]] = value
 
-        return f"✅ Config updated: {key} → {value}"
+        return f"[OK] Config updated: {key} → {value}"
 
     _TOOL_ICONS = {
         "bash": "🔎",
         "read_file": "📖",
         "write_file": "✏️",
         "web_search": "🌐",
-        "web_extract": "📄",
-        "patch": "🔧",
-        "search_files": "🔍",
+        "web_extract": "[FILE]",
+        "patch": "[FIX]",
+        "search_files": "[SCAN]",
         "terminal": "💻",
-        "delegate_task": "🤖",
+        "delegate_task": "[BOT]",
     }
 
     @staticmethod
@@ -1585,13 +1585,13 @@ class BaseConnector(ABC):
         def _step(label: str):
             nonlocal step
             step += 1
-            self.send(chat_id, f"🔄 **BAW Update** — Step {step}/{total_steps}\n{label}")
+            self.send(chat_id, f"[>] **BAW Update** — Step {step}/{total_steps}\n{label}")
 
         def _done(label: str):
-            self.send(chat_id, f"  ✅ Step {step}/{total_steps} — {label}")
+            self.send(chat_id, f"  [OK] Step {step}/{total_steps} — {label}")
 
         def _warn(label: str):
-            self.send(chat_id, f"  ⚠️ Step {step}/{total_steps} — {label}")
+            self.send(chat_id, f"  [WARN] Step {step}/{total_steps} — {label}")
 
         # ── Step 1/6: Fetch ──
         _step("Fetching latest from GitHub...")
@@ -1672,7 +1672,7 @@ class BaseConnector(ABC):
                     elif short.startswith("perf:"):
                         perf.append(f"  ⚡ {short[5:].strip()}")
                     elif short.startswith("docs:"):
-                        docs.append(f"  📝 {short[5:].strip()}")
+                        docs.append(f"  [NOTE] {short[5:].strip()}")
                     else:
                         other.append(f"  • {short.strip()}")
 
@@ -1776,7 +1776,7 @@ class BaseConnector(ABC):
         if self._cancel_event.is_set():
             self._cancel_event.clear()
             self._busy = False
-            return "⏹ Previous request was cancelled."
+            return "[STOP] Previous request was cancelled."
 
         try:
             baw = self._baw_ensure()
@@ -1924,7 +1924,7 @@ class BaseConnector(ABC):
                     if step_type == "plan":
                         meta = args or {}
                         total = meta.get("steps", 0)
-                        plan_text = f"🔍 分析中... (預計 {total} 步)"
+                        plan_text = f"[SCAN] 分析中... (預計 {total} 步)"
                         if _progress_msg_id:
                             self.send(chat_id, plan_text, edit_msg_id=_progress_msg_id)
                         else:
@@ -1932,7 +1932,7 @@ class BaseConnector(ABC):
                             _progress_msg_id = self.send(chat_id, plan_text)
                     elif step_type == "tool" and name:
                         # Just update the current status line, don't accumulate
-                        _status = f"🔧 {name[:40]}"
+                        _status = f"[FIX] {name[:40]}"
                         if _progress_msg_id:
                             self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
                         else:
@@ -1942,7 +1942,7 @@ class BaseConnector(ABC):
                         s = meta.get("step", "")
                         t = meta.get("total", "")
                         g = meta.get("goal", "")[:80]
-                        _status = f"📋 步驟 {s}/{t}"
+                        _status = f"[PLAN] 步驟 {s}/{t}"
                         if g:
                             _status += f" \u00b7 {g}"
                         if _progress_msg_id:
@@ -1956,7 +1956,7 @@ class BaseConnector(ABC):
                             logger.warning(f"[Loop] {_recalc_total} recalculations — forcing stop")
                             self._cancel_event.set()
                             return
-                        _status = "🔄 重新計算中..."
+                        _status = "[>] 重新計算中..."
                         if _progress_msg_id:
                             self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
                         else:
@@ -2054,15 +2054,15 @@ class BaseConnector(ABC):
                                _stuck_seconds += 1
                                if _stuck_seconds > 30:
                                    fut.cancel()
-                                   return "⏳ Task stuck (no progress for >10min)."
+                                   return "[QUEUED] Task stuck (no progress for >10min)."
                            else:
                                _stuck_seconds = 0
                            if self._cancel_event.is_set():
                                fut.cancel()
-                               return "⏹ Cancelled."
+                               return "[STOP] Cancelled."
                     else:
                         fut.cancel()
-                        return "⏳ Task took too long (>30min)."
+                        return "[QUEUED] Task took too long (>30min)."
 
                 output = response or ""
 
@@ -2111,10 +2111,10 @@ class BaseConnector(ABC):
                         f"   (e.g. 'pip install edge-tts', 'top up MiniMax credits', 'switch to Step Plan endpoint', 'use curl instead of Python SDK')\n"
                         f"4. Alternative path: what BAW could try next if the fix is applied\n"
                         f"\nFormat:\n"
-                        f"📋 Diagnosis ({_round} rounds)\n"
+                        f"[PLAN] Diagnosis ({_round} rounds)\n"
                         f"• Tried: ...\n"
                         f"• Root cause: ...\n"
-                        f"• 🔧 Fix: ...\n"
+                        f"• [FIX] Fix: ...\n"
                         f"• Next: ...\n"
                         f"\nDo NOT apologise. Do NOT ask questions. Be specific and actionable."
                     )
@@ -2132,7 +2132,7 @@ class BaseConnector(ABC):
                     except Exception as _diag_e:
                         # Fallback: list failure reasons directly
                         output += (
-                            f"\n\n⚠️ Tried {_round} approaches without reaching goal.\n"
+                            f"\n\n[WARN] Tried {_round} approaches without reaching goal.\n"
                             + ("\n".join(f"  • {r[:200]}" for r in all_failure_reasons) if all_failure_reasons else "")
                             + "\n\nTo unblock: check API keys, quotas, and installed packages. "
                             "Or try `pip install edge-tts` if audio generation failed."
@@ -2146,7 +2146,7 @@ class BaseConnector(ABC):
             if all_failure_reasons:
                 failure_text = "\n".join(f"  • {r[:200]}" for r in all_failure_reasons)
                 output = (
-                    f"❌ Task had {len(all_failure_reasons)} failure(s):\n"
+                    f"[FAIL] Task had {len(all_failure_reasons)} failure(s):\n"
                     f"{failure_text}\n\n"
                     f"{output}"
                 )
@@ -2164,7 +2164,7 @@ class BaseConnector(ABC):
                         "Completed. (No" not in output and \
                         "Task failed to reach goal" not in output
                     if _has_real_content:
-                        output += f"\n⚖️ Court: {agreement} (gap {gap})"
+                        output += f"\n[COURT] Court: {agreement} (gap {gap})"
                 except Exception:
                     pass
 
@@ -2190,14 +2190,14 @@ class BaseConnector(ABC):
             # ── Guarantee non-empty output — user must always see a result ──
             if not output.strip():
                 if all_failure_reasons:
-                    lines = ["❌ Task failed:"]
+                    lines = ["[FAIL] Task failed:"]
                     for r in all_failure_reasons:
                         lines.append(f"  • {r[:200]}")
                     output = "\n".join(lines)
                 elif info and info.get("goal_achieved") is False:
-                    output = "❌ Task failed to reach goal. No additional details."
+                    output = "[FAIL] Task failed to reach goal. No additional details."
                 else:
-                    output = "✅ Completed. (No additional output — check inline progress above for step details.)"
+                    output = "[OK] Completed. (No additional output — check inline progress above for step details.)"
             # ── Hallucination guard: LLM sometimes claims it "cannot access local files"
             #    even though it has read_file/write_file/terminal tools. Override it.
             _hallucination_phrases = [
@@ -2232,17 +2232,17 @@ class BaseConnector(ABC):
                         else:
                             _fcontent = _pp.read_text(encoding="utf-8")
                         if _fcontent.startswith("Error:"):
-                            output = f"❌ 無法讀取 `{_fpath}`：{_fcontent}"
+                            output = f"[FAIL] 無法讀取 `{_fpath}`：{_fcontent}"
                         else:
                             output = (
-                                f"📄 **檔案內容** (`{_fpath}`):\n"
+                                f"[FILE] **檔案內容** (`{_fpath}`):\n"
                                 f"```\n{_fcontent[:2000]}\n```"
                             )
                     except Exception as _e2:
-                        output = f"❌ 讀檔錯誤: {_e2}"
+                        output = f"[FAIL] 讀檔錯誤: {_e2}"
                 else:
                     output = (
-                        "❌ 讀檔失敗: 請求包含讀取檔案，"
+                        "[FAIL] 讀檔失敗: 請求包含讀取檔案，"
                         "但 LLM 誤報無法讀取。未能自動提取檔案路徑。"
                     )
 
@@ -2269,7 +2269,7 @@ class BaseConnector(ABC):
                         _mp_obj = _FileP(_mp)
                         _summary_parts.append(f"`{_mp_obj.name}` ({_mp_obj.stat().st_size:,} bytes)")
                     _first_line = output.split('\n')[0][:200]
-                    output = f"{_first_line}\n\n📄 {' · '.join(_summary_parts)}"
+                    output = f"{_first_line}\n\n[FILE] {' · '.join(_summary_parts)}"
                 # Append MEDIA tags AFTER trim — guaranteed to survive
                 for _mp in _pending_media:
                     if f"MEDIA:{_mp}" not in output:
@@ -2278,19 +2278,19 @@ class BaseConnector(ABC):
             # ── Clear progress message after BAW completes ──
             if chat_id and _progress_msg_id:
                 try:
-                    self.send(chat_id, "✅", edit_msg_id=_progress_msg_id)
+                    self.send(chat_id, "[OK]", edit_msg_id=_progress_msg_id)
                 except Exception:
                     pass
 
             return output.strip()
 
         except Exception as e:
-            return f"❌ BAW error: {e}"
+            return f"[FAIL] BAW error: {e}"
 
     @staticmethod
     def _help_text() -> str:
         return (
-            "🤖 **BAW Bot** — Multi-platform Agent Interface\n\n"
+            "[BOT] **BAW Bot** — Multi-platform Agent Interface\n\n"
             "Simply type anything and BAW will process it.\n\n"
             "**💬 Core:**\n"
             "/help — This message\n"
@@ -2303,7 +2303,7 @@ class BaseConnector(ABC):
             "/court live — 訂閱逐步推送 (M3 wire-in)\n"
             "/stop — Cancel running request\n"
             "/restart — Restart BAW engine\n\n"
-            "**📋 Sessions:**\n"
+            "**[PLAN] Sessions:**\n"
             "/task new [name] — Save current & start fresh\n"
             "/task list, /list — List saved sessions\n"
             "/task resume <id>, /resume <id> — Resume a saved session\n"
@@ -2319,7 +2319,7 @@ class BaseConnector(ABC):
             "/set `<key>` `<value>` — Persist config to config.yaml\n"
             "/reload — Hot-reload tools & config (no restart)\n"
             "/capability `<cmd>` — Manage capabilities\n\n"
-            "**🧪 Validate (REAL tests):**\n"
+            "**[TEST] Validate (REAL tests):**\n"
             "/validate — Run all real-world validations\n"
             "/validate api — DeepSeek + MiniMax live API calls\n"
             "/validate evolve — Evolve logging (real write + read)\n"
@@ -2336,7 +2336,7 @@ class BaseConnector(ABC):
             "/tribunal <question> — Ask multiple judges, get unified verdict\n"
             "/tribunal bench — Show current judge configuration\n"
             "(Customise judges in ~/.baw/config.yaml tribunal section)\n\n"
-            "**🧠 Memory:**\n"
+            "**[MODEL] Memory:**\n"
             "/memory `<text>` — Save a memory\n"
             "/search `<query>` — Search memories\n"
             "/evolve — Self-evolution stats\n\n"
@@ -2344,7 +2344,7 @@ class BaseConnector(ABC):
             "/board — Generate HTML dashboard\n"
             "/version — BAW version\n"
             "/cron — List/manage scheduled tasks\n\n"
-            "**🔧 System:**\n"
+            "**[FIX] System:**\n"
             "/update — Git pull + changelog + restart\n"
             "/tts on|off|status — Toggle text-to-speech"
         )

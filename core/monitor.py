@@ -116,7 +116,7 @@ def generate_weekly_report() -> str:
     avg_score = round(sum(h.get("score", 0) for h in health) / len(health), 1) if health else 0
 
     lines = [
-        f"## 📊 BAW 每週可靠度報告",
+        f"## [STATS] BAW 每週可靠度報告",
         f"*{week_ago.strftime('%Y-%m-%d')} → {now.strftime('%Y-%m-%d')}*",
         "",
         f"### 健康度",
@@ -130,7 +130,7 @@ def generate_weekly_report() -> str:
 
     lines.append("")
     lines.append(f"### 錯誤率 (7 天)")
-    lines.append(f"  📊 總錯誤: **{errors['total']}**")
+    lines.append(f"  [STATS] 總錯誤: **{errors['total']}**")
     lines.append(f"  ⚡ 平均: {errors['rate_per_hour']}/小時")
 
     if errors["by_provider"]:
@@ -140,13 +140,13 @@ def generate_weekly_report() -> str:
 
     # Assessment
     if avg_score >= 8 and errors["total"] < 10:
-        assessment = "🟢 系統穩定，無重大問題"
+        assessment = "[OK] 系統穩定，無重大問題"
     elif avg_score >= 6 and errors["total"] < 50:
         assessment = "🟡 有少量問題，建議定期檢查"
     elif avg_score >= 4:
         assessment = "🟠 需要關注，錯誤率偏高"
     else:
-        assessment = "🔴 系統不穩定，需要立即處理"
+        assessment = "[CRITICAL] 系統不穩定，需要立即處理"
 
     lines.append(f"\n**{assessment}**")
     lines.append(f"\n*報告生成: {now.strftime('%Y-%m-%d %H:%M UTC')}*")

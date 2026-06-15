@@ -68,7 +68,7 @@ def add_triple(subject: str, relation: str, object: str) -> str:
     # Dedup
     for t in data["triples"]:
         if t["s"] == sub and t["r"] == rel and t["o"] == obj:
-            return f"🔄 Triple already exists (id: {t['id']})"
+            return f"[>] Triple already exists (id: {t['id']})"
 
     tid = f"t{len(data['triples'])+1}"
     triple = {"id": tid, "s": sub, "r": rel, "o": obj, "ts": ts}
@@ -88,7 +88,7 @@ def add_triple(subject: str, relation: str, object: str) -> str:
                 data["entities"][nk]["relations"].append(rel)
 
     _save(data)
-    return f"✅ Triple saved: {sub} -[{rel}]-> {obj}  (id: {tid})"
+    return f"[OK] Triple saved: {sub} -[{rel}]-> {obj}  (id: {tid})"
 
 
 def query_entity(entity: str) -> str:
@@ -179,7 +179,7 @@ def stats() -> str:
     entities = data["entities"]
     total_relations = sum(len(e.get("relations", [])) for e in entities.values())
     return (
-        f"📊 Knowledge Graph:\n"
+        f"[STATS] Knowledge Graph:\n"
         f"  Triples:  {len(triples)}\n"
         f"  Entities: {len(entities)}\n"
         f"  Relations: {total_relations}\n"
@@ -271,7 +271,7 @@ def extract_from_memory() -> str:
         return "Memory store not found."
 
     _save(data)
-    return f"✅ Extracted {count} triples from memory store."
+    return f"[OK] Extracted {count} triples from memory store."
 
 
 def _extract_entities_from_content(content: str) -> list[str]:

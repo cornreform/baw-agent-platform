@@ -3,9 +3,9 @@
 Backed by core.todo_state.TodoState so the list survives process restarts
 and follows the user across sessions. Three item types:
 
-  - task     Standard checklist item (icon ⬜ → 🔄 → ✅)
-  - thought  BAW's self-reflection; never auto-completes (icon 💭)
-  - followup Action for a future turn/session; surfaced at next boot (icon 📌)
+  - task     Standard checklist item
+  - thought  BAW's self-reflection; never auto-completes
+  - followup Action for a future turn/session; surfaced at next boot
 
 The TOOL_DEF interface is a strict superset of the previous in-memory version,
 so existing callers keep working. New actions: 'add_thought', 'add_followup',
@@ -39,24 +39,25 @@ def set_session(session_id: str) -> None:
     _state = TodoState(session_id=session_id)
 
 
-# ── ICONS ────────────────────────────────────────────────────
-_TASK_ICONS = {
-    "pending":     "⬜",
-    "in_progress": "🔄",
-    "completed":   "✅",
-    "cancelled":   "❌",
+# ── STATUS TAGS (no emoji — cross-platform consistent) ────────
+
+_TASK_TAGS = {
+    "pending":     "[ ]",
+    "in_progress": "[>]",
+    "completed":   "[OK]",
+    "cancelled":   "[X]",
 }
-_THOUGHT_ICONS = {
-    "pending":     "💭",
-    "in_progress": "💭",
-    "completed":   "💭",  # thoughts are never "done" — they're captured
-    "cancelled":   "❌",
+_THOUGHT_TAGS = {
+    "pending":     "[THOUGHT]",
+    "in_progress": "[THOUGHT]",
+    "completed":   "[THOUGHT]",  # thoughts are never "done" — they're captured
+    "cancelled":   "[X]",
 }
-_FOLLOWUP_ICONS = {
-    "pending":     "📌",
-    "in_progress": "📌",
-    "completed":   "✅",
-    "cancelled":   "❌",
+_FOLLOWUP_TAGS = {
+    "pending":     "[TODO]",
+    "in_progress": "[TODO]",
+    "completed":   "[OK]",
+    "cancelled":   "[X]",
 }
 _TYPE_LABEL = {"task": "task", "thought": "thought", "followup": "follow-up"}
 
@@ -65,26 +66,26 @@ _TYPE_LABEL = {"task": "task", "thought": "thought", "followup": "follow-up"}
 
 def _format_items(items: list, stats: dict | None = None) -> str:
     if not items and not stats:
-        return "✅ No items."
+        return "[OK] No items."
     lines = []
     for it in items:
         if it.type == "thought":
-            icon = _THOUGHT_ICONS.get(it.status, "💭")
+            tag = _THOUGHT_TAGS.get(it.status, "[THOUGHT]")
         elif it.type == "followup":
-            icon = _FOLLOWUP_ICONS.get(it.status, "📌")
+            tag = _FOLLOWUP_TAGS.get(it.status, "[TODO]")
         else:
-            icon = _TASK_ICONS.get(it.status, "❓")
+            tag = _TASK_TAGS.get(it.status, "[?]")
         type_tag = "" if it.type == "task" else f" [{_TYPE_LABEL[it.type]}]"
-        note = f" — {it.note}" if it.note else ""
-        lines.append(f"{icon} [{it.id[-6:]}]{type_tag} {it.content}{note}")
+        note = f" -- {it.note}" if it.note else ""
+        lines.append(f"{tag} [{it.id[-6:]}]{type_tag} {it.content}{note}")
 
     if stats:
         s = stats
         lines.append("")
         lines.append(
-            f"📊 task {s['task']['pending']}p/{s['task']['in_progress']}i/{s['task']['completed']}c "
-            f"| 💭 thought {s['thought']['pending']} "
-            f"| 📌 followup {s['followup']['pending']}p/{s['followup']['in_progress']}i"
+            f"[STATS] task {s['task']['pending']}p/{s['task']['in_progress']}i/{s['task']['completed']}c "
+            f"| [THOUGHT] thought {s['thought']['pending']} "
+            f"| [TODO] followup {s['followup']['pending']}p/{s['followup']['in_progress']}i"
         )
     return "\n".join(lines)
 
@@ -100,24 +101,22 @@ def todo_write(todos_json: str, merge: bool = False) -> str:
     try:
         new_items = json.loads(todos_json)
     except json.JSONDecodeError as e:
-        return f"Error: invalid JSON: {e}"
+        return f"[FAIL] invalid JSON: {e}"
     if not isinstance(new_items, list):
-        return "Error: todos_json must be a JSON array"
+        return "[FAIL] todos_json must be a JSON array"
 
     st = _get_state()
     if merge:
         for itm in new_items:
             if not all(k in itm for k in ("id", "content", "status")):
-                return f"Error: each item must have id, content, status. Got: {itm}"
+                return f"[FAIL] each item must have id, content, status. Got: {itm}"
             if itm["status"] not in ("pending", "in_progress", "completed", "cancelled"):
-                return f"Error: invalid status '{itm['status']}'"
+                return f"[FAIL] invalid status '{itm['status']}'"
             st.update(itm["id"], **{k: v for k, v in itm.items() if k != "id"})
     else:
-        # Replace = clear and add. The previous in-memory version used
-        # inline-constructed dicts; we re-add as 'task' type.
         for itm in new_items:
             if not all(k in itm for k in ("id", "content", "status")):
-                return f"Error: each item must have id, content, status. Got: {itm}"
+                return f"[FAIL] each item must have id, content, status. Got: {itm}"
             existing = st.get(itm["id"])
             if existing:
                 st.update(itm["id"], content=itm["content"], status=itm["status"])
@@ -135,14 +134,14 @@ def todo_add_thought(content: str, note: str = "") -> str:
     """Capture a self-reflection / idea. Always visible until explicitly removed."""
     st = _get_state()
     it = st.add(content=content, type="thought", note=note)
-    return f"💭 captured [{it.id[-6:]}]: {content}"
+    return f"[THOUGHT] captured [{it.id[-6:]}]: {content}"
 
 
 def todo_add_followup(content: str, note: str = "") -> str:
     """Schedule an action for a future turn/session. Will surface at next boot."""
     st = _get_state()
     it = st.add(content=content, type="followup", note=note)
-    return f"📌 follow-up scheduled [{it.id[-6:]}]: {content}"
+    return f"[TODO] follow-up scheduled [{it.id[-6:]}]: {content}"
 
 
 def todo_surface() -> str:
@@ -151,17 +150,17 @@ def todo_surface() -> str:
     local = st.list(active_only=True)
     carried = st.load_pending_followups()
     if not local and not carried:
-        return "✅ No pending items — clean slate."
+        return "[OK] No pending items -- clean slate."
     out = []
     if carried:
-        out.append("📌 **Carried over from previous sessions:**")
+        out.append("[TODO] **Carried over from previous sessions:**")
         for it in carried:
             tag = f" (from {it.session_id})" if it.session_id else ""
-            out.append(f"  📌 [{it.id[-6:]}]{tag} {it.content}")
+            out.append(f"  [TODO] [{it.id[-6:]}]{tag} {it.content}")
     if local:
         if out:
             out.append("")
-        out.append("📋 **This session:**")
+        out.append("[PLAN] **This session:**")
         out.append(_format_items(local, st.stats()))
     return "\n".join(out)
 
@@ -176,32 +175,32 @@ def todo_done(item_id: str) -> str:
     st = _get_state()
     full_id = _resolve_id(st, item_id)
     if not full_id:
-        return f"Error: id '{item_id}' not found"
+        return f"[FAIL] id '{item_id}' not found"
     it = st.complete(full_id)
     if not it:
-        return f"Error: id '{item_id}' not found"
-    return f"✅ done [{it.id[-6:]}]: {it.content}"
+        return f"[FAIL] id '{item_id}' not found"
+    return f"[OK] done [{it.id[-6:]}]: {it.content}"
 
 
 def todo_cancel(item_id: str) -> str:
     st = _get_state()
     full_id = _resolve_id(st, item_id)
     if not full_id:
-        return f"Error: id '{item_id}' not found"
+        return f"[FAIL] id '{item_id}' not found"
     it = st.cancel(full_id)
     if not it:
-        return f"Error: id '{item_id}' not found"
-    return f"❌ cancelled [{it.id[-6:]}]: {it.content}"
+        return f"[FAIL] id '{item_id}' not found"
+    return f"[X] cancelled [{it.id[-6:]}]: {it.content}"
 
 
 def todo_remove(item_id: str) -> str:
     st = _get_state()
     full_id = _resolve_id(st, item_id)
     if not full_id:
-        return f"Error: id '{item_id}' not found"
+        return f"[FAIL] id '{item_id}' not found"
     if st.remove(full_id):
-        return f"🗑 removed [{full_id[-6:]}]"
-    return f"Error: remove failed"
+        return f"[DEL] removed [{full_id[-6:]}]"
+    return "[FAIL] remove failed"
 
 
 def _resolve_id(st: TodoState, short_or_full: str) -> str | None:
@@ -234,7 +233,7 @@ def _todo_dispatcher(action: str, **kwargs) -> str:
         return todo_cancel(item_id=kwargs["item_id"])
     if action == "remove":
         return todo_remove(item_id=kwargs["item_id"])
-    return (f"Error: unknown action '{action}'. "
+    return (f"[FAIL] unknown action '{action}'. "
             f"Use: write, read, add_thought, add_followup, surface, stats, done, cancel, remove")
 
 

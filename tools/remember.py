@@ -44,7 +44,7 @@ def remember_fact(fact: str, category: str = "general") -> str:
     with open(_NOTES_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    return f"✅ Noted [{entry['category']}]: {fact[:100]}"
+    return f"[OK] Noted [{entry['category']}]: {fact[:100]}"
 
 
 def recall_facts(category: str = "", limit: int = 10) -> str:
@@ -112,7 +112,7 @@ def forget_fact(index: int = -1) -> str:
 
     if index == -1:
         _NOTES_FILE.write_text("")
-        return f"🗑️ Forgot all {len(lines)} facts."
+        return f"[DEL]️ Forgot all {len(lines)} facts."
 
     # Find by index (1-based, newest first)
     lines = [l for l in lines if l.strip()]
@@ -125,9 +125,9 @@ def forget_fact(index: int = -1) -> str:
 
     try:
         entry = json.loads(removed)
-        return f"🗑️ Removed [{entry.get('category')}]: {entry.get('fact', '')[:80]}"
+        return f"[DEL]️ Removed [{entry.get('category')}]: {entry.get('fact', '')[:80]}"
     except Exception:
-        return "🗑️ Removed fact."
+        return "[DEL]️ Removed fact."
 
 
 def _dispatcher(action: str, fact: str = "", category: str = "",

@@ -5,7 +5,7 @@ Flow per user turn:
   Phase 1 — Court (independent analysis)
     Devil and Angel analyze the SAME input independently.
     Both give scores. BAW synthesizes neutrally.
-    ⚠️ NEITHER voice has execution power during court.
+    [WARN] NEITHER voice has execution power during court.
 
   Phase 2 — Neutral response & debate (interactive only)
     BAW responds from neutral perspective.
@@ -142,7 +142,7 @@ def context_window_summary() -> str:
     cw = _human_tokens(ctx["ctx_window"])
     pct = ctx["current_pct"]
     bar = _ctx_bar(pct)
-    return f"🧠 {ctx['model_id']} {bar} {pct:.0f}% ({cw})"
+    return f"[MODEL] {ctx['model_id']} {bar} {pct:.0f}% ({cw})"
 
 
 def _ctx_bar(pct: float) -> str:
@@ -177,7 +177,7 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
-            return f"📊 [{len(self.calls)} LLM calls] {_human_tokens(ti)}↑{_human_tokens(to)}↓ | total: {_human_tokens(total)} tokens"
+            return f"[STATS] [{len(self.calls)} LLM calls] {_human_tokens(ti)}↑{_human_tokens(to)}↓ | total: {_human_tokens(total)} tokens"
 
     def html_summary(self) -> str:
         with self._lock:
@@ -186,7 +186,7 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
-            return f"📊 <b>[{len(self.calls)} LLM calls]</b> {_human_tokens(ti)}↑{_human_tokens(to)}↓ | <b>total: {_human_tokens(total)} tokens</b>"
+            return f"[STATS] <b>[{len(self.calls)} LLM calls]</b> {_human_tokens(ti)}↑{_human_tokens(to)}↓ | <b>total: {_human_tokens(total)} tokens</b>"
 
     def reset(self):
         with self._lock:
@@ -244,7 +244,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     # and reported "5/5 (100%)" — pure fabrication. This rule exists
     # because the LLM otherwise defaults to "plan completion" optimism.
     evidence_rule = (
-        "\n\n## ⚠️  META-RULE — No Fake Completion (READ FIRST)\n"
+        "\n\n## [WARN]  META-RULE — No Fake Completion (READ FIRST)\n"
         "If the user asks you to RUN a command (e.g. `baw self-test --no-fetch`,\n"
         "`baw petrestaurants district 灣仔`, `baw preflight --url <url>`), you MUST:\n"
         "  1. Use the `bash` tool to invoke the command EXACTLY as the user typed it.\n"
@@ -304,12 +304,12 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "- ALWAYS report what actually happened after tool execution\n"
                 "- CRITICAL: You MUST use tools (bash, read_file, etc.) when the user asks for data\n"
                 "  Do NOT fabricate system info — always call the relevant tool to get real data\n"
-                "- 🔴 Do NOT ask 'should I continue?' or 'what next?'. Execute the ENTIRE plan silently.\n"
-                "- 🔴 NO Plan/Step output in response. Just do it and report the result.\n"
-                "- 🔴 KEEP CALLING TOOLS until task is fully done. Text-only = finished.\n"
+                "- [CRITICAL] Do NOT ask 'should I continue?' or 'what next?'. Execute the ENTIRE plan silently.\n"
+                "- [CRITICAL] NO Plan/Step output in response. Just do it and report the result.\n"
+                "- [CRITICAL] KEEP CALLING TOOLS until task is fully done. Text-only = finished.\n"
                 "  If more work remains, your response MUST include tool_calls.\n"
                 "  NEVER say 'I will' or write about what you'll do next. Call the tool NOW.\n"
-                "- 🎯 Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary."
+                "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary."
             )
         else:
             system_prompt = evidence_rule + soul_text
@@ -331,7 +331,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "  the `config` tool handles backup, validation, and auto-rollback.\n"
             "- After editing config, call /reload or restart to apply\n"
             "\n"
-            "### ⚠️ STT setup (auto-detect protocol)\n"
+            "### [WARN] STT setup (auto-detect protocol)\n"
             "- Set `stt.method: auto-asr` in config.yaml, provide base_url + api_key_env\n"
             "- System auto-probes: OpenAI /v1/audio/transcriptions first, SSE /v1/audio/asr/sse second\n"
             "- Works with any provider that supports either protocol\n"
@@ -341,7 +341,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
     # ── SAFETY PROTOCOL (Priority 0 — always enforced) ──
     safety_protocol = (
-        "\\n\\n## 🔴 SAFETY PROTOCOL (Priority 0)\\n"
+        "\\n\\n## [CRITICAL] SAFETY PROTOCOL (Priority 0)\\n"
         "1. **Audit before execute**: Any downloaded code/repo MUST be scanned.\\n"
         "   Use `code_scan(path=<dir>)` BEFORE running any scripts or installs.\\n"
         "2. **When audit is required**: cloning repos, pip/npm install with `-g`,\\n"
@@ -358,7 +358,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
     # ── SELF-CORRECTION PROTOCOL (Priority 1 — fix errors yourself) ──
     self_correction = (
-        "\\n\\n## 🔵 SELF-CORRECTION PROTOCOL (Priority 1)\\n"
+        "\\n\\n## [INFO] SELF-CORRECTION PROTOCOL (Priority 1)\\n"
         "YOU are responsible for fixing your own mistakes. NEVER report a tool error to the user\\n"
         "unless you have tried at least 3 different approaches to fix it.\\n\\n"
         "**When a tool call fails:**\\n"
@@ -373,10 +373,10 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
         "- `code_scan(path='/tmp')` empty → try `ls /tmp` to locate actual directory first\\n"
         "- `pip install` fails → try `pip install --user` or `apt-get install`\\n\\n"
         "**What NOT to do:**\\n"
-        "- ❌ Write 'the command failed with syntax error' and stop\\n"
-        "- ❌ Ask the user to fix it for you\\n"
-        "- ❌ Move on to something else without fixing the error\\n"
-        "- ❌ Say 'config.yaml needs manual fix' — YOU fix it\\n\\n"
+        "- [FAIL] Write 'the command failed with syntax error' and stop\\n"
+        "- [FAIL] Ask the user to fix it for you\\n"
+        "- [FAIL] Move on to something else without fixing the error\\n"
+        "- [FAIL] Say 'config.yaml needs manual fix' — YOU fix it\\n\\n"
         "**Remember**: You have bash, read_file, write_file, code_scan, and 20+ tools.\\n"
         "If one approach fails, another WILL work. Find it."
     )
@@ -421,7 +421,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"  If you need a model not in the list, you must add it to config.yaml first.\n"
             f"\n## Tool self-configuration (CRITICAL)\n"
             f"- When told to use a new tool: 'which <tool>' or 'find / -name <tool>' to locate it.\n"
-            f"- 🔴 EXCEPTION: BAW-registered tools (mmx, install) are SELF-CONTAINED.\n"
+            f"- [CRITICAL] EXCEPTION: BAW-registered tools (mmx, install) are SELF-CONTAINED.\n"
             f"  The `mmx` tool auto-installs mmx-cli on first use — do NOT run `which mmx`.\n"
             f"  Just call `mmx(command=...)` directly; it handles installation internally.\n"
             f"- To verify mmx is working: call `mmx(command=quota)` not bash('which mmx').\n"
@@ -439,7 +439,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- NEVER hand-edit `tools/__init__.py` and assume it works. The scaffolder\n"
             f"  exists precisely because hand-editing breaks things (wrong paths,\n"
             f"  import-order bugs, missing TOOL_DEF, no smoke test).\n"
-            f"- 🔴 ANTI-FABRICATION CONTRACT: if you say 'I built X' and X is not\n"
+            f"- [CRITICAL] ANTI-FABRICATION CONTRACT: if you say 'I built X' and X is not\n"
             f"  importable + runnable via `baw tools verify X`, you did NOT build X.\n"
             f"  This is a hard rule. There is no shortcut around it.\n"
             f"- Also discover tools proactively: 'ls /usr/bin /usr/local/bin ~/.local/bin' for new capabilities.\n"
@@ -502,18 +502,18 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- Fact check mode: {fact_mode}\n"
             f"- Available tools: {tools_list}\n"
             f"- Cost transparency: per-call cost shown after each response\n"
-            f"- 🔴 AUTO-CONTINUATION: Keep producing tool_calls until the task is fully done.\n"
+            f"- [CRITICAL] AUTO-CONTINUATION: Keep producing tool_calls until the task is fully done.\n"
             f"  If you need more steps, call the next tool IMMEDIATELY — do NOT write text about what you'll do next.\n"
             f"  YOUR RESPONSE MUST CONTAIN TOOL_CALLS if more work remains. Text-only = you are finished.\n"
             f"  BAW will NOT prompt you to continue — if you stop calling tools, the task stops.\n"
             f"  Example of WRONG: 'mmx installed, next I will test it' (text, stops tool loop)\n"
             f"  Example of RIGHT: call install() then immediately call mmx() as next tool call\n"
-            f"- 🔴 NEVER end your response with a question or 'what next?'. Just call the tool.\n"
-            f"- 🔴 NEVER say 'I will' or 'I will now' — those are future tense. Call the tool NOW.\n"
-            f"## 🎯 Output Presentation Rule\n"
+            f"- [CRITICAL] NEVER end your response with a question or 'what next?'. Just call the tool.\n"
+            f"- [CRITICAL] NEVER say 'I will' or 'I will now' — those are future tense. Call the tool NOW.\n"
+            f"## [TARGET] Output Presentation Rule\n"
             f"Tool results MUST be human-friendly. NEVER dump raw JSON:\n"
-            f"- `mmx(quota)` -> raw JSON  -> `📊 剩餘 11,043,549 秒 (128天)`\n"
-            f"- `mmx(voices)` -> raw array -> `🎙️ 334 個語音可用`\n"
+            f"- `mmx(quota)` -> raw JSON  -> `[STATS] 剩餘 11,043,549 秒 (128天)`\n"
+            f"- `mmx(voices)` -> raw array -> `[VOICE]️ 334 個語音可用`\n"
             f"- `mmx(image)` -> raw JSON  -> MEDIA:path + 一句描述\n"
             f"**Extract signal, skip noise.**\n"
             f"\n## Output style — NEVER USE EMOJI\n"
@@ -642,7 +642,7 @@ def _build_todo_block(data_dir: Path) -> str:
     # Injected FIRST in the system prompt so it's the first thing the LLM
     # sees. This rule is more important than any task-specific guidance.
     evidence_rule = (
-        "\n\n## ⚠️  META-RULE — No Fake Completion (READ FIRST)\n"
+        "\n\n## [WARN]  META-RULE — No Fake Completion (READ FIRST)\n"
         "If the user asks you to RUN a command (e.g. `baw self-test --no-fetch`,\n"
         "`baw petrestaurants district 灣仔`, `baw preflight --url <url>`), you MUST:\n"
         "  1. Use the `bash` tool to invoke the command EXACTLY as the user typed it.\n"
@@ -692,10 +692,10 @@ def _build_todo_block(data_dir: Path) -> str:
         "  If the answer is NO, call the `todo` tool before finishing."
     )
     if carried:
-        block += "\n\n### ⚠️ Pending follow-ups carried over from previous sessions:\n"
+        block += "\n\n### [WARN] Pending follow-ups carried over from previous sessions:\n"
         for it in carried[:8]:
             tag = f" (from {it.session_id})" if it.session_id else ""
-            block += f"- 📌 [{it.id[-6:]}]{tag} {it.content}"
+            block += f"- [TODO] [{it.id[-6:]}]{tag} {it.content}"
             if it.note:
                 block += f" — {it.note}"
             block += "\n"
@@ -936,7 +936,7 @@ def run_agent(
                     progress_callback("tool", name, args)
                 _show_progress = verbose or interactive
                 if _show_progress:
-                    print(f"\033[90m🔧 {name}", end="", flush=True)
+                    print(f"\033[90m[FIX] {name}", end="", flush=True)
                 perm_result = perm.check(name, args)
                 if perm_result["decision"] == "deny":
                     if _show_progress:
@@ -948,7 +948,7 @@ def run_agent(
                     print(f" {_arg_str}", end="", flush=True)
                 exe_result = execute_tool(name, args)
                 if _show_progress:
-                    print(f" \033[32m✅\033[0m", flush=True)
+                    print(f" \033[32m[OK]\033[0m", flush=True)
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
 
             # Next LLM call
@@ -1003,7 +1003,7 @@ def run_agent(
         # errors. This is the LAST line of defense against LLM fabrication.
         _has_fake_success = any(
             fake in (final_content or "")
-            for fake in ("5/5 (100%)", "5/5 done", "100% done", "✅ Done —",
+            for fake in ("5/5 (100%)", "5/5 done", "100% done", "[OK] Done —",
                          "Done — ", "completed all", "tested all", "Done 1/1 (100%)",
                          "Done 3/3 (100%)", "Done 2/2 (100%)",
                          "我而家", "我現在", "I'll run", "I'll execute",
@@ -1032,7 +1032,7 @@ def run_agent(
         if config.get("display", {}).get("show_reasoning"):
             _reasoning = getattr(quick_resp, 'reasoning_content', None) or getattr(_resp, 'reasoning_content', None) or ""
             if _reasoning:
-                output = f"💭 {_reasoning}\n\n---\n\n{output}"
+                output = f"[THOUGHT] {_reasoning}\n\n---\n\n{output}"
 
         output += final_content
         output += f"\n\n{format_cost_summary()}"
@@ -1137,7 +1137,7 @@ def run_agent(
 
     if court_enabled and not use_court_v2:
         if verbose:
-            print("\n  ⚖️ Court: Devil + Angel analyzing independently...")
+            print("\n  [COURT] Court: Devil + Angel analyzing independently...")
         if progress_callback:
             progress_callback("court", "", {})
         verdict = court.hold_court(prompt, mem_text)
@@ -1189,7 +1189,7 @@ def run_agent(
             ).format(_devil_score, _devil_score, verdict["devil"]["content"][:500])
         elif _devil_score >= 7:
             _challenge_prefix = (
-                "\n\n## ⚠️ ACTIVE CHALLENGE — Devil Score {}/10\\n\\n"
+                "\n\n## [WARN] ACTIVE CHALLENGE — Devil Score {}/10\\n\\n"
                 "The Devil has flagged potential risks in this request (score {}/10).\\n"
                 "You MUST mention the Devil's concern and suggest a safer alternative.\\n"
                 "Proceed only after acknowledging the risk.\\n\\n"
@@ -1250,7 +1250,7 @@ def run_agent(
                     args = {}
                 if progress_callback:
                     progress_callback("tool", name, args)
-                print(f"\033[90m🔧 {name}", end="", flush=True)
+                print(f"\033[90m[FIX] {name}", end="", flush=True)
                 perm_result = perm.check(name, args)
                 if perm_result["decision"] == "deny":
                     print(f" ⛔ BLOCKED: {perm_result['reason']}\033[0m")
@@ -1258,7 +1258,7 @@ def run_agent(
                     continue
                 print(f" {str(args)[:80]}", end="", flush=True)
                 exe_result = execute_tool(name, args)
-                print(f" \033[32m✅\033[0m", flush=True)
+                print(f" \033[32m[OK]\033[0m", flush=True)
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
             # Next LLM call to synthesize results
             fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=get_openai_tools(), temperature=model_temperature)
@@ -1428,7 +1428,7 @@ def run_agent(
         _s["step_in_group"] = _group_sofar[_g]  # ordinal: 1st, 2nd, 3rd in group
 
     if verbose:
-        print(f"\n  📋 Plan ({len(_execution_plan)} steps, {len(_group_step_count)} groups):")
+        print(f"\n  [PLAN] Plan ({len(_execution_plan)} steps, {len(_group_step_count)} groups):")
         for _s in _execution_plan:
             _label = f"{_s['group']}-{_s['step_in_group']}/{_s['group_total']}"
             print(f"    {_label}: {_s['desc'][:100]}")
@@ -1455,7 +1455,7 @@ def run_agent(
             (len(_execution_plan) > 1 and len(_last_desc) < len(_execution_plan[-2]['desc']) * 0.5)
         )
         if _truncated and verbose:
-            print(f"  ⚠️ Last step may be truncated: '{_last_desc[:60]}'")
+            print(f"  [WARN] Last step may be truncated: '{_last_desc[:60]}'")
 
     # ── Phase 3b: Goal-pursuit loop ──
     # Each step: execute → if fail → think alternative → retry
@@ -1575,7 +1575,7 @@ def run_agent(
         Python code in-process. Sub-agent can actually invoke the tts tool.
         """
         _stripped = goal.strip()
-        if not _stripped or _stripped.startswith(('#', '##', '```', '✅', '❌', '▶', '⏭', '⚠', '📋', '🔄')):
+        if not _stripped or _stripped.startswith(('#', '##', '```', '[OK]', '[FAIL]', '▶', '⏭', '⚠', '[PLAN]', '[>]')):
             return False  # Not a real step description
 
         _lower = goal.lower()
@@ -1620,7 +1620,7 @@ def run_agent(
         2. Sub-agent did not return "[FAILED-*" or "[SKIPPED*"
         3. Step goal's expected output is present (e.g. MEDIA: tag if requested)
         4. (NEW) Step goal asks to run a command → must have actual exit code/stdout
-        5. (NEW) Generic success markers (5/5 done, 100%, ✅ all done) require
+        5. (NEW) Generic success markers (5/5 done, 100%, [OK] all done) require
            evidence markers in same response (exit code, file path, or output block)
         """
         if not result or len(result) < 5:
@@ -1646,7 +1646,7 @@ def run_agent(
             # Generic success-only markers are NOT evidence
             _has_fake = any(fake in result for fake in (
                 "5/5 (100%)", "5/5 done", "100% done", "all done",
-                "✅ Done", "completed successfully", "tested all",
+                "[OK] Done", "completed successfully", "tested all",
             )) and not _has_evidence
             if _has_fake:
                 return False, (
@@ -1678,7 +1678,7 @@ def run_agent(
 
     for _pursuit in range(1, _GOAL_PURSUIT_MAX_ATTEMPTS + 1):
         if verbose:
-            print(f"\n  🎯 Goal pursuit iteration {_pursuit}/{_GOAL_PURSUIT_MAX_ATTEMPTS}")
+            print(f"\n  [TARGET] Goal pursuit iteration {_pursuit}/{_GOAL_PURSUIT_MAX_ATTEMPTS}")
 
         # ── (Re-)Plan entire goal ──
         if _pursuit > 1:
@@ -1965,7 +1965,7 @@ def run_agent(
                         )
                         if verbose:
                             print(
-                                f"  🔄 Sub-agent failed: {_complain_reason}. "
+                                f"  [>] Sub-agent failed: {_complain_reason}. "
                                 f"Orchestrator picking up..."
                             )
                         # Don't mark as success — orchestrator tries inline
@@ -2018,7 +2018,7 @@ def run_agent(
                     )
                     _uncertain_claims.append(_verification_warn)
                     if verbose:
-                        print(f"  ⚠️ {_verification_warn}")
+                        print(f"  [WARN] {_verification_warn}")
 
                 _dsp = dsp.phase_step_done(_g, _si, _gt, _step_desc_short)
                 _display_log.append(_dsp)
@@ -2054,7 +2054,7 @@ def run_agent(
                     # Mark as [FAILED-NO-EXEC] so synthesis can flag it.
                     _delegation_results[_step_idx] = f"[FAILED-NO-EXEC] {_step_desc_short}: LLM returned 0 tool calls"
                     if verbose:
-                        print(f"  ❌ Step {_g} {_si}/{_gt} returned 0 tool calls — NOT marking as done")
+                        print(f"  [FAIL] Step {_g} {_si}/{_gt} returned 0 tool calls — NOT marking as done")
                     _synthesis_results.append(f"[FAILED-NO-EXEC] {_step_desc_short}")
                     # Recalculate immediately — this step needs a real action plan
                     _recalc_count += 1
@@ -2094,7 +2094,7 @@ def run_agent(
                         _synthesis_results.append(_delegation_results[_step_idx])
                         if verbose:
                             print(
-                                f"  ❌ Step {_g} {_si}/{_gt} claimed done but files missing: "
+                                f"  [FAIL] Step {_g} {_si}/{_gt} claimed done but files missing: "
                                 f"{_missing[:3]}"
                             )
                         # Trigger route recalc — orchestrator will pick up or retry
@@ -2106,7 +2106,7 @@ def run_agent(
                 # Position-based: if position fails → try alternative approach instead of skipping
                 if _position_fails.get(_step_idx, 0) >= 3:
                     if verbose:
-                        print(f"  🔄 Step {_g} {_si}/{_gt} stuck after {_position_fails[_step_idx]} attempts — trying alternative approach")
+                        print(f"  [>] Step {_g} {_si}/{_gt} stuck after {_position_fails[_step_idx]} attempts — trying alternative approach")
                     # Force route recalculation with explicit instruction to use different tools
                     _alt_prompt = (
                         f"Step '{_step_desc_short[:200]}' failed {_position_fails[_step_idx]} times.\n"
@@ -2125,12 +2125,12 @@ def run_agent(
                     if _recalc_count > _MAX_RECALCULATES:
                         _permanent_skip.add(_step_idx)
                         if verbose:
-                            print(f"  ⚠️ Step {_g} {_si}/{_gt} truly stuck — will diagnose for user")
+                            print(f"  [WARN] Step {_g} {_si}/{_gt} truly stuck — will diagnose for user")
                     continue
 
                 if _same_step_fails[_same_key] >= 2:
                     if verbose:
-                        print(f"  🔄 Same step stuck: {_step_desc_short} ({_same_step_fails[_same_key]} failures) — forcing route recalc")
+                        print(f"  [>] Same step stuck: {_step_desc_short} ({_same_step_fails[_same_key]} failures) — forcing route recalc")
                     _recalc_count += 1
                     if _recalc_count > _MAX_RECALCULATES:
                         _pursuit_failed = True
@@ -2214,7 +2214,7 @@ def run_agent(
                     _execution_plan = _execution_plan[:_step_idx] + _new_steps
                     # NOTE: _recalc_count keeps accumulating — only resets on step success
                     if verbose:
-                        print(f"     ✅ New route: {len(_new_steps)} remaining steps")
+                        print(f"     [OK] New route: {len(_new_steps)} remaining steps")
                     # Don't increment _step_idx — retry this position with new first step
                 else:
                     # Can't recalculate — entire pursuit iteration fails
@@ -2222,7 +2222,7 @@ def run_agent(
                     _dsp = dsp.phase_step_error(_g, _si, _gt, _step_desc_short, str(_e)[:80])
                     _display_log.append(_dsp)
                     if verbose:
-                        print(f"     ❌ Can't recalculate route — re-planning from scratch")
+                        print(f"     [FAIL] Can't recalculate route — re-planning from scratch")
                     break
 
         # ── Self-review ──
@@ -2250,13 +2250,13 @@ def run_agent(
             _score = float(_score_match.group(1)) if _score_match else 0
 
             if verbose:
-                print(f"\\n  🔍 Self-review: {steps_completed} steps done, score {_score}/10")
+                print(f"\\n  [SCAN] Self-review: {steps_completed} steps done, score {_score}/10")
 
             # If ALL steps completed without failure → auto-achieved, skip fragile self-review gate
             if steps_completed == len(_execution_plan) and not _pursuit_failed:
                 _goal_achieved = True
                 if verbose:
-                    print(f"     ✅ All {steps_completed} steps done — auto-confirm goal achieved")
+                    print(f"     [OK] All {steps_completed} steps done — auto-confirm goal achieved")
                 break
 
             if _score >= 7:
@@ -2269,12 +2269,12 @@ def run_agent(
         else:
             if _pursuit >= _GOAL_PURSUIT_MAX_ATTEMPTS:
                 if verbose:
-                    print(f"  ❌ All {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit iterations exhausted")
+                    print(f"  [FAIL] All {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit iterations exhausted")
 
     # ── After goal loop ──
     if _goal_achieved:
         if verbose:
-            print("  ✅ Goal achieved — synthesising final response")
+            print("  [OK] Goal achieved — synthesising final response")
     else:
         # NEVER SURRENDER — generate honest diagnosis
         _diag_lines = []
@@ -2284,8 +2284,8 @@ def run_agent(
                 _diag_lines.append(f"  Step {_fr_i+1}: {_fr_s}")
         _diag_detail = "\n".join(_diag_lines) if _diag_lines else "No step results available"
         if verbose:
-            print(f"  ⚠️ Goal not achieved after {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit attempts")
-            print(f"  📋 Diagnosis:\n{_diag_detail}")
+            print(f"  [WARN] Goal not achieved after {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit attempts")
+            print(f"  [PLAN] Diagnosis:\n{_diag_detail}")
 
     # ── Collect failure reasons for round-level diagnosis ──
     _failure_reasons = []
@@ -2321,12 +2321,12 @@ def run_agent(
             "CRITICAL RULES:\n"
             "- This is a CONCLUSION, not a verification. Don't say 'goal achieved' or 'score'. Just deliver the answer.\n"
             "- If results are thin or incomplete, say what's known honestly — don't fabricate.\n"
-            "- ⚠️ UNCERTAINTY FLAG: If any result contains error patterns, missing data, or unverifiable claims, flag them with ⚠️ in the response. Do NOT pretend uncertain results are certain.\n"
+            "- [WARN] UNCERTAINTY FLAG: If any result contains error patterns, missing data, or unverifiable claims, flag them with [WARN] in the response. Do NOT pretend uncertain results are certain.\n"
             "- 🚨 ZERO-EXECUTION FLAG: If any step result contains '[FAILED-NO-EXEC]' or '[SKIPPED]', the LLM did NOT actually execute the step — it just wrote a plan/summary. You MUST tell the user 'I did not actually run this — it was a plan, not an action'. Do NOT claim files were sent or actions were taken.\n"
             "- NEVER end with a question. NEVER ask for permission. NEVER promise future action.\n"
             "- Output format: no markdown headers, just plain paragraphs. Lead with the answer.\n"
             "- PRESERVE any MEDIA: or MEDIA:/path lines from sub-agent results verbatim — do not strip or summarise them.\n"
-            "- 🔴 USEFUL OUTPUT RULE: The user must know WHAT was done. Do NOT just dump file paths or raw data. For every action taken, include:\n"
+            "- [CRITICAL] USEFUL OUTPUT RULE: The user must know WHAT was done. Do NOT just dump file paths or raw data. For every action taken, include:\n"
             "  1. What happened (e.g. 'Read config.yaml, updated stepfun provider')\n"
             "  2. What changed / result (e.g. 'Added discovery endpoint fallback')\n"
             "  3. Key info (e.g. '7 models available now')\n"
@@ -2361,7 +2361,7 @@ def run_agent(
                 _test_url = _url_sources[0]
                 _resp = _hx.head(_test_url, timeout=5, follow_redirects=True)
                 if _resp.status_code >= 400:
-                    _dead_note = f"\n⚠️ Source URL may be dead: {_test_url} (HTTP {_resp.status_code})"
+                    _dead_note = f"\n[WARN] Source URL may be dead: {_test_url} (HTTP {_resp.status_code})"
                     if response.content:
                         response.content += _dead_note
         except Exception:
@@ -2403,7 +2403,7 @@ def run_agent(
                                 f"MEDIA:{_mp_clean}", f"MEDIA:{_replacement}"
                             )
                         else:
-                            _warn = f"\n⚠️ MEDIA file not found: {_mp_clean}"
+                            _warn = f"\n[WARN] MEDIA file not found: {_mp_clean}"
                             if _real_files:
                                 _warn += f"\n   Try: MEDIA:{_real_files[0]}"
                             response.content += _warn
@@ -2462,7 +2462,7 @@ def run_agent(
             if action == "block":
                 findings += f"\n\n{fc_result['message']}"
             elif action == "flag":
-                findings += f"\n\n<i>⚠️ {len(fc_result['claims'])} unverified claims flagged</i>"
+                findings += f"\n\n<i>[WARN] {len(fc_result['claims'])} unverified claims flagged</i>"
                 try:
                     search_action, search_result = fc.verify_with_search(last_text or "", prompt)
                     if search_action == "block":
@@ -2493,7 +2493,7 @@ def run_agent(
         pass
 
     if last_commit:
-        findings += f"\n💾 <i>Auto-saved: {last_commit}</i>"
+        findings += f"\n[SAVE] <i>Auto-saved: {last_commit}</i>"
 
     try:
         mem.remember(f"User: {prompt[:150]} → BAW: {(final_reply or '')[:150]}")

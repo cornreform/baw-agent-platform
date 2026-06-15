@@ -13,7 +13,7 @@ def _is_sensitive(path: str) -> tuple[bool, str]:
     path_lower = path.lower().strip()
     for sp in SENSITIVE_PATHS:
         if sp.lower() in path_lower:
-            return True, f"❌ Blocked — cannot read sensitive path: {sp}"
+            return True, f"[FAIL] Blocked — cannot read sensitive path: {sp}"
     return False, ""
 
 def read_file(path: str, offset: int = 1, limit: int = 500) -> str:
