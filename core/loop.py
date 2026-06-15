@@ -2051,7 +2051,12 @@ def run_agent(
             "- NEVER end with a question. NEVER ask for permission. NEVER promise future action.\n"
             "- Output format: no markdown headers, just plain paragraphs. Lead with the answer.\n"
             "- PRESERVE any MEDIA: or MEDIA:/path lines from sub-agent results verbatim — do not strip or summarise them.\n"
-            "- BE VERY CONCISE — user complained responses are too long. Just state what was done + the key result. 3 sentences max. No step-by-step. No Plan output."
+            "- 🔴 USEFUL OUTPUT RULE: The user must know WHAT was done. Do NOT just dump file paths or raw data. For every action taken, include:\n"
+            "  1. What happened (e.g. 'Read config.yaml, updated stepfun provider')\n"
+            "  2. What changed / result (e.g. 'Added discovery endpoint fallback')\n"
+            "  3. Key info (e.g. '7 models available now')\n"
+            "- BAD: dumping a file path with no explanation — user can't tell what changed.\n"
+            "- GOOD: 'Read config — stepfun has 7 models (added step-tts-2 via parent path)'"
         )
         ctx.add_user(_synthesis_prompt)
 
