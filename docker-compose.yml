@@ -9,6 +9,7 @@ services:
     # Mount BAW's persistent data (sessions, memory, vault, config)
     volumes:
       - /home/radxa/.baw:/home/baw/.baw
+      - /home/radxa/.mmx:/home/baw/.mmx
     # Load Telegram token + API keys from BAW's own env files
     env_file:
       - /home/radxa/.baw/telegram.env

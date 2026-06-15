@@ -12,8 +12,91 @@ import shutil
 from pathlib import Path
 
 
+def _ensure_mmx() -> bool:
+    """Ensure mmx CLI is installed + authenticated. Auto-installs + configures auth if needed."""
+    if shutil.which("mmx") and _mmx_is_authd():
+        return True
+
+    # Step 1: Install if missing
+    if not shutil.which("mmx"):
+        try:
+            npm_dir = Path.home() / "npm"
+            npm_dir.mkdir(parents=True, exist_ok=True)
+            bin_dir = npm_dir / "bin"
+
+            if not (bin_dir / "mmx").exists():
+                r = subprocess.run(
+                    ["npm", "install", "-g", "mmx-cli", "--prefix", str(npm_dir)],
+                    capture_output=True, text=True, timeout=120,
+                )
+                if r.returncode != 0:
+                    return False
+
+            # Symlink to a PATH dir (Dockerfile includes ~/npm/node_modules/.bin)
+            path_bin = npm_dir / "node_modules" / ".bin" / "mmx"
+            if not path_bin.exists():
+                try:
+                    path_bin.parent.mkdir(parents=True, exist_ok=True)
+                    path_bin.symlink_to(bin_dir / "mmx")
+                except Exception:
+                    pass
+
+            if str(bin_dir) not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = f"{bin_dir}:{os.environ.get('PATH', '')}"
+
+            if not shutil.which("mmx"):
+                return False
+        except Exception:
+            return False
+
+    # Step 2: Auth if not already authenticated
+    if not _mmx_is_authd():
+        # Look for MiniMax API key in env or config
+        api_key = os.environ.get("MINIMAX_API_KEY") or ""
+        if not api_key:
+            # Try reading from BAW's .env
+            env_path = Path.home() / ".baw" / ".env"
+            if env_path.exists():
+                for line in env_path.read_text().splitlines():
+                    if line.startswith("MINIMAX_API_KEY="):
+                        api_key = line.split("=", 1)[1].strip().strip("\"'")
+                        break
+        if not api_key:
+            # Try reading from mmx config on host (mounted path)
+            mmx_config = Path.home() / ".mmx" / "config.json"
+            if mmx_config.exists():
+                try:
+                    import json
+                    data = json.loads(mmx_config.read_text())
+                    api_key = data.get("api_key", "")
+                except Exception:
+                    pass
+
+        if api_key:
+            subprocess.run(
+                ["mmx", "auth", "login", "--api-key", api_key],
+                capture_output=True, text=True, timeout=30,
+            )
+
+    return _mmx_is_authd()
+
+
+def _mmx_is_authd() -> bool:
+    """Check if mmx is authenticated."""
+    try:
+        r = subprocess.run(
+            ["mmx", "auth", "status"],
+            capture_output=True, text=True, timeout=15,
+        )
+        return r.returncode == 0 and "api-key" in r.stdout
+    except Exception:
+        return False
+
+
 def _run_mmx(args: list[str], timeout: int = 120) -> str:
     """Run mmx command with --output json and return parsed result."""
+    if not _ensure_mmx():
+        return "❌ mmx CLI not found and auto-install failed. Try: npm install -g mmx-cli manually."
     cmd = ["mmx"] + args + ["--output", "json"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -32,8 +115,6 @@ def _run_mmx(args: list[str], timeout: int = 120) -> str:
             return f"❌ mmx error (exit {r.returncode}): {stderr}"
     except subprocess.TimeoutExpired:
         return f"❌ mmx timed out after {timeout}s"
-    except FileNotFoundError:
-        return "❌ mmx CLI not found. Run: npm install -g mmx-cli"
     except Exception as e:
         return f"❌ mmx error: {e}"
 
