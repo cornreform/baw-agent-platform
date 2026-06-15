@@ -558,25 +558,58 @@ class BaseConnector(ABC):
                 except Exception as e:
                     return f"❌ Tribunal error: {e}"
 
-            # ── Watchdog alerts ──
+            # ── Watchdog / Health ──
             if cmd in ("watchdog", "wd"):
                 try:
-                    from core.watchdog import Watchdog
-                    wd = Watchdog(Path.home() / ".baw")
-                    alerts = wd.recent_alerts(hours=24)
-                    if not alerts:
-                        return "🐾 No alerts in the last 24h. All systems healthy."
-                    lines = [f"🚨 {len(alerts)} alert(s) in last 24h:"]
-                    for a in alerts[:10]:
-                        ts = a.get("timestamp", "?")[:16]
-                        status = a.get("status", "?")
-                        check = a.get("check", "?")
-                        detail = a.get("detail", "")
-                        icon = {"pass": "✅", "warn": "⚠️", "fail": "🚨"}.get(status, "❓")
-                        lines.append(f"  {icon} [{ts}] {check}: {detail}")
-                    return "\n".join(lines)
+                    from core.health_dashboard import health_check, format_health_report
+                    hc = health_check()
+                    return format_health_report(hc)
                 except Exception as e:
-                    return f"❌ Watchdog error: {e}"
+                    return f"❌ Health check error: {e}"
+
+            # ── Backup ──
+            if cmd in ("backup", "bk"):
+                try:
+                    subcmd = (arg or "").strip()
+                    if subcmd == "list" or subcmd == "ls":
+                        from core.backup import list_backups
+                        bks = list_backups()
+                        if not bks:
+                            return "📦 暫無備份。\n用 `/backup now` 建立第一個備份。"
+                        lines = [f"📦 **備份列表** ({len(bks)} 個)"]
+                        for b in bks[:7]:
+                            lines.append(f"  • `{b['name']}` — {b['size_mb']}MB ({b['created'][:16]})")
+                        return "\n".join(lines)
+                    elif subcmd == "restore":
+                        from core.backup import restore_backup
+                        r = restore_backup("latest")
+                        return f"🔄 還原: {r['status']}\n{r.get('detail', '')}\n檔案數: {r.get('files_restored', 0)}"
+                    else:  # default: create
+                        from core.backup import create_backup
+                        r = create_backup()
+                        return f"✅ 備份完成: `{r['path']}`\n📦 {r['size_mb']}MB"
+                except Exception as e:
+                    return f"❌ Backup error: {e}"
+
+            # ── Monitoring ──
+            if cmd in ("monitor", "mon"):
+                try:
+                    subcmd = (arg or "").strip()
+                    if subcmd == "weekly" or subcmd == "report":
+                        from core.monitor import generate_weekly_report
+                        return generate_weekly_report()
+                    else:
+                        from core.monitor import get_error_rate, get_health_score_history
+                        errors = get_error_rate(hours=24)
+                        health = get_health_score_history(days=1)
+                        avg = round(sum(h['score'] for h in health) / len(health), 1) if health else 0
+                        return (
+                            f"📊 **過去 24 小時**\n"
+                            f"  錯誤: {errors['total']} ({errors['rate_per_hour']}/hr)\n"
+                            f"  健康度: {avg}/10"
+                        )
+                except Exception as e:
+                    return f"❌ Monitor error: {e}"
 
             # ── Set config value (persist to config.yaml) ──
             if cmd == "set" and arg:
@@ -2272,6 +2305,11 @@ class BaseConnector(ABC):
             "/validate telegram — Bot connectivity\n"
             "/validate disk — Disk space check\n"
             "/validate git — Git status\n\n"
+            "**🏥 Health & Ops:**\n"
+            "/doctor, /dr — 10-point system health check\n"
+            "/watchdog, /wd — Same as /doctor\n"
+            "/backup, /bk — Create backup (or /backup list, /backup restore)\n"
+            "/monitor, /mon — 24h error rate (or /monitor weekly)\n\n"
             "**🏛️ Tribunal (multi-model consensus):**\n"
             "/tribunal <question> — Ask multiple judges, get unified verdict\n"
             "/tribunal bench — Show current judge configuration\n"
