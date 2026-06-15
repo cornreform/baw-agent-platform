@@ -423,34 +423,60 @@ def auto_discover_all_models(config: dict) -> int:
         if not base_url or not api_key:
             continue
         
-        models_url = f"{base_url}/models"
-        try:
-            req = urllib.request.Request(
-                models_url,
-                headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-            raw = data.get("data", [])
-            if not raw or not isinstance(raw, list):
-                continue
-            
-            existing_ids = {m["id"] for p in config.get("providers", {}).values()
-                           for m in p.get("models", [])}
-            for m in raw:
-                mid = m.get("id", "")
-                if mid and mid not in existing_ids:
-                    config.setdefault("providers", {}).setdefault(pname, {}).setdefault("models", []).append({
-                        "id": mid,
-                        "capabilities": _guess_capabilities(mid),
-                        "context_window": _guess_context_window(mid),
-                    })
-                    added += 1
-            if added:
+        urls_to_try = [f"{base_url}/models"]
+        # If base_url has extra path segments (e.g. step_plan/v1),
+        # also try parent paths by stripping segments from the LEFT.
+        # e.g. step_plan/v1 → v1/models may have more models than step_plan/v1/models
+        from urllib.parse import urlparse
+        _parsed = urlparse(base_url)
+        _path_parts = _parsed.path.strip("/").split("/")
+        if len(_path_parts) > 1:
+            # Strip segments from the left to find broader models endpoints
+            for _strip_left in range(1, len(_path_parts)):
+                _remaining = _path_parts[_strip_left:]
+                _parent_path = "/".join(_remaining)
+                _candidate = f"{_parsed.scheme}://{_parsed.netloc}/{_parent_path}/models"
+                if _candidate not in urls_to_try:
+                    urls_to_try.append(_candidate)
+
+        all_raw = []
+        for models_url in urls_to_try:
+            try:
+                req = urllib.request.Request(
+                    models_url,
+                    headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode())
+                raw = data.get("data", [])
+                if raw and isinstance(raw, list):
+                    all_raw.extend(raw)
+            except Exception:
+                pass  # Try next URL
+
+        # Deduplicate by model id
+        seen_ids = set()
+        deduped_raw = []
+        for m in all_raw:
+            mid = m.get("id", "")
+            if mid and mid not in seen_ids:
+                seen_ids.add(mid)
+                deduped_raw.append(m)
+
+        existing_ids = {m["id"] for p in config.get("providers", {}).values()
+                       for m in p.get("models", [])}
+        for m in deduped_raw:
+            mid = m.get("id", "")
+            if mid and mid not in existing_ids:
+                config.setdefault("providers", {}).setdefault(pname, {}).setdefault("models", []).append({
+                    "id": mid,
+                    "capabilities": _guess_capabilities(mid),
+                    "context_window": _guess_context_window(mid),
+                })
+                added += 1
+        if added:
                 _save_config(config, None)
                 logger.info(f"[Discover] Auto-added {added} new models from {pname} /v1/models")
-        except Exception as e:
-            logger.debug(f"[Discover] /v1/models failed for {pname}: {e}")
     return added
 
 

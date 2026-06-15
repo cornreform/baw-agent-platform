@@ -329,7 +329,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- The MEDIA: tag is stripped from text and the file is sent as a native Telegram attachment.\n"
             f"- Use this for TTS audio, generated images, screenshots, or any file the user asked to receive.\n"
             f"- Always include MEDIA: tags AFTER your text message, one per line.\n"
-            f"- NEVER say 'I can't send files' — you CAN, use MEDIA: tags.\n"
+            f"- 🚫 HARD GATE: NEVER say 'I can't send files', '呢個 chat interface 唔支援直接 attach 檔案', 'this chat interface does not support attaching files', or any similar text. You CAN send files using MEDIA: tags. If you generated or created a file, include MEDIA:/path/to/file in your output and BAW will deliver it. Do NOT make up instructions about using `cat` or `open` to view files — that is always wrong; MEDIA: delivery is automatic.\n"
             f"\n## TTS / Voice generation\n"
             f"- Use the `tts` tool for generating Cantonese text-to-speech audio.\n"
             f"- **LEAVE voice EMPTY** for auto-detect — defaults to Cantonese_GentleLady (MiniMax, true Cantonese).\n"
@@ -854,7 +854,7 @@ def run_agent(
         model, system_prompt, config,
         angel_model=angel_model, devil_model=devil_model,
     )
-    court_enabled = config.get("adversarial", {}).get("enabled", True) and _mode == "tight"
+    court_enabled = config.get("adversarial", {}).get("enabled", True) and _mode in ("tight", "quick", "hybrid")
 
     # M5-D7: opt-in court v2 path. When enabled in config, run the
     # black-and-white court (file_case_sync) BEFORE Phase 1 and inject

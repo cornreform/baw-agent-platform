@@ -2070,6 +2070,15 @@ class BaseConnector(ABC):
                 # Feed into next round with clear context
                 conv_history = None  # Clear context for auto-continuation
 
+            # ── Append failure report if any (proactive, not waiting for next request) ──
+            if all_failure_reasons:
+                failure_text = "\n".join(f"  • {r[:200]}" for r in all_failure_reasons)
+                output = (
+                    f"❌ Task had {len(all_failure_reasons)} failure(s):\n"
+                    f"{failure_text}\n\n"
+                    f"{output}"
+                )
+
             # ── Append simplified court verdict (single concise line) ──
             if info and info.get("adversarial_raw"):
                 cv = info["adversarial_raw"]
@@ -2098,13 +2107,27 @@ class BaseConnector(ABC):
                 output = output[:3997] + "..."
             # ── Guarantee non-empty output — user must always see a result ──
             if not output.strip():
-                output = "✅ Completed. (No additional output — check inline progress above for step details.)"
+                if all_failure_reasons:
+                    lines = ["❌ Task failed:"]
+                    for r in all_failure_reasons:
+                        lines.append(f"  • {r[:200]}")
+                    output = "\n".join(lines)
+                elif info and info.get("goal_achieved") is False:
+                    output = "❌ Task failed to reach goal. No additional details."
+                else:
+                    output = "✅ Completed. (No additional output — check inline progress above for step details.)"
             # ── Hallucination guard: LLM sometimes claims it "cannot access local files"
             #    even though it has read_file/write_file/terminal tools. Override it.
             _hallucination_phrases = [
                 "無法直接讀取", "無法直接讀取你電腦上的檔案",
                 "cannot access local files", "i cannot access", "我無法直接",
                 "我無法讀取", "無法讀取你電腦",
+                "唔支援直接 attach", "唔支援直接傳送", "唔支援直接",
+                "唔支援上傳", "不能直接 attach", "cannot attach files",
+                "cannot directly attach", "does not support attaching",
+                "don't support sending files", "can't send files directly",
+                "cannot send files", "can't attach files",
+                "呢個 chat interface 唔支援", "chat interface 唔支援",
             ]
             if any(_hp in output.lower() for _hp in _hallucination_phrases):
                 # Try to extract file path from original prompt
@@ -2140,6 +2163,35 @@ class BaseConnector(ABC):
                         "❌ 讀檔失敗: 請求包含讀取檔案，"
                         "但 LLM 誤報無法讀取。未能自動提取檔案路徑。"
                     )
+
+            # ── Auto-deliver files: detect file paths in output, send as MEDIA ──
+            _pending_media = []  # collect MEDIA paths here so trim doesn't lose them
+            if chat_id:
+                import re as _file_re
+                from pathlib import Path as _FileP
+                # Find all absolute paths with known extensions
+                _file_paths = _file_re.findall(
+                    r'/[^\s\n<>"\'`，。（）\(\)）]+\.(?:html?|md|txt|json|png|jpg|svg|pdf|yaml|yml|py|mp3|wav|ogg)',
+                    output
+                )
+                for _fp in _file_paths:
+                    _fp = _fp.strip().rstrip('.,;:）)）】」』》、。(')
+                    _fp_obj = _FileP(_fp)
+                    if _fp_obj.is_file() and f"MEDIA:{_fp}" not in output:
+                        # File exists, agent mentioned it but didn't use MEDIA: → auto-send
+                        _pending_media.append(_fp)
+                # Trim long output FIRST (before MEDIA tags) so tags survive
+                if len(output) > 1500 and _pending_media:
+                    _summary_parts = []
+                    for _mp in _pending_media:
+                        _mp_obj = _FileP(_mp)
+                        _summary_parts.append(f"`{_mp_obj.name}` ({_mp_obj.stat().st_size:,} bytes)")
+                    _first_line = output.split('\n')[0][:200]
+                    output = f"{_first_line}\n\n📄 {' · '.join(_summary_parts)}"
+                # Append MEDIA tags AFTER trim — guaranteed to survive
+                for _mp in _pending_media:
+                    if f"MEDIA:{_mp}" not in output:
+                        output += f"\nMEDIA:{_mp}"
 
             # ── Clear progress message after BAW completes ──
             if chat_id and _progress_msg_id:
