@@ -51,6 +51,75 @@ def _human_tokens(n: int) -> str:
     return str(n)
 
 
+# ── Task Classification Layer ──────────────────────────────────
+
+_TASK_TYPE_PATTERNS = {
+    "TYPE_D": [
+        # Execute external/untrusted code
+        r"(run|execute|exec|eval)\s+(this|the|that|code|script|command)",
+        r"(download|pull|fetch).*(?:run|execute|install|bash|sh|python)",
+        r"curl\s+.*\|.*(?:bash|sh|python)",
+    ],
+    "TYPE_C": [
+        # Download/install third-party — always needs audit
+        r"git\s+clone",
+        r"gh\s+repo\s+clone",
+        r"(?:download|install|pull)\s+(?:from|repo|package)",
+        r"npm\s+install\s+(?:-g\s+)?[a-z]",
+        r"pip\s+install\s+[a-z]",
+        r"brew\s+install\s+[a-z]",
+        r"clone\s+(?:this|that|the)\s+repo",
+    ],
+    "TYPE_B": [
+        # Write/modify system/config files — needs careful handling
+        r"(?:write|create|modify|edit|change|update|set|config(?:ure)?)\s+(?:file|config|setting|the|a|this)",
+        r"sudo\s+",
+        r"chmod\s+",
+        r"rm\s+-rf",
+    ],
+    "TYPE_E": [
+        # File send/generate — scan output
+        r"(?:send|upload|generate|create|produce)\s+(?:a\s+|an\s+|the\s+)?(?:file|image|audio|video|pdf|report|document)",
+        r"make\s+(?:a|an)\s+(?:file|image|audio|report|pdf)",
+    ],
+    "TYPE_A": [
+        # Read-only / informational — safe
+        r"^(?:what|how|why|when|where|who|which|explain|describe|tell|show|list|find|search|look|check|read|get|view)",
+    ],
+}
+
+
+def _classify_task_type(prompt: str) -> dict:
+    """
+    Classify user task into TYPE_A–TYPE_E BEFORE execution.
+    
+    TYPE_A: read-only / informational → safe, no audit needed
+    TYPE_B: write/modify system/config → needs permission gate
+    TYPE_C: download/install third-party → MUST audit with code_scan
+    TYPE_D: execute external code → MUST scan + audit
+    TYPE_E: file send/generate → must scan output
+
+    Returns: {"type": "TYPE_X", "needs_audit": bool, "reason": "..."}
+    """
+    import re as _re
+
+    prompt_lower = prompt.lower() if prompt else ""
+
+    # Check in priority order (D > C > B > E > A)
+    for task_type in ("TYPE_D", "TYPE_C", "TYPE_B", "TYPE_E"):
+        for pattern in _TASK_TYPE_PATTERNS[task_type]:
+            if _re.search(pattern, prompt_lower):
+                _needs_audit = task_type in ("TYPE_C", "TYPE_D")
+                return {
+                    "type": task_type,
+                    "needs_audit": _needs_audit,
+                    "reason": f"matched {task_type} pattern: {pattern[:60]}",
+                }
+
+    # Default TYPE_A: read-only / safe
+    return {"type": "TYPE_A", "needs_audit": False, "reason": "default — read-only or unrecognised"}
+
+
 # ═══════════════════════════════════════════════════════════════
 # ── Context window tracker (session-scoped) ──
 # ═══════════════════════════════════════════════════════════════
@@ -705,12 +774,25 @@ def run_agent(
             _configured_mode = "tight"
     _mode = _configured_mode
 
+    # ── Task classification (Layer 1) ──
+    _classification = _classify_task_type(prompt)
+    _task_type = _classification["type"]
+    _needs_audit = _classification["needs_audit"]
+    logger.info(f"[classify] {_task_type} — needs_audit={_needs_audit}: {_classification['reason']}")
+
+    # Force tight mode for TYPE_C/D tasks (they NEED the full Safety Protocol)
+    if _needs_audit and _mode == "quick":
+        _mode = "hybrid"
+        logger.info(f"[classify] {_task_type} forces audit → upgraded mode to hybrid")
+
     # ── Build system prompt ──
     _is_quick = (_mode == "quick")
     system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start, quick_mode=_is_quick)
 
     # ── Phase 1: Build context ──
     ctx = Context(system_prompt=system_prompt, temperature=model_temperature)
+    ctx.task_type = _task_type
+    ctx.audit_required = _needs_audit
 
     # Inject conversation history (between system prompt and current prompt)
     _history_msg_count = 1  # system message at index 0
