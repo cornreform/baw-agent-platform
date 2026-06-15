@@ -554,8 +554,12 @@ def call_llm_with_fallback(
         pass
 
     RETRYABLE_STATUS = {429, 503, 502, 504}
-    MAX_RETRIES = 3
-    BASE_DELAY = 1.0  # seconds: 1s → 2s → 4s
+    # Retry config: read from config.yaml, with sensible defaults
+    retry_cfg = config.get("retry", {})
+    MAX_RETRIES = retry_cfg.get("max_retries", 3)
+    BASE_DELAY = retry_cfg.get("base_delay", 1.0)
+    EXPONENTIAL_BASE = retry_cfg.get("exponential_base", 2.0)
+    MAX_DELAY = retry_cfg.get("max_delay", 60.0)  # cap at 60s
 
     # ── Try primary with exponential backoff ──
     error_msg = ""
@@ -584,7 +588,7 @@ def call_llm_with_fallback(
             status = e.response.status_code
             error_msg = str(e)[:300]
             if status in RETRYABLE_STATUS and attempt < MAX_RETRIES:
-                delay = BASE_DELAY * (2 ** attempt)
+                delay = min(BASE_DELAY * (EXPONENTIAL_BASE ** attempt), MAX_DELAY)
                 _time.sleep(delay)
                 continue
             _record_circuit_failure(last_provider or primary_id, f"HTTP:{status}")

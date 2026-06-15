@@ -23,3 +23,6 @@ websocket-client>=1.7
 # ── CLI / Dashboard UI ──
 rich>=13.0
 textual>=0.52
+
+# ── MCP — Model Context Protocol ──
+mcp>=1.0.0
