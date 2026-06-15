@@ -25,6 +25,7 @@ def _backup_config() -> Path | None:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup = _BACKUP_DIR / f"config_{ts}.yaml"
     shutil.copy2(_CFG_PATH, backup)
+    backup.chmod(0o644)  # ensure backup is writable (source may be 444)
     return backup
 
 
@@ -50,7 +51,21 @@ def _save_cfg(cfg: dict) -> str:
         yaml_text = yaml.dump(cfg, default_flow_style=False, allow_unicode=True)
         # Validate by re-parsing
         yaml.safe_load(yaml_text)
+
+        # Filesystem enforcement: config.yaml is 444 (read-only).
+        # Temporarily make writable, write, then lock back.
+        was_readonly = False
+        if _CFG_PATH.exists():
+            st = _CFG_PATH.stat()
+            if st.st_mode & 0o222 == 0:  # no write bits set
+                was_readonly = True
+                _CFG_PATH.chmod(0o644)
+
         _CFG_PATH.write_text(yaml_text, encoding="utf-8")
+
+        if was_readonly:
+            _CFG_PATH.chmod(0o444)
+
         return ""
     except Exception as e:
         return f"Failed to save config: {e}"
@@ -264,7 +279,18 @@ def config_restore(backup_name: str = "") -> str:
         pre_restore = _BACKUP_DIR / f"config_pre_restore_{ts}.yaml"
         shutil.copy2(_CFG_PATH, pre_restore)
 
+    # Make writable if locked, restore, lock back
+    was_readonly = False
+    if _CFG_PATH.exists():
+        st = _CFG_PATH.stat()
+        if st.st_mode & 0o222 == 0:
+            was_readonly = True
+            _CFG_PATH.chmod(0o644)
+
     shutil.copy2(backup, _CFG_PATH)
+
+    if was_readonly:
+        _CFG_PATH.chmod(0o444)
 
     # Validate restored config
     _, err = _load_cfg()
