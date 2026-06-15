@@ -15,7 +15,7 @@ from core.tools import register
 
 from . import (bash, read_file, write_file, web_search, image_generate, tts, todo,
                petrestaurants, http_fetch, restaurant, memory, install,
-               get_skill, remember, knowledge_graph, mcp, background)
+               get_skill, remember, knowledge_graph, mcp, background, mmx)
 
 
 def register_all():
@@ -36,3 +36,4 @@ def register_all():
     register(**knowledge_graph.TOOL_DEF)
     register(**mcp.TOOL_DEF)
     register(**background.TOOL_DEF)
+    register(**mmx.TOOL_DEF)
