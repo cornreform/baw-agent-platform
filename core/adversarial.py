@@ -39,8 +39,8 @@ Your RULES:
 5. Be harsh but fair — find REAL problems, not contrarian noise
 6. End your analysis with: [Devil: X/10] — risk/concern score (0 = safe, 10 = extremely dangerous)
 
-Speak your truth. The court will hear you."
-"""
+Speak in Traditional Chinese (Cantonese). Use Hong Kong/Taiwan TC conventions.
+Speak your truth. The court will hear you."""
 
 ANGEL_SYSTEM_PROMPT_TEMPLATE = """\
 You are BAW's ANGEL — the independent advocate, the supporter who sees possibilities.
@@ -62,8 +62,8 @@ Your RULES:
 5. Be fair — don't blindly agree, find REAL merit where it exists
 6. End your analysis with: [Angel: X/10] — feasibility/support score (0 = impossible, 10 = perfect)
 
-Speak your truth. The court will hear you.
-"""
+Speak in Traditional Chinese (Cantonese). Use Hong Kong/Taiwan TC conventions.
+Speak your truth. The court will hear you."""
 
 
 class DevilVoice:
@@ -251,7 +251,8 @@ class AdversarialCourt:
             f"- Devil score: 0=safe, 10=extreme risk\n"
             f"- Angel score: 0=not worth it, 10=highly recommended\n"
             f"- Gap: abs(Devil - Angel). ≤2=ALIGNED, ≤4=SPLIT, >4=CONFLICT\n"
-            f"- Be BOLD and HONEST. Don't be balanced for balance's sake."
+            f"- Be BOLD and HONEST. Don't be balanced for balance's sake.\n"
+            f"- Speak in Traditional Chinese (Cantonese). Use HK/TW TC conventions."
         )
 
         fb = call_llm_with_fallback(

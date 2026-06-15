@@ -19,6 +19,7 @@ import threading
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -599,6 +600,53 @@ class BaseConnector(ABC):
                     return f"✅ `{key}` set to `{value}` (saved to config.yaml)"
                 except Exception as e:
                     return f"❌ Failed to set `{key}`: {e}"
+
+            # ── Cron job management ──
+            if cmd == "cron":
+                try:
+                    from core.scheduler import Scheduler, ScheduledTask
+                    baw = self._baw_ensure()
+                    sched = Scheduler(baw["data_dir"])
+                    args = (arg or "").strip().split()
+
+                    if not args or args[0] in ("list", "ls"):
+                        return sched.status_report()
+
+                    subcmd = args[0]
+
+                    if subcmd == "add" and len(args) >= 4:
+                        # /cron add <name> "<cron>" <command>
+                        name, cron_expr = args[1], args[2]
+                        command = " ".join(args[3:])
+                        sched.add_task(ScheduledTask(
+                            name=name, cron=cron_expr,
+                            command=command, enabled=True
+                        ))
+                        nxt = datetime.now(timezone.utc)
+                        from croniter import croniter
+                        ci = croniter(cron_expr, nxt)
+                        nxt_str = ci.get_next(datetime).strftime("%H:%M %Y-%m-%d")
+                        return f"✅ Cron `{name}` added — `{cron_expr}`\n📅 Next: {nxt_str}"
+
+                    if subcmd == "remove" and len(args) >= 2:
+                        name = args[1]
+                        if sched.remove_task(name):
+                            return f"🗑️ Removed cron `{name}`"
+                        return f"❌ Cron `{name}` not found"
+
+                    if subcmd == "enable" and len(args) >= 2:
+                        if sched.toggle_task(args[1], enabled=True):
+                            return f"✅ Cron `{args[1]}` enabled"
+                        return f"❌ Cron `{args[1]}` not found"
+
+                    if subcmd == "disable" and len(args) >= 2:
+                        if sched.toggle_task(args[1], enabled=False):
+                            return f"⏸️ Cron `{args[1]}` disabled"
+                        return f"❌ Cron `{args[1]}` not found"
+
+                    return "Usage:\n`/cron` — list all\n`/cron add <name> \"<cron>\" <command>` — add\n`/cron remove <name>` — delete\n`/cron enable|disable <name>` — toggle"
+                except Exception as e:
+                    return f"❌ Cron error: {e}"
 
             # ── Top-level session aliases ──
             if cmd == "new":
@@ -2022,29 +2070,13 @@ class BaseConnector(ABC):
                 # Feed into next round with clear context
                 conv_history = None  # Clear context for auto-continuation
 
-            # ── Prepend plan recap to output (single message, no delay) ──
-            if all_plan_recaps:
-                plan_recap_clean = "\n".join(
-                    re.sub(r'<[^>]+>', '', p) for p in all_plan_recaps if p
-                )
-                if plan_recap_clean:
-                    output = plan_recap_clean + "\n" + output
-
-            # ── Append court verdict to output (single message, below plan+result) ──
+            # ── Append simplified court verdict (single concise line) ──
             if info and info.get("adversarial_raw"):
                 cv = info["adversarial_raw"]
                 try:
-                    devil_content = (cv.get("devil", {}) or {}).get("content", "")[:200]
-                    angel_content = (cv.get("angel", {}) or {}).get("content", "")[:200]
-                    devil_score = cv.get("devil_score", 0)
-                    angel_score = cv.get("angel_score", 0)
                     agreement = cv.get("agreement_level", "unknown")
-                    court_msg = (
-                        f"\n⚖️ Court: {agreement} (gap {cv.get('score_gap', 0)})\n"
-                        f"👿 Devil ({devil_score}/10): {devil_content}\n"
-                        f"😇 Angel ({angel_score}/10): {angel_content}"
-                    )
-                    output += court_msg
+                    gap = cv.get("score_gap", 0)
+                    output += f"\n⚖️ Court: {agreement} (gap {gap})"
                 except Exception:
                     pass
 
@@ -2109,6 +2141,13 @@ class BaseConnector(ABC):
                         "但 LLM 誤報無法讀取。未能自動提取檔案路徑。"
                     )
 
+            # ── Clear progress message after BAW completes ──
+            if chat_id and _progress_msg_id:
+                try:
+                    self.send(chat_id, "✅", edit_msg_id=_progress_msg_id)
+                except Exception:
+                    pass
+
             return output.strip()
 
         except Exception as e:
@@ -2164,7 +2203,8 @@ class BaseConnector(ABC):
             "/evolve — Self-evolution stats\n\n"
             "**🛠 Tools:**\n"
             "/board — Generate HTML dashboard\n"
-            "/version — BAW version\n\n"
+            "/version — BAW version\n"
+            "/cron — List/manage scheduled tasks\n\n"
             "**🔧 System:**\n"
             "/update — Git pull + changelog + restart\n"
             "/tts on|off|status — Toggle text-to-speech"
