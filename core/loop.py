@@ -821,6 +821,25 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
                             f"configured for any capability — config was not updated"
                         )
     
+    # Pattern 4: Model name verification — check claimed model IDs exist in providers
+    _MODEL_CLAIMS = _vre.findall(
+        r'(?:model[:\s=]+)([\w.-]+?)(?:[\s,\)]|$)', output
+    )
+    if _MODEL_CLAIMS:
+        valid_models = set()
+        for pname, pcfg in (cfg or {}).get("providers", {}).items():
+            for m in pcfg.get("models", []):
+                mid = m.get("id", "")
+                if mid:
+                    valid_models.add(mid)
+        for mc in _MODEL_CLAIMS:
+            mc_clean = mc.rstrip('"\'\,.)').strip()
+            if mc_clean and mc_clean not in valid_models:
+                corrections.append(
+                    f"Claims model='{mc_clean}' but this model does not exist in any "
+                    f"provider's model list — model name may be fabricated"
+                )
+    
     if corrections:
         output += (
             "\n\n---\n## [SYSTEM] POST-TURN VERIFICATION FAILED\n"
