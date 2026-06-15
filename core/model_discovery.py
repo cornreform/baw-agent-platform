@@ -75,7 +75,7 @@ KNOWN_PROVIDERS: dict[str, dict] = {
     },
     "stepfun": {
         "env_var": "STEPFUN_API_KEY",
-        "base_url": "https://api.stepfun.ai/v1",
+        "base_url": "https://api.stepfun.ai/step_plan/v1",
         "protocol": "openai-chat",
         "model_patterns": [r"^step-", r"^stepfun"],
     },
