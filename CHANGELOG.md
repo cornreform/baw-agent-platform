@@ -2,6 +2,32 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v0.21.0 — 2026-06-15
+
+### 🏥 Reliability Pillars (6.5 → 9.5/10)
+
+- **P0: Config routing fix** — `image→step-image-edit-2`, `tts→stepaudio-2.5-tts`, `vision→MiniMax-M3`, judge `3.5→3.7`, +angel_model, +timeout
+- **P0: Never Surrender** — pursuit limit 2→5, recalc 3→5, skip→alternative LLM call, diagnosis-on-exhaust
+- **P1: Memory decay persistence** — `decay()` now saves scores, auto-compress at 500 entries
+- **P1: Tribunal E2E tests** — 8 tests covering court imports, tiers, verdicts, docket, night court
+- **P2: Active Challenge Gate** — Devil ≥9 blocks, ≥7 warns, ≥4 notes — BAW pushes back on bad decisions
+- **P2: Skills audit** — no `--break-system-packages`, 2 safe skills verified
+
+### 🛡️ Auto-Recovery
+
+- **Stuck step killer**: kills sub-agent after 10min, triggers replan
+- **Health watchdog**: 60s polling, score tracking, auto-alert
+- **Health dashboard**: 10-point check → `/doctor`, `/watchdog` — current: 9.5/10
+- **Backup system**: daily backup (02:00 UTC), `/backup` slash command, keep 7 days, restore support
+- **Monitoring**: error rate tracker, weekly reliability report, threshold alerts
+
+### 🧪 Test Coverage (15 → 157 tests)
+
+- 42 new unit tests: loop pursuit branches, llm fallback chain, messaging edges, config integrity
+- 14 P0 critical path validation tests
+- 8 Tribunal E2E tests
+- 6 P1-P2 challenge + skills tests
+
 ## v0.20.4 — 2026-06-14
 
 ### 🔧 Bug Fixes
