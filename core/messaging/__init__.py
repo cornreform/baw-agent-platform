@@ -611,6 +611,23 @@ class BaseConnector(ABC):
                 except Exception as e:
                     return f"❌ Monitor error: {e}"
 
+            # ── Queue status ──
+            if cmd in ("queue", "q"):
+                with self._queue_lock:
+                    q_len = len(self._message_queue)
+                with self._active_lock:
+                    active_count = self._active_count
+                with self._chat_lock:
+                    active_chats = list(self._active_chats)
+                if q_len == 0 and active_count == 0:
+                    return "Queue empty — no pending tasks."
+                lines = [f"**Message Queue**"]
+                lines.append(f"  Pending: {q_len} message(s)")
+                lines.append(f"  Active slots: {active_count}/{self._max_concurrency}")
+                if active_chats:
+                    lines.append(f"  Active chats: {', '.join(active_chats[:5])}")
+                return "\n".join(lines)
+
             # ── Set config value (persist to config.yaml) ──
             if cmd == "set" and arg:
                 parts = arg.strip().split(maxsplit=1)
