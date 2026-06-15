@@ -535,7 +535,10 @@ class BaseConnector(ABC):
             if cmd in ("doctor", "dr", "health"):
                 try:
                     from tools.selftest import selftest as _st
-                    return _st(full=True)
+                    from core.health_dashboard import health_check, format_health_report
+                    hc = health_check()
+                    report = format_health_report(hc)
+                    return report
                 except Exception as e:
                     return f"❌ Self-test error: {e}"
 

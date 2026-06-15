@@ -1,104 +1,133 @@
-"""
-BAW — Backup & Restore
+"""P4: Backup System — daily auto-backup + restore command.
+
+Backs up ~/.baw/ (config, memory, skills, tasks) to tar.gz.
+Keeps last 7 daily backups.
 """
 from __future__ import annotations
-import os, sys, subprocess, shutil, tarfile, json
+
+import os
+import tarfile
+import shutil
+import time
 from pathlib import Path
-from datetime import datetime
-
-C_RESET = "\033[0m"
-C_BOLD = "\033[1m"
-C_DIM = "\033[2m"
-C_GREEN = "\033[92m"
-C_RED = "\033[91m"
-C_YELLOW = "\033[93m"
-C_CYAN = "\033[96m"
+from datetime import datetime, timezone
 
 
-def _backup_dir(data_dir: Path) -> Path:
-    """Create ~/.baw/backups/ dir."""
-    b = data_dir / "backups"
-    b.mkdir(parents=True, exist_ok=True)
-    return b
+BACKUP_DIR = Path.home() / ".baw" / "backups"
+MAX_BACKUPS = 7
 
 
-def cmd_backup(data_dir: Path):
-    """Backup config, .env, sessions, memory, SOUL.md to tar.gz."""
-    backup_dir = _backup_dir(data_dir)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = backup_dir / f"baw_backup_{ts}.tar.gz"
+def create_backup() -> dict:
+    """Create a timestamped backup of ~/.baw/ (excluding backups dir).
+    Returns {path, size_bytes, timestamp}."""
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-    items = ["config.yaml", ".env", "SOUL.md", "ORCHESTRATOR.md"]
-    # Add dirs if they exist
-    for d in ["memory", "sessions", "tasks", "skills", "backups"]:
-        if (data_dir / d).exists():
-            items.append(d)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    backup_name = f"baw-backup-{ts}.tar.gz"
+    backup_path = BACKUP_DIR / backup_name
 
-    print(f"  {C_YELLOW}⟳{C_RESET} Backing up {len(items)} items...")
+    baw_dir = Path.home() / ".baw"
 
-    with tarfile.open(dest, "w:gz") as tar:
-        for item in items:
-            path = data_dir / item
-            if path.exists():
-                tar.add(path, arcname=item)
-                sz = path.stat().st_size if path.is_file() else 0
-                label = f" ({sz:,} bytes)" if sz else " (dir)"
-                print(f"    {C_DIM}{item}{label}{C_RESET}")
+    with tarfile.open(backup_path, "w:gz") as tar:
+        for item in baw_dir.iterdir():
+            if item.name == "backups":
+                continue  # Don't backup the backups
+            tar.add(item, arcname=item.name)
 
-    print(f"\n  {C_GREEN}✓{C_RESET} Backup saved: {dest}")
-    print(f"  {C_DIM}Size: {dest.stat().st_size / 1024:.0f} KB{C_RESET}")
-    return dest
+    size_bytes = backup_path.stat().st_size
 
+    # Cleanup old backups (keep last MAX_BACKUPS)
+    _cleanup_old_backups()
 
-def cmd_restore(data_dir: Path, backup_path: str = ""):
-    """Restore from a backup archive."""
-    backup_dir = _backup_dir(data_dir)
-
-    if backup_path:
-        src = Path(backup_path)
-    else:
-        # Find latest backup
-        backups = sorted(backup_dir.glob("baw_backup_*.tar.gz"), reverse=True)
-        if not backups:
-            print(f"  {C_RED}✗{C_RESET} No backups found in {backup_dir}")
-            return
-        src = backups[0]
-
-    if not src.exists():
-        print(f"  {C_RED}✗{C_RESET} Backup not found: {src}")
-        return
-
-    print(f"  {C_YELLOW}⚠{C_RESET} Restoring from: {src}")
-    print(f"  {C_YELLOW}⚠{C_RESET} Current files will be overwritten")
-    confirm = input(f"  Are you sure? (y/N): ").strip().lower()
-    if confirm != "y":
-        print(f"  {C_DIM}Restore cancelled{C_RESET}")
-        return
-
-    # Create backup of current state first
-    print(f"  {C_YELLOW}⟳{C_RESET} Auto-backup current state before restore...")
-    cmd_backup(data_dir)
-
-    with tarfile.open(src, "r:gz") as tar:
-        print(f"  {C_YELLOW}⟳{C_RESET} Restoring files...")
-        for member in tar.getmembers():
-            tar.extract(member, path=data_dir)
-            print(f"    restored: {member.name}")
-
-    print(f"\n  {C_GREEN}✓{C_RESET} Restore complete. Restart BAW to apply.")
+    return {
+        "path": str(backup_path),
+        "size_bytes": size_bytes,
+        "size_mb": round(size_bytes / (1024 * 1024), 2),
+        "timestamp": ts,
+    }
 
 
-def cmd_backup_list(data_dir: Path):
-    """List available backups."""
-    backup_dir = _backup_dir(data_dir)
-    backups = sorted(backup_dir.glob("baw_backup_*.tar.gz"), reverse=True)
+def restore_backup(date_str: str) -> dict:
+    """Restore from a dated backup. date_str format: '2026-06-15' or 'latest'.
+    Returns {status, files_restored, details}."""
+    if not BACKUP_DIR.exists():
+        return {"status": "error", "detail": "No backup directory"}
 
+    backups = sorted(BACKUP_DIR.glob("baw-backup-*.tar.gz"))
     if not backups:
-        print(f"  {C_DIM}No backups found{C_RESET}")
-        return
+        return {"status": "error", "detail": "No backups found"}
 
-    print(f"  {C_BOLD}Available backups:{C_RESET}")
-    for i, b in enumerate(backups, 1):
-        size = b.stat().st_size / 1024
-        ts = b.stem.replace("baw_backup_", "").replace("_", " ")[:15]
-        print(f"  [{i}] {C_CYAN}{b.name}{C_RESET} ({size:.0f} KB, {ts})")
+    if date_str == "latest":
+        target = backups[-1]
+    else:
+        target = None
+        for b in backups:
+            if date_str in b.name:
+                target = b
+                break
+        if not target:
+            return {"status": "error", "detail": f"No backup for {date_str}. Available: {[b.name for b in backups[-5:]]}"}
+
+    baw_dir = Path.home() / ".baw"
+    restored = []
+
+    with tarfile.open(target, "r:gz") as tar:
+        for member in tar.getmembers():
+            # Don't overwrite the backup directory itself
+            dest = baw_dir / member.name
+            if dest.parent == BACKUP_DIR:
+                continue
+            tar.extract(member, baw_dir)
+            restored.append(member.name)
+
+    return {
+        "status": "ok",
+        "backup_file": str(target),
+        "files_restored": len(restored),
+        "details": restored[:20],
+    }
+
+
+def list_backups() -> list[dict]:
+    """List all available backups."""
+    if not BACKUP_DIR.exists():
+        return []
+    backups = sorted(BACKUP_DIR.glob("baw-backup-*.tar.gz"), reverse=True)
+    result = []
+    for b in backups:
+        stat = b.stat()
+        result.append({
+            "name": b.name,
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "created": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        })
+    return result
+
+
+def pre_upgrade_snapshot() -> dict:
+    """Create a special pre-upgrade backup."""
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    backup_name = f"baw-pre-upgrade-{ts}.tar.gz"
+    backup_path = BACKUP_DIR / backup_name
+
+    baw_dir = Path.home() / ".baw"
+    with tarfile.open(backup_path, "w:gz") as tar:
+        for item in baw_dir.iterdir():
+            if item.name == "backups":
+                continue
+            tar.add(item, arcname=item.name)
+
+    return {
+        "path": str(backup_path),
+        "size_mb": round(backup_path.stat().st_size / (1024 * 1024), 2),
+        "timestamp": ts,
+    }
+
+
+def _cleanup_old_backups():
+    """Keep only the last MAX_BACKUPS daily backups."""
+    backups = sorted(BACKUP_DIR.glob("baw-backup-*.tar.gz"))
+    while len(backups) > MAX_BACKUPS:
+        oldest = backups.pop(0)
+        oldest.unlink()
