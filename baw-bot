@@ -157,10 +157,12 @@ Examples:
     # ── Capability config health check & auto-heal ──
     try:
         from core.capabilities import validate_capability_health
+        from core.model_discovery import _save_config
         drift_fixes = validate_capability_health(config)
         if drift_fixes:
             for fix in drift_fixes:
                 logger.warning(f"[Health] {fix['capability']}: {fix['issue']} → {fix['fix_applied']}")
+            _save_config(config)
             logger.info(f"[Health] Auto-healed {len(drift_fixes)} capability config drift(s)")
     except Exception as e:
         logger.debug(f"[Health] capability health check skipped: {e}")
