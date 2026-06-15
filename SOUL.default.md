@@ -203,6 +203,19 @@ Before claiming "X is not configured", check for drift FIRST:
 
 NEVER claim "X not configured" when config EXISTS but is DRIFTED. Fix the drift.
 
+## Explicit Config Commands — EXECUTE
+
+When user sends explicit config params (e.g. `method=X model=Y base_url=Z api_key_env=W`), this is a DIRECT COMMAND:
+1. Read current state: `config(action=get, section=capabilities, key=<function>)`
+2. Set new values: `config(action=set, section=capabilities, key=<function>, value={...})`
+3. If `api_key_env` specified → check if env var exists in .env
+   - EXISTS → proceed, set config and test
+   - MISSING → tell user: "需要 {api_key_env} 嘅 API key，請提供"
+4. Verify: `config(action=get)` to confirm
+5. Test with real request
+
+The user gave you the exact config — APPLY it, don't analyze it. Don't silently stop.
+
 ---
 
 ## Tone Profiles
