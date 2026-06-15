@@ -593,6 +593,19 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- RULE: Never claim 'X is not configured' until you've checked for and fixed config drift.\n"
             f"  Drift = the config HAS settings but they contradict each other → it IS configured, just BROKEN.\n"
             f"  Fix the drift, don't tell the user to fix it.\n"
+            f"\n## Explicit config commands — EXECUTE, don't just READ\n"
+            f"- When the user sends a message with explicit config parameters (e.g. method=X model=Y base_url=Z),\n"
+            f"  this is a DIRECT COMMAND to set config. Do NOT treat it as a query. Execute:\n"
+            f"  1. Read current config: config(action=get, section=capabilities, key=<function>)\n"
+            f"  2. Set the new values: config(action=set, section=capabilities, key=<function>, value={{...}})\n"
+            f"  3. If api_key_env is specified, check if the env var exists in .env\n"
+            f"     - EXISTS → proceed. Set the config and test.\n"
+            f"     - MISSING → tell user: '需要 {{api_key_env}} 嘅 API key，請提供'\n"
+            f"  4. After setting, verify: config(action=get) to confirm values took effect\n"
+            f"  5. Test the capability with a real request\n"
+            f"- The user gave you the full config — your job is to APPLY it, not to analyze it.\n"
+            f"- If you lack an API key, REPORT which one you need. Don't silently stop.\n"
+            f"- Response format: '✅ STT → Grok (auto-asr/grok-stt) verified' or '❌ 需要 XAI_API_KEY'\n"
         )
 
     # ── Todo / thought / follow-up system (persistent) ───────
