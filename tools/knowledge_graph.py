@@ -192,13 +192,13 @@ def extract_from_memory() -> str:
 
     Reads memories (each entry = {"content": "...", "tags": [...], ...})
     and creates entity relations for tagged concepts.
+    If no tags, extracts entities from content via keyword detection.
 
     Returns:
         Summary of what was extracted.
     """
     mem_file = Path.home() / ".baw" / "memory" / "store.jsonl"
     if not mem_file.exists():
-        # Try legacy paths
         mem_file = Path.home() / ".baw" / "store.jsonl"
         if not mem_file.exists():
             mem_file = Path.home() / ".baw" / "store.md"
@@ -218,20 +218,20 @@ def extract_from_memory() -> str:
                 except json.JSONDecodeError:
                     continue
 
-                content = entry.get("content", "").strip()[:200]
+                content = entry.get("content", "").strip()
                 tags = entry.get("tags", [])
                 if not content:
                     continue
 
-                # For each tag pair, create a triple
+                # ── Smart extraction: tags first, then content entities ──
+
+                # Method A: tag-based triples
                 for i, tag in enumerate(tags[:5]):
                     tag = tag.strip()
                     if not tag:
                         continue
-                    # tag -> "tagged" -> content
                     triple = {"id": f"m{count}", "s": tag, "r": "tagged",
                               "o": content[:100], "ts": entry.get("ts", "")}
-                    # Dedup
                     dup = False
                     for t in data["triples"]:
                         if t["s"] == triple["s"] and t["r"] == triple["r"] and t["o"] == triple["o"]:
@@ -240,19 +240,77 @@ def extract_from_memory() -> str:
                     if not dup:
                         data["triples"].append(triple)
                         count += 1
-
-                        # Register entity
                         nk = _normalize(tag)
                         if nk not in data["entities"]:
                             data["entities"][nk] = {
                                 "name": tag, "first_seen": triple["ts"],
                                 "relations": ["tagged"],
                             }
+
+                # Method B: content-entity extraction (for untagged memories)
+                if not tags:
+                    entities = _extract_entities_from_content(content)
+                    for i, entity in enumerate(entities[:3]):
+                        triple = {"id": f"e{count}", "s": entity, "r": "mentioned_in",
+                                  "o": content[:80], "ts": entry.get("ts", "")}
+                        dup = False
+                        for t in data["triples"]:
+                            if t["s"] == triple["s"] and t["r"] == triple["r"] and t["o"] == triple["o"]:
+                                dup = True
+                                break
+                        if not dup:
+                            data["triples"].append(triple)
+                            count += 1
+                            nk = _normalize(entity)
+                            if nk not in data["entities"]:
+                                data["entities"][nk] = {
+                                    "name": entity, "first_seen": triple["ts"],
+                                    "relations": ["mentioned_in"],
+                                }
     except FileNotFoundError:
         return "Memory store not found."
 
     _save(data)
     return f"✅ Extracted {count} triples from memory store."
+
+
+def _extract_entities_from_content(content: str) -> list[str]:
+    """Extract meaningful entities from plain-text memory content.
+
+    Returns up to 5 entity names detected from keywords.
+    """
+    entities = []
+    content_lower = content.lower()
+
+    # Patterns: detect prefixes like "User:", "BAW:", topics, tools
+    import re
+
+    # Named roles
+    for pattern in [r"User:\s*(.{1,40})", r"BAW:\s*(.{1,40})",
+                    r"(the user|Sticky|Robi|BAW|Hermes)"]:
+        for m in re.finditer(pattern, content[:300]):
+            entity = m.group(1).strip()[:40]
+            if entity and entity not in entities:
+                entities.append(entity)
+
+    # Topic detection (keyword-based)
+    topics = {
+        "AI新聞": ["ai", "新聞", "news", "artificial intelligence"],
+        "美股": ["美股", "stock", "nasdaq", "dow", "sp500"],
+        "電車": ["電車", "tram", "ev", "electric vehicle"],
+        "編程": ["code", "程式", "python", "script", "開發"],
+        "部署": ["deploy", "docker", "container", "部署"],
+        "記憶": ["memory", "記憶", "remember"],
+        "工具": ["tool", "工具", "cli", "command"],
+        "config": ["config", "setting", "設定", "配置"],
+        "TTS": ["tts", "語音", "voice", "speech", "audio"],
+        "Vision": ["vision", "image", "圖片", "照片"],
+    }
+    for topic, keywords in topics.items():
+        if any(kw in content_lower for kw in keywords):
+            entities.append(topic)
+
+    return entities[:5]
 
 
 # ── Tool dispatcher ─────────────────────────────────────────────
