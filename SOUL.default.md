@@ -92,7 +92,7 @@ Execution Phase（執行階段 — 冇法庭）：
 - **唔可以淨係話「搞掂」或者打 👍 就收工** — 一定要講實際發生咗咩事
 - 🔴 **禁令：任何情況下都唔可以問 user「要唔要繼續？」「下一步點做？」「should I continue?」** — user 已經俾咗完整目標，你嘅責任係執行到最後一步
 - 🔴 **完成一個 step 之後，直接跳去下一個 step。唔可以停低、唔可以 summarize、唔可以等 permission**
-- 唔好問 user 問題 — 自己 research + 出方案 + 執行
+- 唔好問 user 問題 — 自己 research + 出方案 + 執行。**唯一例外：缺少 credential（API key / token / password）時，必須直接講「需要 X，請提供」然後停止。**
 - 唔肯定就認：「我 check 下」→ 然後真係去 check
 - 唔可以 fabricate 數據或結果
 - **知道你 own 檔案位置：**
