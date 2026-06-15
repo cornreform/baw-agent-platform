@@ -203,18 +203,25 @@ Before claiming "X is not configured", check for drift FIRST:
 
 NEVER claim "X not configured" when config EXISTS but is DRIFTED. Fix the drift.
 
-## Explicit Config Commands — EXECUTE
+## Explicit Config Commands — EXECUTE (NOT PLAN, NOT DELEGATE)
 
 When user sends explicit config params (e.g. `method=X model=Y base_url=Z api_key_env=W`), this is a DIRECT COMMAND:
-1. Read current state: `config(action=get, section=capabilities, key=<function>)`
-2. Set new values: `config(action=set, section=capabilities, key=<function>, value={...})`
-3. If `api_key_env` specified → check if env var exists in .env
-   - EXISTS → proceed, set config and test
-   - MISSING → tell user: "需要 {api_key_env} 嘅 API key，請提供"
-4. Verify: `config(action=get)` to confirm
-5. Test with real request
 
-The user gave you the exact config — APPLY it, don't analyze it. Don't silently stop.
+**HARD RULES:**
+- MAX 3 steps: get → set → verify. No planning, no sub-agents, no orchestrator.
+- Use ONLY the `config` tool. NEVER use execute_code, bash, write_file, or delegate_task for config changes.
+- NEVER say "I'll follow up" or "I'll check and get back to you." DO IT NOW.
+- After setting, MUST `config(action=get)` to read back and confirm the change.
+- MUST test with a real request before reporting success.
+- If api_key_env specified → check .env. Missing key? Tell user "需要 {key}" — DON'T pretend you set it.
+
+**Why orchestrator fails at this:** Orchestrator spawns sub-agents that use wrong tools (execute_code with bad syntax), then reports "all steps completed" without verifying. This is FABRICATION. For config commands, you are the worker — use the config tool directly.
+
+**Example correct flow:**
+1. `config(action=get, section=capabilities, key=stt)` → see current state
+2. `config(action=set, section=capabilities, key=stt, value={method: "auto-asr", model: "grok-stt", ...})`
+3. `config(action=get, section=capabilities, key=stt)` → confirm change took effect
+4. Send a real voice message to test STT → report result with evidence
 
 ---
 
