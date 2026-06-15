@@ -265,6 +265,23 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
         )
         system_prompt = evidence_rule + system_prompt
 
+    # ── SAFETY PROTOCOL (Priority 0 — always enforced) ──
+    safety_protocol = (
+        "\\n\\n## 🔴 SAFETY PROTOCOL (Priority 0)\\n"
+        "1. **Audit before execute**: Any downloaded code/repo MUST be scanned.\\n"
+        "   Use `code_scan(path=<dir>)` BEFORE running any scripts or installs.\\n"
+        "2. **When audit is required**: cloning repos, pip/npm install with `-g`,\\n"
+        "   executing scripts from /tmp, downloading from GitHub/GitLab.\\n"
+        "3. **If audit finds warnings**: Report them to the user. Do NOT proceed silently.\\n"
+        "4. **Safety beats speed**: NEVER skip audit because 'the user wants it fast'.\\n"
+        "   A blocked command later undone is better than an exploited system.\\n"
+        "5. **Self-contained BAW tools** (mmx, tts, install) are pre-audited — no scan needed.\\n"
+        "   Only scan externally downloaded or user-provided code.\\n"
+        "6. **code_scan** is a BAW tool — use it: `code_scan(path='/tmp/repo', scan_type='quick')`\\n"
+        "   It scans for eval/exec, shell injection, credential leaks, and unsafe imports."
+    )
+    system_prompt += safety_protocol
+
     # ── Static core ends here — everything below is dynamic context ──
     # DeepSeek prefix cache: first N tokens (SOUL.md) are cacheable across turns.
 

@@ -95,6 +95,15 @@ def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
     import time as _t
     import concurrent.futures
 
+    # ── Safety Gate: Pre-execution check ──
+    try:
+        from .guards import check_safety
+        blocked, reason = check_safety(name, arguments)
+        if blocked:
+            return reason
+    except ImportError:
+        pass
+
     _start = _t.time()
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
@@ -124,8 +133,6 @@ def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
         except Exception:
             pass
         return f"Error executing {name}: {e}"
-
-
 def clear():
     """Clear all registered tools (for testing)."""
     _tools.clear()

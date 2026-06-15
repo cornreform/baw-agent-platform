@@ -1349,6 +1349,7 @@ class BaseConnector(ABC):
         _reg(**_ld('mcp'))
         _reg(**_ld('background'))
         _reg(**_ld('mmx'))
+        _reg(**_ld('code_scan'))
 
         # ── Stub tools (only if enabled in config) ──
         _stub_tools = ['browser', 'execute_code']
@@ -1401,7 +1402,8 @@ class BaseConnector(ABC):
                            "search_files", "patch", "memory", "todo", "delegate_task", "vision",
                            "image_generate", "tts",
                            "http_fetch", "install", "get_skill", "remember",
-                           "knowledge_graph", "mcp", "background", "mmx"]
+                           "knowledge_graph", "mcp", "background", "mmx",
+                           "code_scan"]
         # Stub tools (only if enabled)
         stub_tool_names = ["browser", "execute_code"]
         all_tool_names = core_tool_names + [t for t in stub_tool_names if _stub_enabled(t)]
