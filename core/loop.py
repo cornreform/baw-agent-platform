@@ -737,7 +737,7 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
     
     # Detect config change claims in output
     _CLAIM_RE = _vre.compile(
-        r'(?:已設定|config 已|已更新|設定好|改動已經生效|已切[換到]|搞掂[。.!]?\n.*(?:config|STT|TTS|method|model))',
+        r'(?:已設定|config 已|已更新|設定好|改動已經生效|已切[換到]|搞掂)',
         _vre.IGNORECASE
     )
     if not _CLAIM_RE.search(output):
@@ -754,25 +754,44 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
     stt = cfg.get("capabilities", {}).get("stt", {}) if cfg else {}
     
     if stt:
-        # Check method claim
-        m = _vre.search(r'method[:\s]*["\']?(\S+?)(?:["\'\)]|\s|$)', output)
-        if m:
-            claimed = m.group(1).rstrip('"\'",.)')
-            actual = stt.get("method", "")
-            if claimed and claimed != actual:
-                corrections.append(
-                    f"Claimed STT method={claimed}, config shows method={actual}"
-                )
+        actual_method = stt.get("method", "")
+        actual_model = stt.get("model", "")
+        actual_base = stt.get("base_url", "")
         
-        # Check model claim
-        m = _vre.search(r'(?:model|STT model)[:\s=]+["\']?(\S+?)(?:["\'\)]|\s|$)', output)
-        if m:
-            claimed = m.group(1).rstrip('"\'",.)')
-            actual = stt.get("model", "")
-            if claimed and claimed != actual:
-                corrections.append(
-                    f"Claimed STT model={claimed}, config shows model={actual}"
-                )
+        # Pattern 1: explicit method=X or model=X claims
+        for key, actual, label in [
+            ("method", actual_method, "STT method"),
+            ("model", actual_model, "STT model"),
+        ]:
+            m = _vre.search(rf'{key}[:\s]*["\']?(\S+?)(?:["\'\)]|\s|$)', output)
+            if m:
+                claimed = m.group(1).rstrip('"\'",.)')
+                if claimed and claimed != actual:
+                    corrections.append(f"Claimed {label}={claimed}, config shows {label}={actual}")
+        
+        # Pattern 2: provider name claims (e.g. "用 Grok STT" but config shows faster-whisper)
+        _PROVIDER_MAP = {
+            "grok": {"method": "auto-asr", "model": "grok-stt", "base": "x.ai"},
+            "xai": {"method": "auto-asr", "model": "grok-stt", "base": "x.ai"},
+            "stepfun": {"method": "stepfun-asr", "base": "stepfun"},
+            "stepaudio": {"method": "stepfun-asr", "base": "stepfun"},
+            "faster-whisper": {"method": "faster-whisper", "base": "local"},
+            "whisper": {"method": "faster-whisper", "base": "local"},
+            "openai": {"method": "openai-whisper", "base": "openai"},
+        }
+        for name, expected in _PROVIDER_MAP.items():
+            if _vre.search(rf'\b{name}\b', output, _vre.IGNORECASE):
+                if expected["method"] != actual_method:
+                    corrections.append(
+                        f"Claims imply {name} provider (expect method={expected['method']}), "
+                        f"but config shows method={actual_method}"
+                    )
+                if "model" in expected and expected["model"] != actual_model:
+                    corrections.append(
+                        f"Claims imply {name} provider (expect model={expected['model']}), "
+                        f"but config shows model={actual_model}"
+                    )
+                break  # only match first provider name found
     
     if corrections:
         output += (
