@@ -174,3 +174,81 @@ def memory_usage_mb() -> float:
         return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     except Exception:
         return 0.0
+
+
+# ═══════════════════════════════════════════════════════════════
+# S1 — Tool execution safety gate
+# ═══════════════════════════════════════════════════════════════
+
+# Patterns that require audit before execution
+_DOWNLOAD_PATTERNS = ["curl ", "wget ", "git clone", "git pull", "pip install",
+                       "npm install", "yarn add", "cargo install"]
+
+_EXEC_PATTERNS = ["/tmp/", ".venv/bin/python", "node /tmp/", "bash /tmp/"]
+
+_SYSTEM_PATHS = ["/etc/", "/boot/", "/usr/bin/", "/usr/lib/", "/var/",
+                 "~/.ssh/", "~/.gnupg/"]
+
+
+def check_safety(name: str, arguments: dict) -> tuple:
+    """Pre-execution safety check. Returns (blocked: bool, reason: str).
+
+    Blocks dangerous operations that haven't been audited.
+    Currently enforces: no silent downloads without audit awareness.
+    """
+    import os
+
+    # Check 1: bash/terminal executing downloads without audit
+    if name in ("bash", "terminal"):
+        cmd = str(arguments.get("command", "") or arguments.get("cmd", ""))
+        cmd_lower = cmd.lower()
+
+        for pattern in _DOWNLOAD_PATTERNS:
+            if pattern in cmd_lower:
+                # Check if this looks like it needs audit
+                if any(kw in cmd_lower for kw in ("github.com", "gitlab.com", "-g ",
+                                                    "clone", "remote", "download")):
+                    return True, (
+                        f"⛔ SAFETY GATE: '{name}' tool is about to download external code.\\n"
+                        f"Command: `{cmd[:200]}`\\n\\n"
+                        f"⚠️  Before downloading third-party code, you MUST:\\n"
+                        f"  1. Use `code_scan(path='<download dir>')` to audit the source first\\n"
+                        f"  2. Report findings to the user\\n"
+                        f"  3. Only proceed if deemed safe\\n\\n"
+                        f"If you believe this download is safe, use code_scan first, then retry."
+                    )
+
+        # Check 2: executing scripts from /tmp without audit
+        for pattern in _EXEC_PATTERNS:
+            if pattern in cmd_lower:
+                return True, (
+                    f"⛔ SAFETY GATE: Executing code from /tmp.\\n"
+                    f"Command: `{cmd[:200]}`\\n\\n"
+                    f"⚠️  Code in /tmp may be untrusted. Use `code_scan(path='/tmp/<dir>')` first."
+                )
+
+    # Check 2: http_fetch downloading large amounts
+    if name == "http_fetch":
+        url = str(arguments.get("url", ""))
+        if any(kw in url.lower() for kw in ("github.com", "raw.githubusercontent.com",
+                                               "gitlab.com", "bitbucket.org")):
+            return True, (
+                f"⛔ SAFETY GATE: `http_fetch` is downloading from {url[:100]}.\\n"
+                f"⚠️  Before downloading external code, verify the source is trusted.\\n"
+                f"If this is a known/safe source, re-run with explicit intent.\\n"
+                f"For unknown repos: clone first, then use `code_scan()` to audit."
+            )
+
+    # Check 3: write_file to system paths
+    if name == "write_file":
+        path = str(arguments.get("path", ""))
+        expanded = os.path.expanduser(path)
+        for sys_path in _SYSTEM_PATHS:
+            if expanded.startswith(os.path.expanduser(sys_path)):
+                return True, (
+                    f"⛔ SAFETY GATE: Writing to system path: {path}\\n"
+                    f"⚠️  Modifying system files requires explicit user confirmation.\\n"
+                    f"Use `read_file` to inspect the file first, then ask the user."
+                )
+
+    return False, ""
