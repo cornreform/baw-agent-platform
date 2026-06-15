@@ -1621,8 +1621,12 @@ def run_agent(
     # ── Phase 3b: Goal-pursuit loop ──
     # Route recalculation: wrong turn → silently recalculates new route from current position
     # No retries, no skipping — just instant re-route from where you are.
-    _GOAL_PURSUIT_MAX_ATTEMPTS = 2   # Try goal pursuit twice before giving up (was 1)
-    _MAX_RECALCULATES = 3            # Up to 3 micro re-routes per failed step (was 1)
+    # NEVER SURRENDER: BAW keeps trying with different approaches until the goal is met.
+    # Surrender only when: (a) missing required API key, (b) file genuinely not found after 5+ lookups,
+    # (c) user explicitly cancels. In all other cases, try a different tool/approach.
+    _GOAL_PURSUIT_MAX_ATTEMPTS = 5   # Never surrender — try 5 full replans before diagnosis
+    _MAX_RECALCULATES = 5            # Up to 5 micro re-routes per failed step
+    _MAX_SAME_STEP_ALTERNATIVES = 4  # Try 4 different approaches before marking as stuck
     steps_completed = 0
     _delegation_results: list[str] = []
     _synthesis_results: list[str] = []  # Successful step results for final synthesis
@@ -2057,27 +2061,38 @@ def run_agent(
                             _pursuit_failed = True
                         continue
 
-                # Position-based: if position fails 3+ times → skip ANYTHING here + ban across pursuits
+                # Position-based: if position fails → try alternative approach instead of skipping
                 if _position_fails.get(_step_idx, 0) >= 3:
-                    _permanent_skip.add(_step_idx)  # ban this position for all future pursuits
                     if verbose:
-                        print(f"  ⏭️ Step {_g} {_si}/{_gt} position stuck after {_position_fails[_step_idx]} attempts — skipping permanently")
-                    _synthesis_results.append(f"[SKIPPED-POS] {_step_desc_short}")
-                    _dsp = f"  ⏭️ Step {_g} {_si}/{_gt}: {_step_desc_short}"
-                    _display_log.append(_dsp)
-                    _step_idx += 1
-                    _recalc_count = 0
+                        print(f"  🔄 Step {_g} {_si}/{_gt} stuck after {_position_fails[_step_idx]} attempts — trying alternative approach")
+                    # Force route recalculation with explicit instruction to use different tools
+                    _alt_prompt = (
+                        f"Step '{_step_desc_short[:200]}' failed {_position_fails[_step_idx]} times.\n"
+                        "DO NOT retry the same approach. Use a COMPLETELY DIFFERENT tool or strategy.\n"
+                        "Suggest 2 alternative approaches, then execute the best one."
+                    )
+                    _alt_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": _alt_prompt}]
+                    try:
+                        _alt_fb = call_llm_with_fallback(config, _alt_msgs, temperature=0.8)
+                        _alt_resp = _alt_fb.response.content or ""
+                        if verbose:
+                            print(f"     💡 Alternative: {_alt_resp[:120]}")
+                    except Exception:
+                        pass
+                    _recalc_count += 1
+                    if _recalc_count > _MAX_RECALCULATES:
+                        _permanent_skip.add(_step_idx)
+                        if verbose:
+                            print(f"  ⚠️ Step {_g} {_si}/{_gt} truly stuck — will diagnose for user")
                     continue
 
                 if _same_step_fails[_same_key] >= 2:
                     if verbose:
-                        print(f"  ⏭️ Skipping stuck step: {_step_desc_short} ({_same_step_fails[_same_key]} failures)")
-                    _synthesis_results.append(f"[SKIPPED] {_step_desc_short}")
-                    _dsp = f"  ⏭️ Step {_g} {_si}/{_gt}: {_step_desc_short}"
-                    _display_log.append(_dsp)
-                    _step_idx += 1  # move on
-                    _recalc_count = 0
-                    continue  # next step
+                        print(f"  🔄 Same step stuck: {_step_desc_short} ({_same_step_fails[_same_key]} failures) — forcing route recalc")
+                    _recalc_count += 1
+                    if _recalc_count > _MAX_RECALCULATES:
+                        _pursuit_failed = True
+                    continue  # let route recalc happen naturally
 
                 if verbose:
                     print(f"  🚫 Step {_g} {_si}/{_gt} failed: {str(_e)[:100]}")
@@ -2219,8 +2234,16 @@ def run_agent(
         if verbose:
             print("  ✅ Goal achieved — synthesising final response")
     else:
+        # NEVER SURRENDER — generate honest diagnosis
+        _diag_lines = []
+        for _fr_i, _fr_r in enumerate(_delegation_results):
+            _fr_s = str(_fr_r)[:200]
+            if _fr_s.strip():
+                _diag_lines.append(f"  Step {_fr_i+1}: {_fr_s}")
+        _diag_detail = "\n".join(_diag_lines) if _diag_lines else "No step results available"
         if verbose:
-            print(f"  ⚠️ Goal not fully achieved after {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit attempts — synthesising partial results")
+            print(f"  ⚠️ Goal not achieved after {_GOAL_PURSUIT_MAX_ATTEMPTS} pursuit attempts")
+            print(f"  📋 Diagnosis:\n{_diag_detail}")
 
     # ── Collect failure reasons for round-level diagnosis ──
     _failure_reasons = []
