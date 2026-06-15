@@ -1184,6 +1184,162 @@ def run_weekly_evolution() -> dict:
     return result
 
 
+# ── Evolution Audit Trail ──────────────────────────────────────
+
+_AUDIT_PATH = _log_dir() / "audit.jsonl"
+
+
+def _snapshot_file(path: Path) -> str | None:
+    """Capture file content for before/after comparison."""
+    try:
+        return path.read_text(encoding="utf-8") if path.exists() else None
+    except Exception:
+        return None
+
+
+def _compute_diff(before: str | None, after: str | None, label: str) -> dict:
+    """Compute a simple line-level diff between before and after."""
+    if before is None and after is None:
+        return {"label": label, "changed": False, "added": 0, "removed": 0, "summary": "no change"}
+    if before is None:
+        lines = after.split("\n") if after else []
+        return {"label": label, "changed": True, "added": len(lines), "removed": 0,
+                "summary": f"+{len(lines)} lines (new file)"}
+    if after is None:
+        lines = before.split("\n")
+        return {"label": label, "changed": True, "added": 0, "removed": len(lines),
+                "summary": f"-{len(lines)} lines (deleted)"}
+
+    before_lines = before.split("\n")
+    after_lines = after.split("\n")
+    added = len([l for l in after_lines if l not in before_lines])
+    removed = len([l for l in before_lines if l not in after_lines])
+
+    changed = before != after
+    if not changed:
+        return {"label": label, "changed": False, "added": 0, "removed": 0, "summary": "unchanged"}
+
+    # Show key changes (first 3 added/removed lines)
+    new_lines = [l for l in after_lines if l not in before_lines and l.strip()][:3]
+    old_lines = [l for l in before_lines if l not in after_lines and l.strip()][:3]
+    detail = []
+    for l in old_lines:
+        detail.append(f"- {l[:80]}")
+    for l in new_lines:
+        detail.append(f"+ {l[:80]}")
+    summary = f"+{added}/-{removed} lines"
+    return {"label": label, "changed": True, "added": added, "removed": removed,
+            "summary": summary, "detail": detail[:6]}
+
+
+def _save_audit_entry(result: dict, before_files: dict, after_files: dict):
+    """Append an evolution audit entry to JSONL log."""
+    import time as _time
+    entry = {
+        "ts": _time.time(),
+        "timestamp": datetime.now().isoformat(),
+        "dry_run": result.get("dry_run", False),
+        "patterns_found": result.get("patterns_found", 0),
+        "soul_patched": result.get("soul_patched", False),
+        "config_patched": result.get("config_patched", False),
+        "rolled_back": result.get("rolled_back", False),
+        "verify_errors": result.get("verify_errors", []),
+        "patches": result.get("patches", []),
+        "diffs": {},
+    }
+    for label, path_key in [("SOUL.md", "soul"), ("config.yaml", "config")]:
+        before = before_files.get(path_key)
+        after = after_files.get(path_key)
+        diff = _compute_diff(before, after, label)
+        entry["diffs"][path_key] = diff
+
+    try:
+        with open(_AUDIT_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def get_evolution_history(limit: int = 5) -> list[dict]:
+    """Read recent evolution audit entries."""
+    if not _AUDIT_PATH.exists():
+        return []
+    entries = []
+    try:
+        with open(_AUDIT_PATH, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except Exception:
+        return []
+    return entries[-limit:]
+
+
+def format_evolution_diff(entries: list[dict]) -> str:
+    """Format evolution audit entries for display."""
+    if not entries:
+        return "No evolution history yet."
+
+    lines = []
+    for i, entry in enumerate(reversed(entries)):
+        ts = entry.get("timestamp", "?")[:16]
+        dry = " [DRY-RUN]" if entry.get("dry_run") else ""
+        rolled = " [ROLLED BACK]" if entry.get("rolled_back") else ""
+        lines.append(f"**{ts}**{dry}{rolled}")
+        lines.append(f"  Patterns: {entry.get('patterns_found', 0)} | "
+                     f"SOUL: {'patched' if entry.get('soul_patched') else 'no'} | "
+                     f"Config: {'patched' if entry.get('config_patched') else 'no'}")
+
+        for key, diff in entry.get("diffs", {}).items():
+            if diff.get("changed"):
+                lines.append(f"  {diff['label']}: {diff['summary']}")
+                for d in diff.get("detail", []):
+                    lines.append(f"    {d}")
+
+        patches = entry.get("patches", [])
+        if patches:
+            for p in patches[:3]:
+                lines.append(f"  • {p[:100]}")
+
+        if i < len(entries) - 1:
+            lines.append("")
+
+    return "\n".join(lines)
+
+
+# ── Patch auto_optimize to capture audit trail ──
+
+# Monkey-patch: save before/after snapshots + audit
+_original_auto_optimize = auto_optimize
+
+
+def _audited_auto_optimize(dry_run: bool = False) -> dict:
+    """Wrapped auto_optimize with audit trail."""
+    soul_path = _data_dir() / "SOUL.md"
+    cfg_path = _data_dir() / "config.yaml"
+    before = {
+        "soul": _snapshot_file(soul_path),
+        "config": _snapshot_file(cfg_path),
+    }
+    result = _original_auto_optimize(dry_run=dry_run)
+    result["dry_run"] = dry_run
+    after = {
+        "soul": _snapshot_file(soul_path),
+        "config": _snapshot_file(cfg_path),
+    }
+    _save_audit_entry(result, before, after)
+    return result
+
+
+# Replace auto_optimize with audited version
+auto_optimize = _audited_auto_optimize
+
+
 # ── CLI Entry Point ──────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1194,6 +1350,7 @@ if __name__ == "__main__":
     parser.add_argument("--auto-evolve", action="store_true", help="Run weekly self-evolution (cron)")
     parser.add_argument("--analyze", action="store_true", help="Analyze recent behavior patterns")
     parser.add_argument("--stats", action="store_true", help="Show evolution stats")
+    parser.add_argument("--diff", action="store_true", help="Show recent evolution audit diff")
     parser.add_argument("--soul-revision", action="store_true", help="Run deep SOUL revision only")
     args = parser.parse_args()
 
@@ -1209,6 +1366,11 @@ if __name__ == "__main__":
 
     if args.stats:
         print(get_evolve_stats())
+        sys.exit(0)
+
+    if args.diff:
+        history = get_evolution_history(limit=5)
+        print(format_evolution_diff(history))
         sys.exit(0)
 
     if args.soul_revision:

@@ -526,10 +526,15 @@ class BaseConnector(ABC):
 
             if cmd in ("evolve", "ev"):
                 try:
+                    subcmd = (arg or "").strip()
+                    if subcmd == "diff":
+                        from ..evolve import get_evolution_history, format_evolution_diff
+                        history = get_evolution_history(limit=5)
+                        return format_evolution_diff(history)
                     from ..evolve import get_evolve_stats
                     return get_evolve_stats()
                 except Exception as e:
-                    return f"❌ Evolution stats error: {e}"
+                    return f"Evolve error: {e}"
 
             # ── Doctor / selftest ──
             if cmd in ("doctor", "dr", "health"):
