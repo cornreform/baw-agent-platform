@@ -723,6 +723,68 @@ def _build_todo_block(data_dir: Path) -> str:
     return block + recipe_block + defaults_block + data_sources_block
 
 
+# ── Post-turn verification (Hermes-style architectural enforcement) ──
+
+def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> str:
+    """Verify config change claims in BAW's output against actual config.yaml.
+    
+    Hermes framework prevents fabrication by mediating tool execution.
+    BAW's post-turn hook catches fabrication after generation.
+    If BAW claims a config change that doesn't exist, append a correction.
+    """
+    import re as _vre
+    cfg_path = (data_dir / "config.yaml") if data_dir else (Path.home() / ".baw" / "config.yaml")
+    
+    # Detect config change claims in output
+    _CLAIM_RE = _vre.compile(
+        r'(?:已設定|config 已|已更新|設定好|改動已經生效|已切[換到]|搞掂[。.!]?\n.*(?:config|STT|TTS|method|model))',
+        _vre.IGNORECASE
+    )
+    if not _CLAIM_RE.search(output):
+        return output
+    
+    # Read actual config
+    try:
+        import yaml as _vyaml
+        cfg = _vyaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    except Exception:
+        return output
+    
+    corrections = []
+    stt = cfg.get("capabilities", {}).get("stt", {}) if cfg else {}
+    
+    if stt:
+        # Check method claim
+        m = _vre.search(r'method[:\s]*["\']?(\S+?)(?:["\'\)]|\s|$)', output)
+        if m:
+            claimed = m.group(1).rstrip('"\'",.)')
+            actual = stt.get("method", "")
+            if claimed and claimed != actual:
+                corrections.append(
+                    f"Claimed STT method={claimed}, config shows method={actual}"
+                )
+        
+        # Check model claim
+        m = _vre.search(r'(?:model|STT model)[:\s=]+["\']?(\S+?)(?:["\'\)]|\s|$)', output)
+        if m:
+            claimed = m.group(1).rstrip('"\'",.)')
+            actual = stt.get("model", "")
+            if claimed and claimed != actual:
+                corrections.append(
+                    f"Claimed STT model={claimed}, config shows model={actual}"
+                )
+    
+    if corrections:
+        output += (
+            "\n\n---\n## [SYSTEM] POST-TURN VERIFICATION FAILED\n"
+            + "\n".join(f"- {c}" for c in corrections)
+            + "\n\nThe claims above do not match the actual config file. "
+              "Please re-execute and verify with `config(action=get)` before reporting."
+        )
+    
+    return output
+
+
 # ── Main agent loop ────────────────────────────────────────────
 
 MAX_STEP_RETRIES = 3
@@ -1059,6 +1121,7 @@ def run_agent(
             mem.remember(f"User: {prompt[:150]} → BAW: {final_content[:150]}")
         except Exception as _me:
             logger.warning(f"[loop] memory save failed: {_me}")
+        output = _verify_post_turn_claims(output, data_dir)
         return output, {
             "cost": round(session_cost, 4),
             "model": f"{model.provider}/{model.id}",
@@ -1300,6 +1363,7 @@ def run_agent(
         except Exception:
             pass
 
+        output = _verify_post_turn_claims(output, data_dir)
         return output, {
             "cost": round(session_cost, 4),
             "model": f"{model.provider}/{model.id}",
@@ -1328,6 +1392,7 @@ def run_agent(
         except Exception:
             pass
 
+        output = _verify_post_turn_claims(output, data_dir)
         return output, {
             "cost": round(session_cost, 4),
             "model": f"{model.provider}/{model.id}",
