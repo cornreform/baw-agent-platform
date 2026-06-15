@@ -1065,54 +1065,10 @@ class TelegramConnector(BaseConnector):
                 else:
                     msg_parts = ["🎵 收到語音訊息，但目前 BAW 未有語音處理能力。\\n"]
 
-                # List all models with audio_input status
-                msg_parts.append("**🔍 模型語音能力：**")
-                for m in all_models:
-                    ai = "✅" if m.get("audio_input") else "❌"
-                    cur = " ← 當前主模型" if m["id"] == default_model_id else ""
-                    msg_parts.append(f"  {ai} `{m['id']}`{cur}")
-                if audio_models:
-                    names = ", ".join(m["id"] for m in audio_models)
-                    msg_parts.append(f"\n💡 有模型支援音訊輸入：`{names}`。用 `/model <name>` 切換。")
-                msg_parts.append("")
-
-                # Available STT options
-                msg_parts.append("**⚙️ 可選 STT 方案：**")
-                msg_parts.append(
-                    "  1️⃣ **faster-whisper**（推薦，本地免費）\n"
-                    "     ```\n"
-                    "     pip install faster-whisper\n"
-                    "     ```\n"
-                    "     然後 ~/.baw/config.yaml 加入：\n"
-                    "     ```yaml\n"
-                    "     stt:\n"
-                    "       method: \"faster-whisper\"\n"
-                    "       model: \"base\"\n"
-                    "     ```"
-                )
-                msg_parts.append(
-                    "  2️⃣ **OpenAI Whisper API**（需 API key）\n"
-                    "     在 ~/.baw/.env 加入：\n"
-                    "     ```\n"
-                    "     OPENAI_API_KEY=sk-...\n"
-                    "     ```\n"
-                    "     然後 ~/.baw/config.yaml 加入：\n"
-                    "     ```yaml\n"
-                    "     stt:\n"
-                    "       method: \"openai-whisper\"\n"
-                    "       api_key_env: \"OPENAI_API_KEY\"\n"
-                    "       model: \"whisper-1\"\n"
-                    "     ```"
-                )
-                msg_parts.append(
-                    "  3️⃣ **Google Cloud Speech-to-Text**\n"
-                    "     設定 Google Cloud 服務帳號 + config.yaml"
-                )
-
-                # If fw_available but not used (e.g. config issue), note it
+                # If faster-whisper is installed and viable, mention it briefly
                 if fw_available and not used_method:
                     msg_parts.append(
-                        "\n⚠️ faster-whisper 已安裝，但 stt.method 未設為 \"faster-whisper\"。"
+                        "💡 faster-whisper 已安裝，改 `stt.method: faster-whisper` 可即用（本地免費）"
                     )
 
                 self.send(chat_id, "\n".join(msg_parts))
