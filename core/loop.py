@@ -1435,6 +1435,10 @@ def run_agent(
         "Rules:\n"
         "- NEVER write a step that only 'checks' or 'reads' without also modifying or configuring.\n"
         "- Each step must take action, not just report status.\n"
+        "- [EVIDENCE CONTRACT] After modifying config or files:\n"
+        "  1. Read back the change (config(action=get) or read_file)\n"
+        "  2. Include the actual value in your response (e.g. 'stt.method is now: auto-asr')\n"
+        "  3. If the change didn't apply, explain why — NEVER fabricate success\n"
         "- Reply with ONLY the plan, flat numbered steps."
     )
     _plan_msgs = [{"role": "system", "content": ctx.system_prompt}, {"role": "user", "content": plan_prompt}]
@@ -2406,6 +2410,9 @@ def run_agent(
             "- This is a CONCLUSION, not a verification. Don't say 'goal achieved' or 'score'. Just deliver the answer.\n"
             "- If results are thin or incomplete, say what's known honestly — don't fabricate.\n"
             "- [WARN] UNCERTAINTY FLAG: If any result contains error patterns, missing data, or unverifiable claims, flag them with [WARN] in the response. Do NOT pretend uncertain results are certain.\n"
+            "- [EVIDENCE CONTRACT] If claiming config or file change: include read-back value.\n"
+            "  Example: 'config(action=get) confirms stt.method = auto-asr'.\n"
+            "  Without evidence, the claim will be auto-flagged as unverified.\n"
             "- 🚨 ZERO-EXECUTION FLAG: If any step result contains '[FAILED-NO-EXEC]' or '[SKIPPED]', the LLM did NOT actually execute the step — it just wrote a plan/summary. You MUST tell the user 'I did not actually run this — it was a plan, not an action'. Do NOT claim files were sent or actions were taken.\n"
             "- NEVER end with a question. NEVER ask for permission. NEVER promise future action.\n"
             "- Output format: no markdown headers, just plain paragraphs. Lead with the answer.\n"
