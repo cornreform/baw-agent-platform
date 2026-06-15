@@ -237,6 +237,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "  Do NOT fabricate system info — always call the relevant tool to get real data\n"
                 "- 🔴 Do NOT ask 'should I continue?' or 'what next?'. Execute the ENTIRE plan silently.\n"
                 "- 🔴 NO Plan/Step output in response. Just do it and report the result."
+                "- 🎯 Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary."
             )
         else:
             system_prompt = evidence_rule + soul_text
