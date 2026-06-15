@@ -2196,6 +2196,12 @@ def run_agent(
         except Exception:
             pass
 
+        findings += f"\n\n{html_cost_summary()}"
+        # Add context window bar
+        ctx_bar = context_window_summary()
+        if ctx_bar:
+            findings += f"\n{ctx_bar}"
+
     # Auto-save
     last_commit = None
     try:
