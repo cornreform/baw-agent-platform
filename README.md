@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.20.4-blueviolet" alt="v0.20.4">
+  <img src="https://img.shields.io/badge/version-0.21.0-blueviolet" alt="v0.21.0">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -107,6 +107,9 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>👨‍⚕️ Doctor Health Check</td><td><code>--doctor [--fix]</code> — validate config, deps, Docker, disk, API keys</td></tr>
   <tr><td>🔄 Self-Update</td><td><code>--update</code> — git pull + rebuild Docker + restart</td></tr>
   <tr><td>📦 Backup & Restore</td><td><code>--backup</code> / <code>--restore</code> — config, .env, memory, sessions</td></tr>
+  <tr><td>📎 Auto MEDIA Delivery</td><td>Detects generated files in output, auto-sends via MEDIA: tag — agent never says 'can't attach'</td></tr>
+  <tr><td>🔍 Complete Model Discovery</td><td>Auto-probes multiple endpoint paths (/v1/models) to discover ALL provider models, dedup across URLs</td></tr>
+  <tr><td>🆓 DuckDuckGo Fallback</td><td>Free built-in search provider via ddgs — no API key, out-of-box, fallback for any configured provider</td></tr>
   <tr><td>👤 Profile Management</td><td><code>--profile-*</code> — isolated instances with independent configs</td></tr>
   <tr><td>🔬 Diagnostics</td><td><code>--diagnostics</code> — system debug info dump</td></tr>
   <tr><td>🔐 Reset</td><td><code>--reset</code> — factory reset with confirmation</td></tr>

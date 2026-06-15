@@ -9,7 +9,9 @@ beautifulsoup4>=4.12
 croniter>=6.0
 pygments>=2.17
 python-dotenv>=1.0
+# ── Search providers ──
 tavily-python>=0.5
+ddgs>=9.0
 
 # ── STT — Speech-to-text ──
 edge-tts>=6.0
