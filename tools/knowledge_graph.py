@@ -196,12 +196,14 @@ def extract_from_memory() -> str:
     Returns:
         Summary of what was extracted.
     """
-    mem_file = Path.home() / ".baw" / "store.jsonl"
+    mem_file = Path.home() / ".baw" / "memory" / "store.jsonl"
     if not mem_file.exists():
-        # Try .md format
-        mem_file = Path.home() / ".baw" / "store.md"
+        # Try legacy paths
+        mem_file = Path.home() / ".baw" / "store.jsonl"
         if not mem_file.exists():
-            return "No memory store found (~/.baw/store.jsonl or store.md)"
+            mem_file = Path.home() / ".baw" / "store.md"
+            if not mem_file.exists():
+                return "No memory store found (~/.baw/memory/store.jsonl, store.jsonl, or store.md)"
 
     data = _load()
     count = 0
