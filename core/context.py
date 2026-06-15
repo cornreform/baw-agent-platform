@@ -24,6 +24,8 @@ class Context:
     messages: list[Message] = field(default_factory=list)
     temperature: float = 0.7
     max_tokens: int | None = None
+    audit_required: bool = False
+    task_type: str = ""  # TYPE_A–TYPE_E from _classify_task_type()
 
     def add_user(self, content: str):
         self.messages.append(Message(role="user", content=content))
