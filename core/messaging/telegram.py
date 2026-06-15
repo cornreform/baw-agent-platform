@@ -37,7 +37,7 @@ class TelegramConnector(BaseConnector):
     def __init__(self, config: dict, on_message):
         super().__init__(config.get("telegram", {}), on_message)
         self._token = self.config.get("token", "")
-        self._allowed = self.config.get("allowed_users", [])
+        self._allowed = [str(u) for u in self.config.get("allowed_users", [])]
         self._offset = 0
         self._client: httpx.Client | None = None
         self._api_base = API_BASE.format(token=self._token) if self._token else ""
