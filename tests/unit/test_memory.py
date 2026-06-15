@@ -139,3 +139,49 @@ class TestMemoryPersistence:
         assert len(valid) == 2
         assert valid[0]["id"] == "1"
         assert valid[1]["id"] == "2"
+
+
+class TestMemoryDecay:
+    """P1: Decay must persist scores and trigger auto-compression."""
+
+    def test_decay_persists_scores(self, temp_baw_home: Path):
+        """Decay must call _save_all() so scores survive reload."""
+        from core.memory import MemoryStore
+        import time
+
+        ms = MemoryStore(temp_baw_home)
+        # Add an old entry
+        old_id = f"mem_{int(time.time() * 1000000)}_0001"
+        old_entry = {
+            "id": old_id,
+            "content": "test decay persistence",
+            "type": "note",
+            "tags": ["test"],
+            "source": "test",
+            "created": "2026-01-01T00:00:00+00:00",
+            "last_accessed": "2026-01-01T00:00:00+00:00",
+            "access_count": 1,
+            "score": 0.50,
+        }
+        ms._cache.append(old_entry)
+        ms._save_all()
+
+        # Run decay
+        ms.decay()
+
+        # Reload and check score was persisted
+        ms2 = MemoryStore(temp_baw_home)
+        decayed = next((e for e in ms2._cache if e["id"] == old_id), None)
+        assert decayed is not None, "Entry lost after decay"
+        assert decayed["score"] < 0.50, (
+            f"Score must be decayed (was {decayed['score']}), "
+            "decay() was not persisted"
+        )
+
+    def test_decay_returns_stats(self, temp_baw_home: Path):
+        """decay() must return a result dict."""
+        from core.memory import MemoryStore
+        ms = MemoryStore(temp_baw_home)
+        result = ms.decay()
+        assert isinstance(result, dict)
+        assert "decayed" in result or "compressed" in result
