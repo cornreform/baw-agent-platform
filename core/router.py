@@ -22,6 +22,7 @@ Score = weighted sum of:
   + external side effects       (×3)
 """
 from __future__ import annotations
+import os
 import re
 from typing import Tuple
 
@@ -216,6 +217,10 @@ def pick_model_for_tier(tier: str, config: dict) -> str:
     """
     available = set()
     for pname, pcfg in config.get("providers", {}).items():
+        # Check API key is actually available before listing models
+        api_key_env = pcfg.get("api_key_env", "")
+        if api_key_env and not os.environ.get(api_key_env):
+            continue  # skip providers with missing API keys
         for m in pcfg.get("models", []):
             mid = m.get("id", "")
             caps = m.get("capabilities", [])
