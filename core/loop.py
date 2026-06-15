@@ -577,6 +577,22 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- After updating config, test the new capability to confirm it works.\n"
             f"- Respond with: 'Configured: <provider> <capability> using <model> — tested OK' or 'Failed: <reason>'\n"
             f"- NEVER say 'let me know if you want me to configure it'. Just DO it."
+            f"\n## Capability config self-diagnosis (DRIFT DETECTION)\n"
+            f"- When a capability fails (e.g. STT returns error, silent, or wrong output),\n"
+            f"  do NOT just report 'X is not working'. Self-diagnose FIRST:\n"
+            f"  1. config(action=get, section=capabilities, key=<function>) to read current settings.\n"
+            f"  2. Check for CONTRADICTIONS (these are BUGS, not user preferences):\n"
+            f"     - method: 'faster-whisper' (local) + base_url: 'api.x.ai' (remote) → MUTUALLY EXCLUSIVE\n"
+            f"     - method: 'auto-asr' (remote) + no base_url → BROKEN, needs endpoint\n"
+            f"     - api_key_env set but env var doesn't exist in .env → WILL FAIL AT RUNTIME\n"
+            f"  3. If contradiction found, FIX IT immediately:\n"
+            f"     - Local method? Strip base_url + api_key_env.\n"
+            f"     - Missing env var? Either set it OR fall back to faster-whisper (local, free, always works).\n"
+            f"     - Remote method + no base_url? Auto-discover from provider list.\n"
+            f"  4. After fixing, RE-TEST the capability. Test = send a real request, don't just read config.\n"
+            f"- RULE: Never claim 'X is not configured' until you've checked for and fixed config drift.\n"
+            f"  Drift = the config HAS settings but they contradict each other → it IS configured, just BROKEN.\n"
+            f"  Fix the drift, don't tell the user to fix it.\n"
         )
 
     # ── Todo / thought / follow-up system (persistent) ───────
@@ -896,6 +912,20 @@ def run_agent(
         logger.debug("[loop] search module not present (optional)")
     except Exception as _se:
         logger.warning(f"[loop] search provider init failed: {_se}")
+
+    # ── Capability config health check & auto-heal ──
+    try:
+        from .capabilities import validate_capability_health
+        drift_fixes = validate_capability_health(config)
+        if drift_fixes:
+            for fix in drift_fixes:
+                logger.warning(f"[health] {fix['capability']}: {fix['issue']} → {fix['fix_applied']}")
+            # Save healed config
+            from .model_discovery import _save_config
+            _save_config(config, data_dir)
+            logger.info(f"[health] Auto-healed {len(drift_fixes)} capability config drift(s)")
+    except Exception as _he:
+        logger.debug(f"[health] capability health check skipped: {_he}")
 
     system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
 

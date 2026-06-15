@@ -160,3 +160,78 @@ def capability_help(config: dict) -> str:
         else:
             lines.append(f"  **{func}** → method: `{r['method']}`")
     return "\n".join(lines)
+
+
+def validate_capability_health(config: dict) -> list[dict]:
+    """Detect and auto-heal capability config drift.
+
+    Returns list of {capability, issue, fix_applied} dicts.
+    Auto-heals: contradictory fields, missing env vars, method drift.
+    """
+    import os
+    from pathlib import Path
+
+    fixes = []
+    caps = config.get("capabilities", {})
+
+    # ── Drift patterns ──
+    LOCAL_METHODS = {"faster-whisper", "whisper-local", "openai-whisper-local"}
+    REMOTE_METHODS = {"auto-asr", "whisper-api", "openai-asr"}
+
+    for cap_name, cap_cfg in caps.items():
+        if not isinstance(cap_cfg, dict):
+            continue
+
+        method = cap_cfg.get("method", "")
+        base_url = cap_cfg.get("base_url", "")
+        api_key_env = cap_cfg.get("api_key_env", "")
+
+        # Pattern 1: Local method + remote base_url = drift
+        if method in LOCAL_METHODS and base_url:
+            cap_cfg.pop("base_url", None)
+            cap_cfg.pop("api_key_env", None)
+            fixes.append({
+                "capability": cap_name,
+                "issue": f"local method '{method}' with remote base_url '{base_url}'",
+                "fix_applied": "removed base_url + api_key_env (local method doesn't need them)",
+            })
+
+        # Pattern 2: Remote method + no base_url = broken
+        if method in REMOTE_METHODS and not base_url:
+            fixes.append({
+                "capability": cap_name,
+                "issue": f"remote method '{method}' without base_url",
+                "fix_applied": "none — need user to set base_url",
+            })
+
+        # Pattern 3: api_key_env set but env var doesn't exist
+        if api_key_env and not _env_var_exists(api_key_env):
+            cap_cfg.pop("api_key_env", None)
+            if method not in LOCAL_METHODS:
+                cap_cfg.pop("base_url", None)
+                cap_cfg["method"] = "faster-whisper"
+                cap_cfg["model"] = "base"
+            fixes.append({
+                "capability": cap_name,
+                "issue": f"api_key_env '{api_key_env}' not found in .env or environment",
+                "fix_applied": "removed api_key_env, fell back to faster-whisper (local)",
+            })
+
+    return fixes
+
+
+def _env_var_exists(env_var: str) -> bool:
+    """Check if an env var exists in os.environ or ~/.baw/.env."""
+    import os
+    from pathlib import Path
+
+    if os.environ.get(env_var):
+        return True
+    env_path = Path.home() / ".baw" / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith(f"{env_var}=") and "=" in line:
+                val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if val and val != "***":
+                    return True
+    return False

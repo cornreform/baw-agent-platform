@@ -154,6 +154,17 @@ Examples:
     except Exception as e:
         logger.warning(f"[Discover] Auto-discovery skipped: {e}")
 
+    # ── Capability config health check & auto-heal ──
+    try:
+        from core.capabilities import validate_capability_health
+        drift_fixes = validate_capability_health(config)
+        if drift_fixes:
+            for fix in drift_fixes:
+                logger.warning(f"[Health] {fix['capability']}: {fix['issue']} → {fix['fix_applied']}")
+            logger.info(f"[Health] Auto-healed {len(drift_fixes)} capability config drift(s)")
+    except Exception as e:
+        logger.debug(f"[Health] capability health check skipped: {e}")
+
     # Override Telegram token: CLI arg > env var > config
     if args.token:
         config.setdefault("telegram", {})["token"] = args.token
