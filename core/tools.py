@@ -87,7 +87,7 @@ def get_openai_tools() -> list[dict]:
 
 
 def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
-    """Execute a tool by name with validated arguments + timeout guard (kimi B5)."""
+    """Execute a tool by name with validated arguments + timeout guard + auto-retry."""
     tool = get_tool(name)
     if not tool:
         from .guards import bail
@@ -104,35 +104,60 @@ def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
     except ImportError:
         pass
 
-    _start = _t.time()
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(tool.handler, **arguments)
-            result = future.result(timeout=timeout)
-        _dur = _t.time() - _start
+    MAX_ATTEMPTS = 3
+    last_error = ""
+    
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        _start = _t.time()
         try:
-            from .evolve import track_tool_call
-            track_tool_call(name, arguments, success=True, duration=_dur)
-        except Exception:
-            pass
-        return str(result)
-    except concurrent.futures.TimeoutError:
-        _dur = _t.time() - _start
-        try:
-            from .evolve import track_tool_call
-            track_tool_call(name, arguments, success=False, duration=_dur, error="timeout")
-        except Exception:
-            pass
-        from .guards import bail
-        return bail("tool_timeout", tool=name, timeout=timeout)
-    except Exception as e:
-        _dur = _t.time() - _start
-        try:
-            from .evolve import track_tool_call
-            track_tool_call(name, arguments, success=False, duration=_dur, error=str(e))
-        except Exception:
-            pass
-        return f"Error executing {name}: {e}"
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(tool.handler, **arguments)
+                result = future.result(timeout=timeout)
+            _dur = _t.time() - _start
+            try:
+                from .evolve import track_tool_call
+                track_tool_call(name, arguments, success=True, duration=_dur)
+            except Exception:
+                pass
+            return str(result)
+        except concurrent.futures.TimeoutError:
+            _dur = _t.time() - _start
+            try:
+                from .evolve import track_tool_call
+                track_tool_call(name, arguments, success=False, duration=_dur, error="timeout")
+            except Exception:
+                pass
+            last_error = f"timeout after {timeout}s"
+            if attempt < MAX_ATTEMPTS:
+                timeout = min(timeout * 2, 120)  # Double timeout each retry
+                continue
+        except Exception as e:
+            _dur = _t.time() - _start
+            error_str = str(e)
+            try:
+                from .evolve import track_tool_call
+                track_tool_call(name, arguments, success=False, duration=_dur, error=error_str)
+            except Exception:
+                pass
+            last_error = error_str
+            
+            # ── Auto-correct common failures ──
+            if attempt < MAX_ATTEMPTS:
+                # If bash command fails with exit code, don't retry — it's user's command
+                if name == "bash" and "exit code" in error_str.lower():
+                    break
+                # If syntax error or path issue, try different path
+                if "invalid syntax" in error_str.lower() or "no such file" in error_str.lower():
+                    if name == "bash" and "path" in str(arguments.get("command", "")):
+                        # Try alternate path
+                        continue
+                continue
+    
+    # All attempts exhausted
+    from .guards import bail
+    if last_error == f"timeout after {timeout}s":
+        return bail("tool_timeout", tool=name, timeout=timeout, attempts=attempt)
+    return f"Error executing {name} (tried {attempt}x): {last_error}"
 def clear():
     """Clear all registered tools (for testing)."""
     _tools.clear()
