@@ -412,7 +412,10 @@ def cmd_setup(data_dir: Path):
             "api_key_env": "MINIMAX_API_KEY",
             "base_url": "https://api.minimax.io/v1",
             "models": [
+                {"id": "MiniMax-M3.5-claude", "capabilities": ["chat", "vision", "tts"], "context_window": 1048576},
                 {"id": "MiniMax-M3", "capabilities": ["chat", "vision", "tts"], "context_window": 1048576},
+                {"id": "MiniMax-M2.7-highspeed", "capabilities": ["chat"], "context_window": 1048576},
+                {"id": "MiniMax-M2.7", "capabilities": ["chat"], "context_window": 1048576},
                 {"id": "MiniMax-M2.5", "capabilities": ["chat"], "context_window": 1048576},
             ],
         }

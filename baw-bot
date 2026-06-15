@@ -145,6 +145,15 @@ Examples:
         logger.error("No config found. Run 'baw --setup' first, or specify --config")
         sys.exit(1)
 
+    # ── Auto-discover all models from configured providers (API-driven) ──
+    try:
+        from core.model_discovery import auto_discover_all_models
+        added = auto_discover_all_models(config)
+        if added:
+            logger.info(f"[Discover] Added {added} new model(s) from provider APIs")
+    except Exception as e:
+        logger.warning(f"[Discover] Auto-discovery skipped: {e}")
+
     # Override Telegram token: CLI arg > env var > config
     if args.token:
         config.setdefault("telegram", {})["token"] = args.token

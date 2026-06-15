@@ -246,7 +246,10 @@ MODEL_HINTS: dict[str, str] = {
     "deepseek-reasoner": "deepseek",
     "deepseek-chat": "deepseek",
     # MiniMax
+    "MiniMax-M3.5-claude": "minimax",
     "MiniMax-M3": "minimax",
+    "MiniMax-M2.7-highspeed": "minimax",
+    "MiniMax-M2.7": "minimax",
     "MiniMax-M2.5": "minimax",
     "MiniMax-M1": "minimax",
     "image-01": "minimax",       # MiniMax official image-gen model
