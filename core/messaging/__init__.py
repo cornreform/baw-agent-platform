@@ -2080,12 +2080,19 @@ class BaseConnector(ABC):
                 )
 
             # ── Append simplified court verdict (single concise line) ──
+            # Only append if output has actual task content (not just empty-output fallback)
             if info and info.get("adversarial_raw"):
                 cv = info["adversarial_raw"]
                 try:
                     agreement = cv.get("agreement_level", "unknown")
                     gap = cv.get("score_gap", 0)
-                    output += f"\n⚖️ Court: {agreement} (gap {gap})"
+                    # Skip court verdict if the only output is the empty-fallback message
+                    _has_real_content = bool(output.strip()) and \
+                        "No additional output" not in output and \
+                        "Completed. (No" not in output and \
+                        "Task failed to reach goal" not in output
+                    if _has_real_content:
+                        output += f"\n⚖️ Court: {agreement} (gap {gap})"
                 except Exception:
                     pass
 
