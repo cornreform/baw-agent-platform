@@ -1164,6 +1164,37 @@ def run_agent(
         if verbose:
             print(f"  [Court] Devil={verdict['devil_score']}/10 | Angel={verdict['angel_score']}/10 | Gap={verdict['score_gap']} ({verdict['agreement_level']})")
 
+        # ── Active Challenge Gate: BAW challenges user on high-risk requests ──
+        _devil_score = verdict.get("devil_score", 0)
+        _challenge_prefix = ""
+        if _devil_score >= 9:
+            _challenge_prefix = (
+                "\n\n## 🚨 ACTIVE CHALLENGE — Devil Score {}/10\\n\\n"
+                "The Devil has flagged this request as EXTREMELY DANGEROUS (score {}/10).\\n"
+                "You MUST warn the user explicitly about the risks.\\n"
+                "List 2-3 specific dangers. Ask: 'Are you sure you want to proceed?'\\n"
+                "DO NOT execute until the user confirms.\\n\\n"
+                "Devil's analysis:\\n{}\\n"
+            ).format(_devil_score, _devil_score, verdict["devil"]["content"][:500])
+        elif _devil_score >= 7:
+            _challenge_prefix = (
+                "\n\n## ⚠️ ACTIVE CHALLENGE — Devil Score {}/10\\n\\n"
+                "The Devil has flagged potential risks in this request (score {}/10).\\n"
+                "You MUST mention the Devil's concern and suggest a safer alternative.\\n"
+                "Proceed only after acknowledging the risk.\\n\\n"
+                "Devil's analysis:\\n{}\\n"
+            ).format(_devil_score, _devil_score, verdict["devil"]["content"][:500])
+        elif _devil_score >= 4:
+            _challenge_prefix = (
+                "\n\n## 💡 NOTE — Devil Score {}/10\\n\\n"
+                "The Devil has raised some concerns (score {}/10).\\n"
+                "Briefly mention the concern, but proceed with execution.\\n\\n"
+                "Devil's analysis:\\n{}\\n"
+            ).format(_devil_score, _devil_score, verdict["devil"]["content"][:500])
+
+        if _challenge_prefix:
+            court_context += _challenge_prefix
+
     # ═══════════════════════════════════════════════════════════════
     # Phase 2: Neutral response
     # BAW responds from neutral perspective — may disagree with user

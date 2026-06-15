@@ -376,7 +376,7 @@ class MemoryStore:
         return results[:limit]
 
     def decay(self):
-        """Decay scores for old entries. Call daily."""
+        """Decay scores for old entries. Call daily. Auto-persists + triggers compression when needed."""
         now = time.time()
         for entry in self._cache:
             last_access = entry.get("last_accessed", entry["created"])
@@ -390,6 +390,34 @@ class MemoryStore:
                 entry["score"] = max(0.0, entry["score"] - 0.05)
             elif hours_since > 24:  # 1 day
                 entry["score"] = max(0.0, entry["score"] - 0.01)
+
+        # Persist decayed scores — they were lost before!
+        self._save_all()
+
+        # Auto-compression: if store > 500 entries, compress old low-score entries
+        if len(self._cache) > 500:
+            result = self.compress_old(max_age_days=14, min_score=0.10)
+            if result.get("compressed", 0) > 0:
+                # Add a meta-entry about the compression
+                meta_entry = {
+                    "id": f"meta_compression_{int(time.time() * 1000)}",
+                    "content": (
+                        f"[Meta] Memory compression ran: {result['compressed']} groups compressed, "
+                        f"{result['entries_removed']} entries removed. "
+                        f"Store now has {result['remaining']} entries."
+                    ),
+                    "type": "meta",
+                    "tags": ["meta", "compression", "auto"],
+                    "source": "decay",
+                    "created": datetime.now(timezone.utc).isoformat(),
+                    "last_accessed": datetime.now(timezone.utc).isoformat(),
+                    "access_count": 1,
+                    "score": 0.50,
+                }
+                self._cache.append(meta_entry)
+                self._save_all()
+            return result
+        return {"decayed": len(self._cache), "compressed": 0}
 
     def stats(self) -> dict:
         """Return memory statistics, including edge count."""
