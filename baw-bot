@@ -197,21 +197,9 @@ Examples:
 
     # ── Start health watchdog ──
     try:
-        from core.watchdog import Watchdog
-
-        def _notify_telegram(text: str):
-            for c in connectors:
-                if hasattr(c, "send") and hasattr(c, "config"):
-                    tg_cfg = c.config.get("telegram", {})
-                    admin_chat = tg_cfg.get("admin_chat_id", "")
-                    if admin_chat:
-                        c.send(str(admin_chat), text)
-                        return
-            logger.warning("[Watchdog] No admin_chat_id configured for alerts")
-
-        _watchdog = Watchdog(Path.home() / ".baw", notify_fn=_notify_telegram)
-        _watchdog.start()
-        logger.info("[Watchdog] Health monitor started (5min interval)")
+        from core.watchdog import start_watchdog, get_last_health_score
+        start_watchdog(interval_sec=300)  # check every 5 minutes
+        logger.info(f"[Watchdog] Health monitor started (5min interval), initial score: {get_last_health_score()}/10")
     except Exception as e:
         logger.warning(f"[Watchdog] Failed to start: {e}")
 
