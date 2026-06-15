@@ -92,15 +92,19 @@ def install(package: str, method: str = "auto", global_install: bool = True) -> 
             stdout = r.stdout.strip()
             stderr = r.stderr.strip()
             if r.returncode == 0:
-                outputs.append(f"✅ {' '.join(cmd[:3])}... succeeded")
+                exe = cmd[0]
+                last_arg = cmd[-1] if len(cmd) > 1 else ""
+                outputs.append(f"✅ INSTALLED: npm install -g {last_arg}")
                 if stdout:
                     outputs.append(stdout[:500])
                 any_success = True
                 break  # Stop after first success
             else:
-                outputs.append(f"❌ {' '.join(cmd[:3])}... failed (exit {r.returncode})")
+                exe = cmd[0]
+                last_arg = cmd[-1] if len(cmd) > 1 else ""
+                outputs.append(f"❌ FAILED: npm install -g {last_arg} (exit code {r.returncode})")
                 if stderr:
-                    outputs.append(f"stderr: {stderr[:300]}")
+                    outputs.append(f"    stderr: {stderr[:300]}")
                 # Continue to next fallback
         except sp.TimeoutExpired:
             outputs.append(f"⚠️ {' '.join(cmd[:3])}... timed out")
@@ -114,7 +118,22 @@ def install(package: str, method: str = "auto", global_install: bool = True) -> 
     binary_name = package.split("/")[-1].split("@")[0].replace("-cli", "").replace("cli-", "")
     # Check PATH first
     if shutil.which(binary_name):
-        outputs.append(f"✅ Verified: '{binary_name}' is now available in PATH")
+        binary_path = shutil.which(binary_name)
+        # Try to get version
+        version_output = ""
+        for flag in ["--version", "-v", "version"]:
+            try:
+                r = sp.run([binary_name, flag], capture_output=True, text=True, timeout=10)
+                if r.returncode == 0:
+                    v = r.stdout.strip()[:80] or r.stderr.strip()[:80]
+                    if v:
+                        version_output = version_output or v
+                    break
+            except Exception:
+                continue
+        loc = f" at {binary_path}" if binary_path else ""
+        ver = f" (v{version_output})" if version_output else ""
+        outputs.append(f"✅ INSTALLED: {binary_name}{ver}{loc}")
     else:
         # Check npm local bin
         local_bin = Path.home() / "npm" / "node_modules" / ".bin"
