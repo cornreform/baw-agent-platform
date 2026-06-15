@@ -758,10 +758,10 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
     except Exception:
         cfg_text = ""
     
-    # Pattern 1: explicit method=X or model=X claims (generic — works for any capability)
-    for section in ["stt", "tts", "chat", "vision"]:
-        cap = (cfg or {}).get("capabilities", {}).get(section, {})
-        if not cap:
+    # Pattern 1: explicit key=value claims — scan ALL capabilities sections
+    caps = (cfg or {}).get("capabilities", {})
+    for section, cap in caps.items():
+        if not isinstance(cap, dict):
             continue
         actual_method = cap.get("method", "")
         actual_model = cap.get("model", "")
@@ -795,6 +795,31 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
                 f"Output claims '{claim}' but this name does not appear in config.yaml — "
                 "config change may be fabricated"
             )
+    
+    # Pattern 3: User directive override — user asked for X, config doesn't reflect it
+    _USER_DIRECTIVE = _vre.search(
+        r'(?:叫|要求|需要|想|要)\s*(?:我|你|BAW)?\s*(?:用|改|設|轉)\s*(\S+?)(?:\s|做|STT|TTS|model)',
+        output, _vre.IGNORECASE
+    )
+    if _USER_DIRECTIVE:
+        directive = _USER_DIRECTIVE.group(1).strip('"\'\,.）)').lower()
+        if len(directive) >= 3:
+            for pname in (cfg or {}).get("providers", {}):
+                if directive in pname.lower() or pname.lower() in directive:
+                    prov_models = [
+                        m.get("id", "").lower()
+                        for m in (cfg or {}).get("providers", {}).get(pname, {}).get("models", [])
+                    ]
+                    caps = (cfg or {}).get("capabilities", {})
+                    in_use = any(
+                        isinstance(cap, dict) and cap.get("model", "").lower() in prov_models
+                        for cap in caps.values()
+                    )
+                    if not in_use:
+                        corrections.append(
+                            f"User requested '{directive}' but {pname} models not "
+                            f"configured for any capability — config was not updated"
+                        )
     
     if corrections:
         output += (
