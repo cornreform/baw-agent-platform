@@ -216,6 +216,7 @@ def pick_model_for_tier(tier: str, config: dict) -> str:
     has chat capability.
     """
     available = set()
+    _SPECIALIZED = {"tts", "asr", "speech", "audio", "image", "dall-e", "whisper", "dall"}
     for pname, pcfg in config.get("providers", {}).items():
         # Check API key is actually available before listing models
         api_key_env = pcfg.get("api_key_env", "")
@@ -223,7 +224,11 @@ def pick_model_for_tier(tier: str, config: dict) -> str:
             continue  # skip providers with missing API keys
         for m in pcfg.get("models", []):
             mid = m.get("id", "")
+            mid_lower = mid.lower()
             caps = m.get("capabilities", [])
+            # Skip specialized models (TTS/STT/image) — can't do tool calling
+            if any(kw in mid_lower for kw in _SPECIALIZED):
+                continue
             if "chat" in caps and mid:
                 available.add(mid)
 
