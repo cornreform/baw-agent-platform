@@ -751,47 +751,50 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
         return output
     
     corrections = []
-    stt = cfg.get("capabilities", {}).get("stt", {}) if cfg else {}
     
-    if stt:
-        actual_method = stt.get("method", "")
-        actual_model = stt.get("model", "")
-        actual_base = stt.get("base_url", "")
+    # Read config as flat text for generic provider/model scanning
+    try:
+        cfg_text = cfg_path.read_text(encoding="utf-8").lower()
+    except Exception:
+        cfg_text = ""
+    
+    # Pattern 1: explicit method=X or model=X claims (generic — works for any capability)
+    for section in ["stt", "tts", "chat", "vision"]:
+        cap = (cfg or {}).get("capabilities", {}).get(section, {})
+        if not cap:
+            continue
+        actual_method = cap.get("method", "")
+        actual_model = cap.get("model", "")
         
-        # Pattern 1: explicit method=X or model=X claims
         for key, actual, label in [
-            ("method", actual_method, "STT method"),
-            ("model", actual_model, "STT model"),
+            ("method", actual_method, f"{section} method"),
+            ("model", actual_model, f"{section} model"),
         ]:
+            if not actual:
+                continue
             m = _vre.search(rf'{key}[:\s]*["\']?(\S+?)(?:["\'\)]|\s|$)', output)
             if m:
                 claimed = m.group(1).rstrip('"\'",.)')
                 if claimed and claimed != actual:
                     corrections.append(f"Claimed {label}={claimed}, config shows {label}={actual}")
-        
-        # Pattern 2: provider name claims (e.g. "用 Grok STT" but config shows faster-whisper)
-        _PROVIDER_MAP = {
-            "grok": {"method": "auto-asr", "model": "grok-stt", "base": "x.ai"},
-            "xai": {"method": "auto-asr", "model": "grok-stt", "base": "x.ai"},
-            "stepfun": {"method": "stepfun-asr", "base": "stepfun"},
-            "stepaudio": {"method": "stepfun-asr", "base": "stepfun"},
-            "faster-whisper": {"method": "faster-whisper", "base": "local"},
-            "whisper": {"method": "faster-whisper", "base": "local"},
-            "openai": {"method": "openai-whisper", "base": "openai"},
-        }
-        for name, expected in _PROVIDER_MAP.items():
-            if _vre.search(rf'\b{name}\b', output, _vre.IGNORECASE):
-                if expected["method"] != actual_method:
-                    corrections.append(
-                        f"Claims imply {name} provider (expect method={expected['method']}), "
-                        f"but config shows method={actual_method}"
-                    )
-                if "model" in expected and expected["model"] != actual_model:
-                    corrections.append(
-                        f"Claims imply {name} provider (expect model={expected['model']}), "
-                        f"but config shows model={actual_model}"
-                    )
-                break  # only match first provider name found
+    
+    # Pattern 2: Generic provider/model name claims
+    # "改用 Grok" / "用 xAI STT" / "切換到 faster-whisper" → check if name appears in config
+    _CLAIM_VERBS = r'(?:改用|用|切換到|設定為|轉用|改用咗|已改用)'
+    provider_claims = _vre.findall(
+        rf'{_CLAIM_VERBS}\s*(\S+?)(?:\s|$|。|STT|TTS|做|，)',
+        output, _vre.IGNORECASE
+    )
+    for claim in provider_claims:
+        claim_clean = claim.strip('"\'",.）)').lower()
+        # Skip very short or Chinese-only tokens (false positives)
+        if len(claim_clean) < 3 or _vre.match(r'^[\u4e00-\u9fff]+$', claim_clean):
+            continue
+        if claim_clean and cfg_text and claim_clean not in cfg_text:
+            corrections.append(
+                f"Output claims '{claim}' but this name does not appear in config.yaml — "
+                "config change may be fabricated"
+            )
     
     if corrections:
         output += (
