@@ -90,7 +90,7 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>📁 Background Tasks</td><td><code>--delegate</code> runs in background, main terminal freed instantly</td></tr>
   <tr><td>🐙 GitHub Integration</td><td>issues / PRs / CI / repos directly from CLI</td></tr>
   <tr><td>🔍 Open Search Provider</td><td>Built-in DuckDuckGo (free), pluggable upgrade</td></tr>
-  <tr><td>💾 Unified Memory</td><td>JSONL append-only + edges.json graph + 2-hop associative spread</td></tr>
+  <tr><td>💾 Multi-Layer Memory Network</td><td>JSONL persistent store + edges.json graph (Jaccard 2-hop) + auto-scoring (access boost + time decay) + auto-compression (group similar → summarize)</td></tr>
   <tr><td>🧬 Self-Evolution</td><td>3-layer learning: behavior tracking → pattern detection → auto-optimize</td></tr>
   <tr><td>🤖 Agent Delegation</td><td>Main brain decomposes tasks → sub-agents execute → synthesises</td></tr>
   <tr><td>🔄 Hot Reload</td><td><code>/reload</code> reloads tools/config/SOUL without restarting</td></tr>
