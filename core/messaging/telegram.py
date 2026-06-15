@@ -162,6 +162,9 @@ class TelegramConnector(BaseConnector):
             {"command": "update",  "description": "Git pull + changelog + restart"},
             {"command": "stop",    "description": "Cancel running request"},
             {"command": "restart", "description": "Restart BAW engine"},
+            {"command": "doctor",  "description": "10-point system health check"},
+            {"command": "backup",  "description": "Create/list/restore backups"},
+            {"command": "monitor", "description": "24h error rate + weekly report"},
         ]
         try:
             self._client.post(
