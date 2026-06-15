@@ -165,6 +165,7 @@ class TelegramConnector(BaseConnector):
             {"command": "doctor",  "description": "10-point system health check"},
             {"command": "backup",  "description": "Create/list/restore backups"},
             {"command": "monitor", "description": "24h error rate + weekly report"},
+            {"command": "queue",   "description": "Show pending message queue"},
         ]
         try:
             self._client.post(
