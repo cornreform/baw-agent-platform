@@ -218,16 +218,16 @@ def _scan_directory(
 def _build_summary(critical: int, high: int, total: int) -> str:
     """Build a human-readable summary."""
     if total == 0:
-        return "✅ Clean — no security issues found."
+        return "[OK] Clean — no security issues found."
     parts = []
     if critical > 0:
-        parts.append(f"🔴 {critical} critical finding(s)")
+        parts.append(f"[CRITICAL] {critical} critical finding(s)")
     if high > 0:
         parts.append(f"🟡 {high} high-severity finding(s)")
     other = total - critical - high
     if other > 0:
         parts.append(f"{other} lower-severity finding(s)")
-    return "⚠️ " + ", ".join(parts) + f" ({total} total)"
+    return "[WARN] " + ", ".join(parts) + f" ({total} total)"
 
 
 # ── TOOL_DEF ────────────────────────────────────────────────
@@ -239,7 +239,7 @@ def _handler(path: str, scan_type: str = "quick", max_files: int = 100) -> str:
 TOOL_DEF = {
     "name": "code_scan",
     "description": (
-        "🔍 **SECURITY SCANNER** — MUST USE before executing any downloaded code. "
+        "[SCAN] **SECURITY SCANNER** — MUST USE before executing any downloaded code. "
         "Scan a directory for security risks: eval/exec, shell injection, "
         "credential leaks, unsafe deserialization, system bypass flags, "
         "and auto-install triggers. "

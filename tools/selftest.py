@@ -41,7 +41,7 @@ def _check_config() -> dict:
         api_key_env = pconf.get("api_key_env", "")
         api_key = os.environ.get(api_key_env, "")
         base_url = pconf.get("base_url", "")
-        status = "✅" if api_key else "❌"
+        status = "[OK]" if api_key else "[FAIL]"
         results["details"].append(f"  {status} {name}: key={'SET' if api_key else 'MISSING'}, url={base_url}")
 
     # Check capabilities
@@ -72,28 +72,28 @@ def _check_memory() -> dict:
         r2 = mem.remember(test_content, tags=["selftest"])
 
         if r1.get("id") == r2.get("id") or "updated" in str(r2):
-            results["details"].append("✅ Deduplication works")
+            results["details"].append("[OK] Deduplication works")
         else:
             results["details"].append("⚪ Deduplication: 2 separate entries")
 
         # Test quality gate
         r3 = mem.remember("是", tags=["selftest"])
         if "rejected" in str(r3):
-            results["details"].append("✅ Quality gate rejects short content")
+            results["details"].append("[OK] Quality gate rejects short content")
         else:
-            results["details"].append("❌ Quality gate failed")
+            results["details"].append("[FAIL] Quality gate failed")
 
         # Test search
         search_result = mem.search(test_content, limit=3)
         if search_result:
-            results["details"].append(f"✅ Search returns {len(search_result)} results")
+            results["details"].append(f"[OK] Search returns {len(search_result)} results")
         else:
             results["details"].append("⚪ Search empty (may be normal)")
 
         results["status"] = "pass"
     except Exception as e:
         results["status"] = "fail"
-        results["details"].append(f"❌ Memory test error: {e}")
+        results["details"].append(f"[FAIL] Memory test error: {e}")
 
     return results
 
@@ -121,14 +121,14 @@ def _check_safety() -> dict:
                 blocked, reason = bash_sens(path_or_cmd)
 
             if blocked == should_block:
-                results["details"].append(f"✅ {tool}('{path_or_cmd}'): {'blocked' if blocked else 'allowed'}")
+                results["details"].append(f"[OK] {tool}('{path_or_cmd}'): {'blocked' if blocked else 'allowed'}")
             else:
-                results["details"].append(f"❌ {tool}('{path_or_cmd}'): expected {'blocked' if should_block else 'allowed'}, got {'blocked' if blocked else 'allowed'}")
+                results["details"].append(f"[FAIL] {tool}('{path_or_cmd}'): expected {'blocked' if should_block else 'allowed'}, got {'blocked' if blocked else 'allowed'}")
 
         results["status"] = "pass"
     except Exception as e:
         results["status"] = "fail"
-        results["details"].append(f"❌ Safety test error: {e}")
+        results["details"].append(f"[FAIL] Safety test error: {e}")
 
     return results
 
@@ -139,13 +139,13 @@ def _check_tts() -> dict:
 
     # MiniMax
     if os.environ.get("MINIMAX_API_KEY"):
-        results["details"].append("✅ MiniMax API key: SET")
+        results["details"].append("[OK] MiniMax API key: SET")
     else:
-        results["details"].append("❌ MiniMax API key: MISSING")
+        results["details"].append("[FAIL] MiniMax API key: MISSING")
 
     # Edge TTS
     if shutil.which("edge-tts"):
-        results["details"].append("✅ Edge TTS CLI: available")
+        results["details"].append("[OK] Edge TTS CLI: available")
     else:
         results["details"].append("⚪ Edge TTS CLI: not found")
 
@@ -159,7 +159,7 @@ def _check_tts() -> dict:
                 headers={"Authorization": f"Bearer {key}"},
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
-                results["details"].append("✅ MiniMax API connectivity: OK")
+                results["details"].append("[OK] MiniMax API connectivity: OK")
         except Exception as e:
             results["details"].append(f"⚪ MiniMax API connectivity: {e}")
 
@@ -174,21 +174,21 @@ def _check_stt() -> dict:
     # faster-whisper
     try:
         import faster_whisper
-        results["details"].append("✅ faster-whisper: installed")
+        results["details"].append("[OK] faster-whisper: installed")
     except ImportError:
-        results["details"].append("❌ faster-whisper: not installed")
+        results["details"].append("[FAIL] faster-whisper: not installed")
 
     # ffmpeg
     if shutil.which("ffmpeg"):
-        results["details"].append("✅ ffmpeg: available")
+        results["details"].append("[OK] ffmpeg: available")
     else:
         results["details"].append("⚪ ffmpeg: not found (may affect audio conversion)")
 
     # Stepfun API key
     if os.environ.get("STEPFUN_API_KEY"):
-        results["details"].append("✅ Stepfun API key: SET")
+        results["details"].append("[OK] Stepfun API key: SET")
     else:
-        results["details"].append("❌ Stepfun API key: MISSING")
+        results["details"].append("[FAIL] Stepfun API key: MISSING")
 
     # Quick API connectivity test (only in full mode)
     if not _skip_api_calls:
@@ -200,7 +200,7 @@ def _check_stt() -> dict:
                 headers={"Authorization": f"Bearer {api_key}"},
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
-                results["details"].append("✅ Stepfun STT endpoint connectivity: OK")
+                results["details"].append("[OK] Stepfun STT endpoint connectivity: OK")
         except Exception as e:
             results["details"].append(f"⚪ Stepfun STT endpoint: {e}")
 
@@ -214,21 +214,21 @@ def _check_vision() -> dict:
 
     # MiniMax direct API (primary - no CLI needed)
     if os.environ.get("MINIMAX_API_KEY"):
-        results["details"].append("✅ MiniMax API key: SET (direct API available)")
+        results["details"].append("[OK] MiniMax API key: SET (direct API available)")
     else:
-        results["details"].append("❌ MiniMax API key: MISSING")
+        results["details"].append("[FAIL] MiniMax API key: MISSING")
 
     # MiniMax mmx CLI (optional legacy)
     if shutil.which("mmx"):
-        results["details"].append("✅ mmx CLI: available")
+        results["details"].append("[OK] mmx CLI: available")
     else:
         results["details"].append("⚪ mmx CLI: not found (optional, direct API is primary)")
 
     # Stepfun API key (shared with STT)
     if os.environ.get("STEPFUN_API_KEY"):
-        results["details"].append("✅ Stepfun API key: SET (fallback available)")
+        results["details"].append("[OK] Stepfun API key: SET (fallback available)")
     else:
-        results["details"].append("❌ Stepfun API key: MISSING")
+        results["details"].append("[FAIL] Stepfun API key: MISSING")
 
     # Test actual MiniMax vision call (only in full mode)
     if not _skip_api_calls:
@@ -244,7 +244,7 @@ def _check_vision() -> dict:
             if result.startswith("Error:") or result.startswith("MiniMax vision error:"):
                 results["details"].append(f"⚪ MiniMax vision API: {result[:100]}")
             else:
-                results["details"].append(f"✅ MiniMax vision API: responded ({len(result)} chars)")
+                results["details"].append(f"[OK] MiniMax vision API: responded ({len(result)} chars)")
         except Exception as e:
             results["details"].append(f"⚪ MiniMax vision test: {e}")
 
@@ -267,10 +267,10 @@ def _check_tools() -> dict:
             missing.append(t)
 
     if missing:
-        results["details"].append(f"❌ Missing tools: {', '.join(missing)}")
+        results["details"].append(f"[FAIL] Missing tools: {', '.join(missing)}")
         results["status"] = "warn"
     else:
-        results["details"].append(f"✅ All {len(expected)} tools present")
+        results["details"].append(f"[OK] All {len(expected)} tools present")
         results["status"] = "pass"
 
     return results
@@ -307,10 +307,10 @@ def selftest(full: bool = False) -> str:
         try:
             results.append(test_fn())
         except Exception as e:
-            results.append({"name": test_fn.__name__, "status": "fail", "details": [f"❌ Exception: {e}"]})
+            results.append({"name": test_fn.__name__, "status": "fail", "details": [f"[FAIL] Exception: {e}"]})
 
     # Build report
-    report_lines = ["# 🧪 BAW Self-Test Report", ""]
+    report_lines = ["# [TEST] BAW Self-Test Report", ""]
     total = len(results)
     passed = sum(1 for r in results if r["status"] == "pass")
     failed = sum(1 for r in results if r["status"] == "fail")
@@ -320,7 +320,7 @@ def selftest(full: bool = False) -> str:
     report_lines.append("")
 
     for r in results:
-        icon = {"pass": "✅", "fail": "❌", "warn": "⚠️", "pending": "⏳"}.get(r["status"], "❓")
+        icon = {"pass": "[OK]", "fail": "[FAIL]", "warn": "[WARN]", "pending": "[QUEUED]"}.get(r["status"], "[?]")
         report_lines.append(f"## {icon} {r['name']}")
         for d in r["details"]:
             report_lines.append(f"- {d}")
@@ -328,10 +328,10 @@ def selftest(full: bool = False) -> str:
 
     if failed == 0:
         report_lines.append("---")
-        report_lines.append("🎉 All critical tests passed!")
+        report_lines.append("[PASS] All critical tests passed!")
     else:
         report_lines.append("---")
-        report_lines.append(f"⚠️ {failed} test(s) failed. Check details above.")
+        report_lines.append(f"[WARN] {failed} test(s) failed. Check details above.")
 
     return "\n".join(report_lines)
 

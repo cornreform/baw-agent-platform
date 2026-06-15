@@ -94,7 +94,7 @@ def install(package: str, method: str = "auto", global_install: bool = True) -> 
             if r.returncode == 0:
                 exe = cmd[0]
                 last_arg = cmd[-1] if len(cmd) > 1 else ""
-                outputs.append(f"✅ INSTALLED: npm install -g {last_arg}")
+                outputs.append(f"[OK] INSTALLED: npm install -g {last_arg}")
                 if stdout:
                     outputs.append(stdout[:500])
                 any_success = True
@@ -102,14 +102,14 @@ def install(package: str, method: str = "auto", global_install: bool = True) -> 
             else:
                 exe = cmd[0]
                 last_arg = cmd[-1] if len(cmd) > 1 else ""
-                outputs.append(f"❌ FAILED: npm install -g {last_arg} (exit code {r.returncode})")
+                outputs.append(f"[FAIL] FAILED: npm install -g {last_arg} (exit code {r.returncode})")
                 if stderr:
                     outputs.append(f"    stderr: {stderr[:300]}")
                 # Continue to next fallback
         except sp.TimeoutExpired:
-            outputs.append(f"⚠️ {' '.join(cmd[:3])}... timed out")
+            outputs.append(f"[WARN] {' '.join(cmd[:3])}... timed out")
         except Exception as e:
-            outputs.append(f"⚠️ {' '.join(cmd[:3])}... error: {e}")
+            outputs.append(f"[WARN] {' '.join(cmd[:3])}... error: {e}")
 
     if not any_success:
         return "\n".join(outputs)
@@ -133,16 +133,16 @@ def install(package: str, method: str = "auto", global_install: bool = True) -> 
                 continue
         loc = f" at {binary_path}" if binary_path else ""
         ver = f" (v{version_output})" if version_output else ""
-        outputs.append(f"✅ INSTALLED: {binary_name}{ver}{loc}")
+        outputs.append(f"[OK] INSTALLED: {binary_name}{ver}{loc}")
     else:
         # Check npm local bin
         local_bin = Path.home() / "npm" / "node_modules" / ".bin"
         if (local_bin / binary_name).exists():
-            outputs.append(f"✅ Verified: '{binary_name}' installed at {local_bin / binary_name}")
+            outputs.append(f"[OK] Verified: '{binary_name}' installed at {local_bin / binary_name}")
         elif (local_bin / package.split("/")[-1].split("@")[0]).exists():
-            outputs.append(f"✅ Verified: '{package.split('/')[-1].split('@')[0]}' installed at {local_bin / package.split('/')[-1].split('@')[0]}")
+            outputs.append(f"[OK] Verified: '{package.split('/')[-1].split('@')[0]}' installed at {local_bin / package.split('/')[-1].split('@')[0]}")
         else:
-            outputs.append(f"⚠️ '{binary_name}' may be installed but not in PATH. Try: export PATH=\"{local_bin}:\$PATH\"")
+            outputs.append(f"[WARN] '{binary_name}' may be installed but not in PATH. Try: export PATH=\"{local_bin}:\$PATH\"")
 
     return "\n".join(outputs)
 

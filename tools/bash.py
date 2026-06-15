@@ -33,16 +33,16 @@ def _is_sensitive(cmd: str) -> tuple[bool, str]:
     ]
     for dp in DANGEROUS_PREFIXES:
         if dp in cmd_lower:
-            return True, f"❌ Blocked — dangerous command detected: '{dp.strip()}'"
+            return True, f"[FAIL] Blocked — dangerous command detected: '{dp.strip()}'"
 
     # Block cat/less/more/head/tail of sensitive files
     for sp in SENSITIVE_PATHS:
         if sp in cmd_lower:
-            return True, f"❌ Blocked — command references sensitive path: {sp}"
+            return True, f"[FAIL] Blocked — command references sensitive path: {sp}"
     # Block any command that outputs password/shadow content
     if any(x in cmd_lower for x in ["passwd", "shadow", "master.passwd"]):
         if any(x in cmd_lower for x in ["cat ", "less ", "more ", "head ", "tail ", "grep ", "awk ", "cut ", "sort ", "xxd ", "strings ", "od ", "hexdump "]):
-            return True, "❌ Blocked — reading system credential files is not allowed"
+            return True, "[FAIL] Blocked — reading system credential files is not allowed"
     return False, ""
 
 def bash(command: str, workdir: str | None = None, timeout: int = 60) -> str:

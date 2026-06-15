@@ -112,7 +112,7 @@ def start_bg(command: str, workdir: str | None = None) -> str:
     t2.start()
     t3.start()
 
-    return f"✅ Started background process [{bg_id}]: {command[:80]}"
+    return f"[OK] Started background process [{bg_id}]: {command[:80]}"
 
 
 def output_bg(bg_id: str, clear: bool = False) -> str:
@@ -143,7 +143,7 @@ def output_bg(bg_id: str, clear: bool = False) -> str:
             entry["last_read"] = total_stdout
 
     running_since = time.time() - entry["started"]
-    status = "✅ running" if not entry["done"] else f"❌ exited (code: {entry['exit_code']})"
+    status = "[OK] running" if not entry["done"] else f"[FAIL] exited (code: {entry['exit_code']})"
 
     lines = [f"[{bg_id}] {entry['command'][:60]} — {status} ({running_since:.0f}s)"]
 
@@ -201,7 +201,7 @@ def stop_bg(bg_id: str) -> str:
         exit_code = proc.poll() or -1
         entry["exit_code"] = exit_code
 
-    return f"✅ Stopped [{bg_id}] (exit code: {exit_code})"
+    return f"[OK] Stopped [{bg_id}] (exit code: {exit_code})"
 
 
 def list_bg() -> str:
@@ -212,7 +212,7 @@ def list_bg() -> str:
 
         lines = ["## Background Processes:"]
         for bg_id, entry in list(_processes.items()):
-            status = "✅" if not entry["done"] else "❌"
+            status = "[OK]" if not entry["done"] else "[FAIL]"
             uptime = time.time() - entry["started"]
             cmd = entry["command"][:50]
             lines.append(f"  {status} [{bg_id}] cmd={cmd} uptime={uptime:.0f}s")

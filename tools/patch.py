@@ -53,9 +53,9 @@ def patch_file(path: str, old_string: str, new_string: str, replace_all: bool = 
         return f"Error writing file: {e}"
 
     if replace_all:
-        return f"✅ Replaced {count} occurrences in {p}"
+        return f"[OK] Replaced {count} occurrences in {p}"
     else:
-        return f"✅ Replaced 1 occurrence in {p}"
+        return f"[OK] Replaced 1 occurrence in {p}"
 
 
 TOOL_DEF = {

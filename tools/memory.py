@@ -34,10 +34,10 @@ def memory_remember(content: str, tags: str = "", source: str = "agent") -> str:
         _ec = _existing.get("content", "").strip().replace("　", " ").replace("，", ",").replace("。", ".")
         # Exact match or >80% substring overlap
         if _ec == _content_norm or (_ec in _content_norm and len(_ec) > len(_content_norm) * 0.5) or (_content_norm in _ec and len(_content_norm) > len(_ec) * 0.5):
-            return f"🔄 Memory already exists (id: {_existing['id']}) — no change needed."
+            return f"[>] Memory already exists (id: {_existing['id']}) — no change needed."
 
     entry = mem.remember(content=content, tags=tag_list, source=source)
-    return f"✅ Memory saved (id: {entry.get('id', '?')}, tags: {entry.get('tags', [])})"
+    return f"[OK] Memory saved (id: {entry.get('id', '?')}, tags: {entry.get('tags', [])})"
 
 
 def memory_search(query: str, limit: int = 10) -> str:
