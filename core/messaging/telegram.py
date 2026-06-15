@@ -1042,7 +1042,28 @@ class TelegramConnector(BaseConnector):
                 self._record_batch_result(chat_id, response[:200], "voice")
             else:
                 # ── No STT method available — present diagnostics + options ──
-                msg_parts = ["🎵 收到語音訊息，但目前 BAW 未有語音處理能力。\n"]
+                stt_method = stt_config.get("method", "")
+                stt_model = stt_config.get("model", "")
+                stt_base = stt_config.get("base_url", "")
+                stt_key_env = stt_config.get("api_key_env", "")
+                key_set = bool(os.environ.get(stt_key_env)) if stt_key_env else False
+
+                if stt_method and stt_model:
+                    # STT IS configured — explain why it failed
+                    reason = ""
+                    if stt_key_env and not key_set:
+                        reason = f"`{stt_key_env}` 未 set 喺 `.env`"
+                    elif stt_base and stt_key_env:
+                        reason = f"`{stt_method}` probe `{stt_base}` 失敗（API key 有效但端點無回應）"
+                    else:
+                        reason = f"`{stt_method}` probe 失敗"
+                    msg_parts = [
+                        f"🎵 收到語音訊息\\n\\n"
+                        f"STT 已設定：`{stt_method}` → `{stt_model}` @ `{stt_base or 'auto'}`\\n"
+                        f"失敗原因：{reason}\\n"
+                    ]
+                else:
+                    msg_parts = ["🎵 收到語音訊息，但目前 BAW 未有語音處理能力。\\n"]
 
                 # List all models with audio_input status
                 msg_parts.append("**🔍 模型語音能力：**")
