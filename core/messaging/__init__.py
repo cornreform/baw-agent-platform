@@ -2109,6 +2109,9 @@ class BaseConnector(ABC):
 
             # Strip HTML tags for Telegram display
             output = re.sub(r'<[^>]+>', '', output)
+            # ── Compress excessive blank lines: 3+ consecutive newlines → 2 (keep 1 blank line max)
+            output = re.sub(r'\n{3,}', '\n\n', output)
+            output = output.strip()
             # Limit to 4000 chars
             if len(output) > 4000:
                 output = output[:3997] + "..."
