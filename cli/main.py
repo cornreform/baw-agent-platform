@@ -127,6 +127,21 @@ COMMANDS: dict[str, dict] = {
         "usage": "baw soul [show|edit]",
         "subcommands": ["show", "edit"],
     },
+    "setup": {
+        "short": "⚡  Interactive setup wizard",
+        "long": (
+            "Walk through configuration step by step:\\n"
+            "  • Default model selection\\n"
+            "  • Provider API keys (Stepfun, MiniMax, etc.)\\n"
+            "  • TTS / STT / Vision capabilities\\n"
+            "  • Tone profile\\n"
+            "Runs inside the container (needs TTY)."
+        ),
+        "example": "baw setup",
+        "category": "manage",
+        "aliases": [],
+        "usage": "baw setup",
+    },
     "skill": {
         "short": "📦  Manage BAW skills",
         "long": (
@@ -557,6 +572,10 @@ def main():
         elif canonical == "sessions":
             from cli.commands.sessions_cmd import cmd_sessions
             cmd_sessions(subcommand, args)
+        elif canonical == "setup":
+            from core.setup import cmd_setup
+            from pathlib import Path
+            cmd_setup(data_dir=Path.home() / ".baw")
         elif canonical == "court":
             from cli.commands.court_cmd import main as _court_main
             _court_main([subcommand] + args if subcommand else [])
