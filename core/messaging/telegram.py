@@ -841,7 +841,7 @@ class TelegramConnector(BaseConnector):
                             self.send(chat_id, f"❌ OpenAI Whisper API 失敗: {e}。嘗試其他方法...")
                     else:
                         status_lines.append(f"   ⚠️ {api_key_env} 未設定")
-                elif stt_method in ("auto-asr", "model", "xai-stt"):
+                elif stt_method in ("auto-asr", "model"):
                     # Auto-detect ASR protocol: try multiple endpoint patterns
                     api_key_env = stt_config.get("api_key_env", stt_config.get("api_key_env", ""))
                     stt_model_id = stt_config.get("model", "").strip()
