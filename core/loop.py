@@ -457,9 +457,9 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- To retrieve: `remember(action=recall, category=install)`\n"
             f"\n## Error recovery for installations\n"
             f"When installing a package/CLI tool and it FAILS:\n"
-            f"  1. ✅ Report the REAL error verbatim — never fabricate success\n"
-            f"  2. ❌ NEVER say 已執行安裝命令 without actually calling bash/install tool\n"
-            f"  3. ❌ NEVER say All steps completed successfully when any step actually failed\n"
+            f"  1. Report the REAL error verbatim — never fabricate success\n"
+            f"  2. NEVER say 已執行安裝命令 without actually calling bash/install tool\n"
+            f"  3. NEVER say All steps completed successfully when any step actually failed\n"
             f"  4. Try alternatives: different package name, check README again, different install method\n"
             f"  5. Record failure: `remember(action=remember, fact=failed to install X: <actual error>, category=install)`\n"
             f"\n## Dynamic context\n"
@@ -481,11 +481,14 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- `mmx(voices)` -> raw array -> `🎙️ 334 個語音可用`\n"
             f"- `mmx(image)` -> raw JSON  -> MEDIA:path + 一句描述\n"
             f"**Extract signal, skip noise.**\n"
-            f"\n## Output style\n"
-            f"- Report results directly in plain text. Do NOT prefix with ✅/❌/▶ emojis.\n"
-            f"- If it worked, just say what happened (e.g. 'Quota: 剩餘 11,043,549 秒').\n"
-            f"- If it failed, say what went wrong (e.g. 'Install failed: npm error EACCES').\n"
-            f"- No tick marks, no checkboxes. Clean, direct statements.\n"
+            f"\n## Output style — NEVER USE EMOJI\n"
+            f"CRITICAL: Your output goes to a messaging app. NEVER use emoji — especially:\n"
+            f"  DO NOT use checkmark, cross mark, play button, arrow, warning, clipboard, or any other emoji.\n"
+            f"- Report results in plain text. Just say what happened — no symbols.\n"
+            f"- Correct: 'Done. 3 files processed.'\n"
+            f"- Wrong (emoji): 'OK Done' or 'Failed' — NO symbols allowed.\n"
+            f"- If it worked, say so in words. If it failed, say so in words.\n"
+            f"- No tick marks, no checkboxes, no emoji. Clean, direct statements.\n"
             f"- NEVER end your response with a question. Execute directly.\n"
             f"\n## Sending files to user\n"
             f"- To send audio (mp3, wav), images (png, jpg), or documents to the user, include MEDIA:/absolute/path in your output:\n"
@@ -941,7 +944,7 @@ def run_agent(
                     if len(tool_summaries) >= 3:
                         break
             if tool_summaries:
-                final_content = "✅ Done.\n\n" + "\n".join(
+                final_content = "Done.\n\n" + "\n".join(
                     f"• {s.strip()}" for s in reversed(tool_summaries)
                 )
 
@@ -2332,7 +2335,7 @@ def run_agent(
         final_reply = assistant_responses[-1]
     elif _delegation_results:
         # Synthesis response was empty — auto-generate summary from delegation results
-        final_reply = "✅ Completed " + ", ".join(
+        final_reply = "Completed " + ", ".join(
             r.strip()[:200] for r in _delegation_results[-3:]
         )
     else:
