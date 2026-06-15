@@ -1340,6 +1340,16 @@ class BaseConnector(ABC):
         _reg(**_ld('vision'))
         _reg(**_ld('tts'))
 
+        # ── Additional core tools ──
+        _reg(**_ld('http_fetch'))
+        _reg(**_ld('install'))
+        _reg(**_ld('get_skill'))
+        _reg(**_ld('remember'))
+        _reg(**_ld('knowledge_graph'))
+        _reg(**_ld('mcp'))
+        _reg(**_ld('background'))
+        _reg(**_ld('mmx'))
+
         # ── Stub tools (only if enabled in config) ──
         _stub_tools = ['browser', 'execute_code']
         _registered_stubs = []
@@ -1389,7 +1399,9 @@ class BaseConnector(ABC):
         # Core tools (always registered)
         core_tool_names = ["bash", "read_file", "write_file", "web_search", "web_extract",
                            "search_files", "patch", "memory", "todo", "delegate_task", "vision",
-                           "image_generate", "tts"]
+                           "image_generate", "tts",
+                           "http_fetch", "install", "get_skill", "remember",
+                           "knowledge_graph", "mcp", "background", "mmx"]
         # Stub tools (only if enabled)
         stub_tool_names = ["browser", "execute_code"]
         all_tool_names = core_tool_names + [t for t in stub_tool_names if _stub_enabled(t)]
