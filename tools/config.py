@@ -134,20 +134,23 @@ def config_set(path: str, value: str) -> str:
     if not path.strip():
         return "Error: path and value are required."
 
-    # Parse value type
-    parsed: bool | int | float | str = value
-    if value.lower() == "true":
-        parsed = True
-    elif value.lower() == "false":
-        parsed = False
-    else:
-        try:
-            parsed = int(value)
-        except ValueError:
+    # Parse value type — only parse if value is a string
+    parsed: bool | int | float | str | dict | list = value
+    if isinstance(value, str):
+        if value.lower() == "true":
+            parsed = True
+        elif value.lower() == "false":
+            parsed = False
+        else:
             try:
-                parsed = float(value)
+                parsed = int(value)
             except ValueError:
-                parsed = value  # keep as string
+                try:
+                    parsed = float(value)
+                except ValueError:
+                    parsed = value  # keep as string
+    elif isinstance(value, (dict, list)):
+        parsed = value  # Pass through structured values as-is
 
     # Backup
     backup = _backup_config()
