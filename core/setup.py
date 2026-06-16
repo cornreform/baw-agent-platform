@@ -714,7 +714,7 @@ def cmd_setup(data_dir: Path):
         if auto_cfg:
             desc = auto_cfg.get("model", auto_cfg.get("method", "auto"))
             print(f"  {C.DIM}Auto-detect: {desc}{C.RESET}")
-            choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: default / pick model / skip [{C.DIM}D{C.RESET}]: ").strip().lower()
+            choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (d)efault / (p)ick model / (s)kip [{C.DIM}D{C.RESET}]: ").strip().lower()
             if choice in ("", "d", "default"):
                 caps[key] = auto_cfg
                 _ok(f"{name} configured ({desc})")
@@ -730,7 +730,7 @@ def cmd_setup(data_dir: Path):
         elif providers_cfg:
             if existing:
                 print(f"  {C.DIM}No auto-detect for {name}{C.RESET}")
-                choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: keep current / pick model / skip [{C.DIM}K{C.RESET}]: ").strip().lower()
+                choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (k)eep current / (p)ick model / (s)kip [{C.DIM}K{C.RESET}]: ").strip().lower()
                 if choice in ("", "k", "keep"):
                     pass  # keep existing
                 elif choice == "p":
@@ -742,7 +742,7 @@ def cmd_setup(data_dir: Path):
                         _ok(f"{name} configured ({mid})")
                         changed_caps = True
             else:
-                choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: pick model / skip [{C.DIM}S{C.RESET}]: ").strip().lower()
+                choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (p)ick model / (s)kip [{C.DIM}S{C.RESET}]: ").strip().lower()
                 if choice == "p":
                     extras = auto_models or None
                     mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, extra_models=extras)
