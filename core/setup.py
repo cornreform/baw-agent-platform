@@ -374,7 +374,7 @@ def cmd_setup(data_dir: Path):
            "cost_per_1m_input": 0.30, "cost_per_1m_output": 1.20},
           {"id": "deepseek-v4-pro", "capabilities": ["chat"], "context_window": 65536}]),
         (2,  "MINIMAX_API_KEY", "MiniMax",        "minimax", "https://api.minimax.io/v1",
-         [{"id": "MiniMax-M3", "capabilities": ["chat", "vision", "tts"], "context_window": 1048576},
+         [{"id": "MiniMax-M3", "capabilities": ["chat", "vision", "tts", "image_generation"], "context_window": 1048576},
           {"id": "MiniMax-M2.7-highspeed", "capabilities": ["chat"], "context_window": 1048576},
           {"id": "MiniMax-M2.7", "capabilities": ["chat"], "context_window": 1048576},
           {"id": "MiniMax-M2.5-highspeed", "capabilities": ["chat"], "context_window": 1048576},
@@ -703,8 +703,8 @@ def cmd_setup(data_dir: Path):
         if auto_cfg:
             desc = auto_cfg.get("model", auto_cfg.get("method", "auto"))
             print(f"  {C.DIM}Auto-detect: {desc}{C.RESET}")
-            choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (d)efault / (p)ick model / (s)kip [{C.DIM}D{C.RESET}]: ").strip().lower()
-            if choice in ("", "d", "default"):
+            choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (d)efault / (a)uto / (p)ick model / (s)kip [{C.DIM}D{C.RESET}]: ").strip().lower()
+            if choice in ("", "d", "default", "a", "auto"):
                 caps[key] = auto_cfg
                 _ok(f"{name} configured ({desc})")
                 changed_caps = True
