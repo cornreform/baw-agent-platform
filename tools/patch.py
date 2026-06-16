@@ -1,6 +1,6 @@
 """BAW built-in: patch — find-and-replace file editing.
 
-Like Hermes patch tool: targeted edits without rewriting the entire file.
+Like targeted find-and-replace: targeted edits without rewriting the entire file.
 Uses fuzzy matching to handle minor whitespace/indentation differences.
 """
 import re

@@ -1,6 +1,6 @@
 # BAW Bot — Docker Compose
 # Replaces systemd baw-telegram.service.
-# Fully isolated from Hermes — own Python, own env, own network namespace.
+# Fully isolated — own Python, own env, own network namespace.
 services:
   baw-telegram:
     build: .

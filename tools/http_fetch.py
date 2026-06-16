@@ -144,7 +144,7 @@ def http_fetch(url: str, prefer_browser: bool = False) -> Dict[str, Any]:
       - ``next_steps``: human-readable instructions for the caller
 
     When ``strategy == "BROWSER_REQUIRED"``, the caller MUST mirror the
-    page to ``mirror_path`` using a browser-render tool (Hermes
+    page to ``mirror_path`` using a browser-render tool
     ``web_extract`` does this in production). The mirror file then
     becomes the parse input.
     """

@@ -5,7 +5,7 @@ Fable 5 spec §4: 「一日一條摘要,唔好半夜彈 6 條 notification。」
 Called by the cron job at 03:00. Reads the court case archive and
 docket state, formats a single Telegram-friendly message with the
 previous day's verdicts and any deferred issues. Returns the formatted
-text — the cron job then sends it to the user's Telegram via the bot.
+text — the cron job then sends it to User's Telegram via the bot.
 """
 
 from __future__ import annotations

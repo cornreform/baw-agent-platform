@@ -1,5 +1,5 @@
 # BAW Bot — core dependencies (Docker)
-# No Hermes venv dependency. Self-contained.
+# Self-contained — no external agent dependency.
 
 httpx>=0.28
 requests>=2.30

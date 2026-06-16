@@ -764,12 +764,12 @@ def _build_todo_block(data_dir: Path) -> str:
     return block + recipe_block + defaults_block + data_sources_block
 
 
-# ── Post-turn verification (Hermes-style architectural enforcement) ──
+# ── Post-turn verification (architectural enforcement) ──
 
 def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> str:
     """Verify config change claims in BAW's output against actual config.yaml.
     
-    Hermes framework prevents fabrication by mediating tool execution.
+    BAW framework prevents fabrication by mediating tool execution.
     BAW's post-turn hook catches fabrication after generation.
     If BAW claims a config change that doesn't exist, append a correction.
     """

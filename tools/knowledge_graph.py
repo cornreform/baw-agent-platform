@@ -287,7 +287,7 @@ def _extract_entities_from_content(content: str) -> list[str]:
 
     # Named roles
     for pattern in [r"User:\s*(.{1,40})", r"BAW:\s*(.{1,40})",
-                    r"(the user|Sticky|Robi|BAW|Hermes)"]:
+                    r"(developer|assistant|BAW)"]:
         for m in re.finditer(pattern, content[:300]):
             entity = m.group(1).strip()[:40]
             if entity and entity not in entities:

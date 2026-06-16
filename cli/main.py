@@ -297,7 +297,7 @@ COMMANDS: dict[str, dict] = {
             "Full-screen Textual chat interface with persistent\n"
             "status bar showing model, provider, token usage,\n"
             "context window %, tone, and fact-check mode.\n"
-            "Like Hermes CLI but with BAW identity (purple+gold).\n"
+            "BAW agent CLI with BAW identity (purple+gold).\n"
             "Supports web_search tool calling."
         ),
         "example": "baw tui-chat",
