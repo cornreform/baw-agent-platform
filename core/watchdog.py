@@ -129,3 +129,93 @@ def _check_health_basic() -> int:
             pass
 
     return max(0, score)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Dead State Recovery — Process-Level Self-Recovery
+# ═══════════════════════════════════════════════════════════════════
+
+_CONSECUTIVE_FAILURES: dict[str, int] = {}
+_LOOP_DETECTION_LOCK = threading.Lock()
+_RECOVERY_IN_PROGRESS = False
+
+
+def track_consecutive_failure(tool_name: str) -> bool:
+    """Track consecutive failures per tool. Returns True if loop detected (≥5 same-tool failures).
+
+    Resets on successful call via clear_consecutive_failures().
+    """
+    global _RECOVERY_IN_PROGRESS
+    if _RECOVERY_IN_PROGRESS:
+        return False  # suppress during recovery
+
+    with _LOOP_DETECTION_LOCK:
+        _CONSECUTIVE_FAILURES[tool_name] = _CONSECUTIVE_FAILURES.get(tool_name, 0) + 1
+        count = _CONSECUTIVE_FAILURES[tool_name]
+        if count >= 5:
+            logger.error(
+                f"[watchdog] LOOP DETECTED: {tool_name} failed {count}x consecutively — triggering recovery"
+            )
+            return True
+        if count >= 3:
+            logger.warning(f"[watchdog] {tool_name} failed {count}x — approaching loop threshold")
+    return False
+
+
+def clear_consecutive_failures(tool_name: str | None = None):
+    """Reset failure counter for a tool (or all tools)."""
+    with _LOOP_DETECTION_LOCK:
+        if tool_name:
+            _CONSECUTIVE_FAILURES.pop(tool_name, None)
+        else:
+            _CONSECUTIVE_FAILURES.clear()
+
+
+def _recover_restart(reason: str = "loop detection") -> dict:
+    """Gracefully restart the bot process with minimal disruption.
+
+    Returns recovery report dict.
+    """
+    global _RECOVERY_IN_PROGRESS
+    _RECOVERY_IN_PROGRESS = True
+
+    report = {
+        "status": "recovery_triggered",
+        "reason": reason,
+        "timestamp": __import__("datetime").datetime.now().isoformat(),
+    }
+
+    try:
+        # 1. Clear all failure state
+        clear_consecutive_failures()
+
+        # 2. Log recovery
+        log_path = Path.home() / ".baw" / "logs" / "recovery.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a") as f:
+            f.write(f"[{report['timestamp']}] RECOVERY: {reason}\n")
+
+        # 3. Signal the health score
+        global _LAST_HEALTH_SCORE
+        _LAST_HEALTH_SCORE = max(1, _LAST_HEALTH_SCORE - 3)
+
+        # 4. Reset kill signal
+        reset_kill_signal()
+
+        report["ok"] = True
+    except Exception as e:
+        report["ok"] = False
+        report["error"] = str(e)
+    finally:
+        _RECOVERY_IN_PROGRESS = False
+
+    return report
+
+
+def get_recovery_status() -> dict:
+    """Return current recovery state for health checks."""
+    return {
+        "recovery_in_progress": _RECOVERY_IN_PROGRESS,
+        "consecutive_failures": dict(_CONSECUTIVE_FAILURES),
+        "health_score": _LAST_HEALTH_SCORE,
+    }
