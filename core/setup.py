@@ -308,8 +308,10 @@ def _pick_model_menu(
         for m in pcfg.get("models", []):
             mid = m["id"] if isinstance(m, dict) else m
             caps = m.get("capabilities", []) if isinstance(m, dict) else []
-            # Filter by capability: show if has the cap or has no caps defined (generic)
-            if capability != "chat" and caps and capability not in caps:
+            # Filter by capability only for default/fallback model pick (chat)
+            # For capability-specific picks (stt/tts/vision/etc.), show ALL models
+            # because special IDs like grok-stt don't exist in model lists.
+            if capability == "chat" and caps and "chat" not in caps:
                 continue
             label = f"{pkey}: {mid}"
             cw = m.get("context_window", "?") if isinstance(m, dict) else "?"
