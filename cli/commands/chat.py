@@ -18,6 +18,15 @@ from rich.rule import Rule
 
 from cli import console as plain_console
 
+class C:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    MAGENTA = "\033[95m"
+
 BAW_HOME = Path.home() / ".baw"
 BAW_ROOT = Path(__file__).resolve().parent.parent.parent
 
