@@ -467,7 +467,7 @@ def auto_optimize(dry_run: bool = False) -> dict:
     correction_recs = [r for r in recs if r.get("type") == "frequent_corrections"]
     if correction_recs:
         correction_count = correction_recs[0].get("count", 0)
-        if correction_count >= 5 and soul_path.exists():
+        if correction_count >= 2 and soul_path.exists():
             soul = soul_path.read_text(encoding="utf-8")
             learn_marker = "<!-- evolve:learned-preferences -->"
             if learn_marker not in soul:
@@ -718,7 +718,7 @@ def _tune_prompt_style(analysis: dict) -> dict:
     recent = [l for l in lessons if (now - l.get("learned_at", 0)) < 7 * 86400]
 
     length_lessons = [l for l in recent if l.get("type") == "response_length"]
-    if len(length_lessons) >= 3:
+    if len(length_lessons) >= 2:
         tuning["suggestions"].append(
             f"User prefers SHORTER responses ({len(length_lessons)} corrections in 7 days)"
         )
