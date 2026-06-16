@@ -300,6 +300,7 @@ def _pick_model_menu(
     exclude_provider: str | None = None,
     capability: str = "chat",
     current_model: str | None = None,
+    extra_models: list[str] | None = None,
 ) -> str:
     """Show a numbered menu of models from configured providers, return chosen model ID."""
     options = []
@@ -331,6 +332,11 @@ def _pick_model_menu(
     # Prepend current model if it's not already in the list
     if current_model and not any(mid == current_model for mid, _, _, _ in options):
         options.insert(0, (current_model, f"(current) {current_model}", "—", ""))
+
+    # Prepend extra models (e.g. auto-detect) not in the list
+    for em in (extra_models or []):
+        if em and not any(mid == em for mid, _, _, _ in options):
+            options.insert(0, (em, f"(auto) {em}", "—", ""))
 
     if not options:
         return _input(f"{prompt} (no models available, type manually)", default="")
@@ -717,7 +723,8 @@ def cmd_setup(data_dir: Path):
                 changed_caps = True
             elif choice == "p":
                 cur = existing.get("model") if existing else None
-                mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, current_model=cur)
+                extras = [auto_cfg.get("model")] if auto_cfg else None
+                mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, current_model=cur, extra_models=extras)
                 if mid:
                     caps[key] = {"model": mid}
                     _ok(f"{name} configured ({mid})")
