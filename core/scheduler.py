@@ -7,10 +7,12 @@ Polls every 60s via a lightweight daemon thread.
 
 from __future__ import annotations
 import os
+import re
 import time
 import json
 import uuid
 import yaml
+import shlex
 import threading
 from pathlib import Path
 from datetime import datetime, timezone
@@ -230,6 +232,19 @@ class Scheduler:
         raw_cmd = prompt or task.name
         if raw_cmd.startswith("!"):
             shell_cmd = raw_cmd[1:].strip()
+            # CRITICAL: whitelist allowed commands only
+            _ALLOWED_SHELL = {
+                "python3", "python", "bash", "cd", "ls", "cat", "echo",
+                "docker", "docker-compose", "git", "make", "curl", "wget",
+                "mkdir", "cp", "mv", "rm", "chmod", "chown",
+            }
+            cmd_base = shlex.split(shell_cmd)[0] if shell_cmd else ""
+            cmd_clean = re.sub(r"^[/.]+", "", cmd_base)  # strip leading ../../
+            cmd_base_name = cmd_clean.split("/")[-1] if "/" in cmd_clean else cmd_clean
+            if cmd_base_name not in _ALLOWED_SHELL:
+                print(f"[BAW-SCHED] Blocked shell command: {cmd_base_name} (from: {shell_cmd[:80]})")
+                (task_dir / "status.txt").write_text("blocked", encoding="utf-8")
+                return task_id
             import subprocess as sp
             sp.Popen(
                 shell_cmd,

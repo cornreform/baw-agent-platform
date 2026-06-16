@@ -103,7 +103,11 @@ def _classify_task_type(prompt: str) -> dict:
     """
     import re as _re
 
-    prompt_lower = prompt.lower() if prompt else ""
+    # Empty/missing prompt → safe default, no classification needed
+    if not prompt or not prompt.strip():
+        return {"type": "TYPE_A", "needs_audit": False, "reason": "empty prompt — safe default"}
+
+    prompt_lower = prompt.lower()
 
     # Check in priority order (D > C > B > E > A)
     for task_type in ("TYPE_D", "TYPE_C", "TYPE_B", "TYPE_E"):

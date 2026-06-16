@@ -6,6 +6,15 @@ from pathlib import Path
 def write_file(path: str, content: str) -> str:
     """Write content to a file. Creates parent directories if needed."""
     p = Path(path).expanduser().resolve()
+    # Sandbox: only allow writes within BAW project or user home
+    BAW_HOME = Path.home() / "baw"
+    try:
+        p.relative_to(BAW_HOME)
+    except ValueError:
+        try:
+            p.relative_to(Path.home())
+        except ValueError:
+            return f"❌ Path outside allowed workspace: {p}"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
     # Verify write

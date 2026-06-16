@@ -77,8 +77,7 @@ SAFE_BUILTINS = {
     "dict": dict, "tuple": tuple, "bool": bool, "set": set,
     "range": range, "enumerate": enumerate, "zip": zip,
     "map": map, "filter": filter, "sorted": sorted,
-    "reversed": reversed, "type": type, "isinstance": isinstance,
-    "hasattr": hasattr, "getattr": getattr, "setattr": setattr,
+    "reversed": reversed, "isinstance": isinstance,
     "True": True, "False": False, "None": None,
     "Exception": Exception, "ValueError": ValueError,
     "TypeError": TypeError, "KeyError": KeyError,
@@ -107,8 +106,10 @@ def execute_code(code: str, timeout: int = 300) -> str:
         "eval(", "exec(", "__import__(", "open(",
         "import os", "from os", "import subprocess",
         "import shutil",
-    ]
-    code_lower = code.lower()
+    ]   
+    import unicodedata
+    code_normalized = unicodedata.normalize("NFKC", code)
+    code_lower = code_normalized.lower()
     for d in _DANGEROUS:
         if d in code_lower:
             return (

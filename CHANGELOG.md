@@ -2,7 +2,44 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
-## v0.21.0 — 2026-06-15
+## v1.0.0 — 2026-06-17 (Self-Evolution Milestone 🎯)
+
+### Self-Evolution System — 5 Phases Complete
+
+**Phase A — Foundation Gates**
+- A1: Fabrication Gate — code-enforced verify loop after every write tool call (10/10)
+- A2: Config Drift Auto-Fix — 4 patterns auto-detected + enforced before every LLM call
+- A3: Learning Threshold — 5→2 corrections for faster adaptation
+
+**Phase B — Semantic Understanding**
+- B1: LLM-Assisted Classification — 5/5 correction types correctly identified
+- B2: Unified Evolution Pipeline — 6 stages: dream → health → memory → LLM → SOUL → code
+
+**Phase C — Self-Containment**
+- C1: Internal Scheduler — SOUL health check migrated from cron, 24h/6h/10min cycles
+- C2: Dead State Recovery — loop detection (≥5 consecutive fails) + graceful restart
+
+**Phase D — Code-Level Self-Improvement**
+- D1: Auto-Patching — LLM generates code patches from failure patterns, syntax-verified
+- D2: Self-Testing Pipeline — change → syntax verify → pytest → rollback on failure
+
+### Audit: 6 Critical + 6 High Fixes (2026-06-17)
+- **EXC-1**: Sandbox escape fix — removed `type`/`getattr`/`setattr` from SAFE_BUILTINS
+- **SCHED-1**: Shell command whitelist for `!` prefix in scheduler
+- **EVO-1**: Recursion guard — `@_depth_guard` decorator, max 3 nested optimize calls
+- **BASH-2**: Env sanitization — subprocess stripped of `_API_KEY`/`_SECRET`/`_TOKEN`
+- **WRF-1**: Path traversal sandbox — writes restricted to `~/baw/` or user home
+- **MEM-1**: Atomic memory write — `.tmp` → `.replace()` crash-safe pattern
+- **TOL-1**: Non-idempotent tools skip retry on timeout
+- **LOOP-1**: Empty prompt explicit type-TREATMENT
+- **EXC-2**: Unicode NFKC normalization for dangerous pattern detection
+
+## v0.22.0 — 2026-06-16
+
+### Self-Evolution: Phase C — Self-Containment
+
+- C1: Internal Scheduler — SOUL health check migrated from cron, 24h/6h/10min cycles
+- C2: Dead State Recovery — loop detection + graceful restart
 
 ### 🏥 Reliability Pillars (6.5 → 9.5/10)
 
