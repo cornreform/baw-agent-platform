@@ -303,11 +303,30 @@ def config_restore(backup_name: str = "") -> str:
     return f"Restored from {backup.name}"
 
 
+def config_set_key(key: str, value: str) -> str:
+    """Set an API key in ~/.baw/.env. Read-merge-write (never overwrites other keys)."""
+    env_path = Path.home() / ".baw" / ".env"
+    
+    lines = []
+    if env_path.exists():
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    
+    key_prefix = f"{key}="
+    lines = [l for l in lines if not l.startswith(key_prefix)]
+    
+    lines.append(f"{key}={value}")
+    
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    
+    os.environ[key] = value
+    
+    return f"[OK] {key} saved to .env (len={len(value)})"
+
+
 # ── Dispatcher ─────────────────────────────────────────────────
 
-
 def _dispatcher(action: str, path: str = "", value: str = "",
-                backup_name: str = "") -> str:
+                backup_name: str = "", key_name: str = "", key_value: str = "") -> str:
     actions = {
         "get": lambda: config_get(path),
         "set": lambda: config_set(path, value),
@@ -315,6 +334,7 @@ def _dispatcher(action: str, path: str = "", value: str = "",
         "validate": lambda: config_validate(),
         "backups": lambda: config_list_backups(),
         "restore": lambda: config_restore(backup_name),
+        "set_key": lambda: config_set_key(key_name, key_value),
     }
     fn = actions.get(action)
     if fn is None:
@@ -326,13 +346,12 @@ def _dispatcher(action: str, path: str = "", value: str = "",
 TOOL_DEF = {
     "name": "config",
     "description": (
-        "Safe config.yaml editor — read/write/delete config values by dotted path. "
-        "Automatically backs up before every write and validates YAML syntax after. "
-        "On validation failure, auto-restores backup. "
-        "Actions: 'get' (read value), 'set' (write value, auto-type parse), "
-        "'delete' (remove key), 'validate' (check syntax), "
-        "'backups' (list backups), 'restore' (restore from backup). "
-        "Use this instead of write_file/patch for any config.yaml modification."
+        "Safe config.yaml editor + .env key manager. "
+        "Read/write/delete config values by dotted path. "
+        "Use action='set_key' with key_name + key_value to safely add/update API keys "
+        "in .env (read-merge-write, never overwrites other keys). "
+        "Automatically backs up config.yaml before every write and validates YAML after. "
+        "Actions: get, set, delete, validate, backups, restore, set_key."
     ),
     "handler": _dispatcher,
     "parameters": {
@@ -340,23 +359,30 @@ TOOL_DEF = {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["get", "set", "delete", "validate", "backups", "restore"],
-                "description": "What to do with the config.",
+                "enum": ["get", "set", "delete", "validate", "backups", "restore", "set_key"],
+                "description": "What to do. Use 'set_key' for .env modifications (safe merge).",
             },
             "path": {
                 "type": "string",
-                "description": "Dotted path, e.g. 'model.default' or 'providers.minimax.base_url'",
+                "description": "Dotted path for config get/set/delete, e.g. 'model.default'.",
             },
             "value": {
                 "type": "string",
-                "description": "Value to set (for 'set' action). Parsed: true/false→bool, 123→int.",
+                "description": "Value to set for 'set' action. Parsed: true/false→bool, 123→int.",
             },
             "backup_name": {
                 "type": "string",
                 "description": "Backup filename for 'restore' action.",
             },
+            "key_name": {
+                "type": "string",
+                "description": "Env var name for 'set_key' action, e.g. 'XAI_API_KEY'.",
+            },
+            "key_value": {
+                "type": "string",
+                "description": "Env var value for 'set_key' action.",
+            },
         },
         "required": ["action"],
     },
-    "risk_level": "medium",
 }
