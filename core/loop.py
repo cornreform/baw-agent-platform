@@ -1555,12 +1555,14 @@ def run_agent(
             "- After making changes, verify with read-back. Report result.\n"
         )
 
-        # Build inline context
-        _inline_msgs = list(ctx.messages) if ctx and ctx.messages else []
-        _inline_msgs.append({"role": "user", "content": prompt})
+        # Build inline context — use ctx.add_* to keep Message objects (not dicts)
         if not ctx:
             ctx = Context(system_prompt=_inline_sys)
-        ctx.messages = _inline_msgs
+        ctx.add_user(prompt)
+
+        # Init counters for cost tracking
+        total_llm_calls = 0
+        session_cost = 0.0
 
         # Tool execution loop (max 5 iterations)
         _inline_resp = None

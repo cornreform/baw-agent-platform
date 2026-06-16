@@ -16,6 +16,9 @@ Loaded by `tools/__init__.py::register_all()`, which is called by
 - `image_generate` — DALL-E image generation. Low risk.
 - `tts` — multi-provider text-to-speech (MiniMax / Stepfun / Edge). Low risk.
 - `todo` — persistent task / thought / follow-up list across sessions. Low risk.
+- `execute_code` — Python code execution with BAW tool access (isolated scope, stripped builtins). High risk.
+- `session_search` — FTS5 cross-session search with incremental indexing. Low risk.
+- `cronjob` — scheduled task management (interval syntax, overlap protection). Medium risk.
 
 > **2026-06-12 update:** Tools are now scaffolded via `baw tools create <name>`
 > (see `cli/commands/tools_cmd.py`). The scaffolder writes the file, registers

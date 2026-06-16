@@ -195,14 +195,23 @@ def get_tier_preferences(config: dict) -> dict[str, list[str]]:
 
     Precedence (highest first):
     1. config['router']['tier_preferences'][<tier>]   ← user override
-    2. DEFAULT_TIER_PREFERENCES[<tier>]              ← hardcoded default
+    2. config['model']['default']                      ← user's primary model (dynamically prepended)
+    3. DEFAULT_TIER_PREFERENCES[<tier>]                ← hardcoded fallback
     """
     user_prefs = (
         config.get("router", {}).get("tier_preferences", {}) or {}
     )
+    default_model = config.get("model", {}).get("default", "")
     merged = {}
     for tier in (TIER_TRIVIAL, TIER_MODERATE, TIER_COMPLEX, TIER_EXPERT):
-        merged[tier] = list(user_prefs.get(tier) or DEFAULT_TIER_PREFERENCES.get(tier, []))
+        if tier in user_prefs and user_prefs[tier]:
+            merged[tier] = list(user_prefs[tier])
+        else:
+            base = list(DEFAULT_TIER_PREFERENCES.get(tier, []))
+            # Prepend user's default model — it IS the user's chosen provider
+            if default_model and default_model != (base[:1] or [None])[0]:
+                base.insert(0, default_model)
+            merged[tier] = base
     return merged
 
 
