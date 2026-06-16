@@ -149,7 +149,7 @@ tone:
   default: "casual"
   profiles:
     casual:
-      description: "日常同 Sunny 吹水 — 粵語口語、短句、emoji OK"
+      description: "日常對話 — 粵語口語、短句、emoji OK"
     business:
       description: "客戶文件 — 合作邀約 tone、唔出個人名、冇 deadline 壓力"
     client-doc:

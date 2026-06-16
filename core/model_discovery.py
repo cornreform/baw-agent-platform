@@ -169,7 +169,7 @@ KNOWN_PROVIDERS: dict[str, dict] = {
         "env_var": "LAMBDA_API_KEY",
         "base_url": "https://api.lambdalabs.com/v1",
         "protocol": "openai-chat",
-        "model_patterns": [r"^lambda/", r"^hermes"],
+        "model_patterns": [r"^lambda/"],
     },
 
     # ── Cloud / Enterprise ──

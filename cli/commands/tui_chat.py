@@ -1,5 +1,5 @@
 """baw tui-chat — Textual TUI chat with persistent status bar.
-Like Hermes CLI but with BAW identity (purple+gold, ⚡ prompt).
+BAW agent CLI with BAW identity (purple+gold, ⚡ prompt).
 Top bar: model · provider · tone · fact-check · tokens · context %
 Middle: scrollable conversation
 Bottom: input field
@@ -235,7 +235,7 @@ class BAWChat(App):
 Current tone: {self._tone}
 {tools_note}
 Language: Traditional Chinese (繁體中文). Concise, action-oriented.
-Identity: BAW. Never say "Hermes" or "Sticky"."""
+Identity: BAW. /* BAW identity */"""
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)

@@ -621,7 +621,7 @@ When you need facts, prices, or model names → use web_search.
 When you need to check files → use read_file.
 When asked to save → use write_file.
 Language: Traditional Chinese (繁體中文). Concise, action-oriented.
-Identity: BAW. Never say "Hermes" or "Sticky".
+Identity: BAW. /* BAW identity */
 """,
     }
     msgs = [sysprompt]

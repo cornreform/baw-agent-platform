@@ -68,7 +68,6 @@ def check_tool_availability() -> Dict[str, Any]:
         "requests": _try_import("requests"),
         "bs4": _try_import("bs4"),
         "yaml": _try_import("yaml"),
-        "hermes web_extract (browser-render)": _check_web_extract(),
     }
     missing = [name for name, present in required.items() if not present]
     return {
@@ -88,7 +87,6 @@ def _try_import(mod: str) -> Optional[str]:
 
 
 def _check_web_extract() -> Optional[str]:
-    """Hermes exposes a ``web_extract`` tool — verify the runtime can reach it.
 
     We can't shell into the agent from here, so we report based on the
     local file presence of the tool's import path. If the tool is
