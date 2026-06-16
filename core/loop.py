@@ -1532,6 +1532,91 @@ def run_agent(
     if output_parts:
         output += "\n\n"
 
+    # ═══════════════════════════════════════════════════════════════
+    # INLINE GUARD: Router scored this as a simple, direct task.
+    # Skip planner + sub-agent pipeline entirely — execute directly.
+    # ═══════════════════════════════════════════════════════════════
+    _is_inline = getattr(_route, 'delegate', True) is False
+    _is_config_cmd = bool(re.search(
+        r'(config\\s+stt|config\\s+tts|config\\s+vision|'
+        r'method\\s*=\\s*\\S+\\s+model\\s*=\\s*\\S+|'
+        r'api_key_env\\s*=\\s*\\S+|base_url\\s*=\\s*https?://)',
+        prompt, re.IGNORECASE
+    ))
+
+    if _is_inline or _is_config_cmd:
+        logger.info(f"[loop] INLINE execution (delegate={_route.delegate}, config_cmd={_is_config_cmd})")
+        # CRITICAL: Force NO delegation. Model handles task directly with tools.
+        _inline_sys = system_prompt + (
+            "\n\n## [INLINE MODE] Direct execution — NO planner, NO sub-agents\n"
+            "You are the worker. Execute the task directly using your available tools.\n"
+            "- Use the `config` tool for ANY config changes. NEVER delegate.\n"
+            "- Execute NOW. Do NOT write a plan. Do NOT say 'I will follow up.'\n"
+            "- After making changes, verify with read-back. Report result.\n"
+        )
+
+        # Build inline context
+        _inline_msgs = list(ctx.messages) if ctx and ctx.messages else []
+        _inline_msgs.append({"role": "user", "content": prompt})
+        if not ctx:
+            ctx = Context(system_prompt=_inline_sys)
+        ctx.messages = _inline_msgs
+
+        # Tool execution loop (max 5 iterations)
+        _inline_resp = None
+        for _i in range(5):
+            fb = call_llm_with_fallback(
+                config, ctx.to_openai_messages(),
+                tools=get_openai_tools(), temperature=model_temperature,
+            )
+            _inline_resp = fb.response
+            total_llm_calls += 1
+            cost = calculate_cost(model, _inline_resp.input_tokens, _inline_resp.output_tokens)
+            session_cost += cost
+            record_cost(f"{model.provider}/{model.id}", _inline_resp.input_tokens, _inline_resp.output_tokens, cost)
+
+            if not _inline_resp.tool_calls:
+                break  # Done
+
+            for tc in _inline_resp.tool_calls:
+                func = tc.get("function", {})
+                name = func.get("name", "")
+                raw_args = func.get("arguments", "{}")
+                try:
+                    args = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    args = {}
+                perm_result = perm.check(name, args)
+                if perm_result["decision"] == "deny":
+                    ctx.add_tool_result(tc.get("id", ""), name, f"[BLOCKED] {perm_result['reason']}")
+                else:
+                    exe_result = execute_tool(name, args)
+                    ctx.add_tool_result(tc.get("id", ""), name, exe_result)
+                    checkpointer.checkpoint(name, args, exe_result)
+
+        output += (_inline_resp.content if _inline_resp else "") or ""
+        output += f"\n\n{format_cost_summary()}"
+
+        try:
+            mem.remember(f"User: {prompt[:150]} -> BAW (inline): {(_inline_resp.content or '')[:150]}")
+        except Exception:
+            pass
+
+        output = _verify_post_turn_claims(output, data_dir)
+        return output, {
+            "cost": round(session_cost, 4),
+            "model": f"{model.provider}/{model.id}",
+            "iterations": 1,
+            "steps": 1,
+            "mode": "inline",
+            "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
+        }
+
+    # ═══════════════════════════════════════════════════════════════
+    # DELEGATE PATH: Complex tasks — planner -> sub-agents -> synthesis
+    # ═══════════════════════════════════════════════════════════════
+    logger.info(f"[loop] DELEGATE execution (score={_route.score}, tier={_route.tier})")
+
     # ── Phase 3a: Orchestrator writes execution plan ──
     # Build plan messages early so we can parallelize with court
     total_llm_calls = 1
@@ -1553,6 +1638,11 @@ def run_agent(
         "'baw preflight', 'baw todo'), write EXACTLY ONE step: 'Execute the command and report output.'\n"
         "Do NOT split 'run this command' into investigation steps. The user wants the output,\n"
         "not a diagnostic process.\n\n"
+        "CONFIG CHANGE RULE: If the goal is to set config (stt/tts/vision/provider/model),\n"
+        "write EXACTLY ONE step: 'Use config tool to set values, read back to confirm, report result.'\n"
+        "NEVER research config changes — the user gave you the exact values. Just apply them.\n"
+        "NEVER write 'Step 1: Research...' for a config change. That spawns sub-agents unnecessarily.\n"
+        "NEVER delegate config changes to sub-agents. Use the config tool directly.\n\n"
         "Rules:\n"
         "- NEVER write a step that only 'checks' or 'reads' without also modifying or configuring.\n"
         "- Each step must take action, not just report status.\n"
