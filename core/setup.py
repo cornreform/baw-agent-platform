@@ -310,10 +310,8 @@ def _pick_model_menu(
         for m in pcfg.get("models", []):
             mid = m["id"] if isinstance(m, dict) else m
             caps = m.get("capabilities", []) if isinstance(m, dict) else []
-            # Filter by capability only for default/fallback model pick (chat)
-            # For capability-specific picks (stt/tts/vision/etc.), show ALL models
-            # because special IDs like grok-stt don't exist in model lists.
-            if capability == "chat" and caps and "chat" not in caps:
+            # Filter by capability: show matching caps or models with no caps (generic)
+            if caps and capability not in caps:
                 continue
             label = f"{pkey}: {mid}"
             cw = m.get("context_window", "?") if isinstance(m, dict) else "?"
@@ -702,7 +700,7 @@ def cmd_setup(data_dir: Path):
             return {"model": model_id}
         return None
 
-    def _configure_cap(name: str, key: str, auto_fn, providers_cfg: dict):
+    def _configure_cap(name: str, key: str, auto_fn, providers_cfg: dict, auto_models: list[str] | None = None):
         """Interactive capability config: show auto-detect, let user accept/pick/skip."""
         nonlocal changed_caps
 
@@ -723,7 +721,7 @@ def cmd_setup(data_dir: Path):
                 changed_caps = True
             elif choice == "p":
                 cur = existing.get("model") if existing else None
-                extras = [auto_cfg.get("model")] if auto_cfg else None
+                extras = list(dict.fromkeys(filter(None, [auto_cfg.get("model")] + (auto_models or []))))
                 mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, current_model=cur, extra_models=extras)
                 if mid:
                     caps[key] = {"model": mid}
@@ -737,7 +735,8 @@ def cmd_setup(data_dir: Path):
                     pass  # keep existing
                 elif choice == "p":
                     cur = existing.get("model") if existing else None
-                    mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, current_model=cur)
+                    extras = auto_models or None
+                    mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, current_model=cur, extra_models=extras)
                     if mid:
                         caps[key] = {"model": mid}
                         _ok(f"{name} configured ({mid})")
@@ -745,7 +744,8 @@ def cmd_setup(data_dir: Path):
             else:
                 choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: pick model / skip [{C.DIM}S{C.RESET}]: ").strip().lower()
                 if choice == "p":
-                    mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key)
+                    extras = auto_models or None
+                    mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, extra_models=extras)
                     if mid:
                         caps[key] = {"model": mid}
                         _ok(f"{name} configured ({mid})")
@@ -754,8 +754,11 @@ def cmd_setup(data_dir: Path):
             _print_note(f"{name}: skipped (no providers configured)")
 
     if providers:
-        _configure_cap("STT (Speech-to-Text)", "stt", _auto_stt, providers)
-        _configure_cap("TTS (Text-to-Speech)", "tts", _auto_tts, providers)
+        # Known special model IDs not in any provider's model list
+        _stt_extra = ["grok-stt"] if has_xai else []
+        _tts_extra = ["grok-tts"] if has_xai else []
+        _configure_cap("STT (Speech-to-Text)", "stt", _auto_stt, providers, auto_models=_stt_extra)
+        _configure_cap("TTS (Text-to-Speech)", "tts", _auto_tts, providers, auto_models=_tts_extra)
         _configure_cap("Vision", "vision", _auto_vision, providers)
         _configure_cap("Image Generation", "image_generation", _auto_image_gen, providers)
         _configure_cap("Browser", "browser", _auto_browser, providers)
