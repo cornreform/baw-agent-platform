@@ -879,9 +879,29 @@ class TelegramConnector(BaseConnector):
                                             break
                                     elif resp.status_code == 402:
                                         logger.info(f"[Telegram] ASR 402 Quota @ {candidate_url}")
-                                        # Not a failure of the probe itself — keep trying other strategies
                                 except Exception as e:
                                     logger.info(f"[Telegram] OpenAI-compatible ASR failed @ {candidate_url}: {e}")
+
+                            # Strategy 1b: xAI/Grok-style STT endpoint (/v1/stt)
+                            if not text:
+                                try:
+                                    stt_url = f"{b_url}/stt"
+                                    logger.info(f"[Telegram] ASR probe: xAI/Grok @ {stt_url}")
+                                    with httpx.Client(timeout=15, verify=True) as cli:
+                                        files = {"file": (f"voice.{audio_type}", audio_bytes, f"audio/{audio_type}")}
+                                        data = {"model": stt_model_id or "grok-stt", "language": "zh"}
+                                        resp = cli.post(
+                                            stt_url, files=files, data=data,
+                                            headers={"Authorization": f"Bearer {api_key}"},
+                                        )
+                                    if resp.status_code == 200:
+                                        result = resp.json()
+                                        text = result.get("text", "") or result.get("content", "")
+                                        if text:
+                                            used_method = "openai-whisper"
+                                            logger.info(f"[Telegram] ASR OK via xAI/Grok @ {stt_url}")
+                                except Exception as e:
+                                    logger.info(f"[Telegram] xAI/Grok STT failed @ {stt_url}: {e}")
                             # If we got 402, report it but still try SSE
                             if not text and resp and resp.status_code == 402:
                                 self.send(chat_id, "⚠️ Stepfun API 配額不足（402），SSE 可能也一樣...")
