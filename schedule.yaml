@@ -1,0 +1,39 @@
+# BAW Scheduled Tasks
+# Cron format: min hour day month weekday
+# Updated for v1.0.0 container deployment
+
+- name: weekly-self-evolution
+  cron: "0 3 * * 0"
+  command: "!python3 -c 'import sys; sys.path.insert(0,\"/app\"); from core.evolve import auto_optimize, flush_behavior; flush_behavior(); r=auto_optimize(); print(f\"Weekly evolve: {r.get(\\\"patterns_found\\\",0)} patterns, {\\\"soul_patched\\\" if r.get(\\\"soul_patched\\\") else \\\"no changes\\\"}\")'"
+  description: "Weekly self-evolution: analyze memory, revise SOUL.md, optimize config"
+  enabled: true
+
+- name: daily-memory-decay
+  cron: "0 4 * * *"
+  command: "!python3 -c 'import sys; sys.path.insert(0,\"/app\"); from core.memory import MemoryStore; from pathlib import Path; m=MemoryStore(Path.home()/\".baw\"); m.decay()'"
+  description: "Daily memory score decay for old entries"
+  enabled: true
+
+- name: nightly-health-check
+  cron: "0 3 * * *"
+  command: "!python3 -c 'import sys; sys.path.insert(0,\"/app\"); from core.doctor import run_doctor; run_doctor(quiet=True)'"
+  description: "Nightly system health check"
+  enabled: true
+
+- name: daily-evolve-analyze
+  cron: "0 */6 * * *"
+  command: "!python3 -c 'import sys; sys.path.insert(0,\"/app\"); from core.evolve import analyze, auto_optimize, flush_behavior; flush_behavior(); r=auto_optimize(dry_run=True); print(f\"Evolve analyze: {r.get(\\\"patterns_found\\\",0)} patterns, {r.get(\\\"queued_count\\\",0)} queued\")'"
+  description: "Every 6h: analyze behavior + extract correction lessons"
+  enabled: true
+
+- name: daily-kg-extract
+  cron: "30 4 * * *"
+  command: "!python3 -c 'import sys; sys.path.insert(0,\"/app\"); from tools.knowledge_graph import extract_from_memory; print(extract_from_memory())'"
+  description: "Daily: auto-populate knowledge graph from memory store"
+  enabled: true
+
+- name: daily-backup
+  cron: "0 2 * * *"
+  command: "!python3 -c 'import sys; sys.path.insert(0,\"/app\"); from core.backup import create_backup; r = create_backup(); print(f\"Backup: {r[\\\"size_mb\\\"]}MB\")'"
+  description: "Daily backup of ~/.baw/ (config, memory, skills) — keeps last 7"
+  enabled: true

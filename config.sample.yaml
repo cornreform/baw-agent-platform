@@ -1,253 +1,287 @@
-# BAW Agent Platform Configuration
-# Linux + macOS compatible
-# Protocol-agnostic: switch models by changing one line
-
-model:
-  default: "deepseek-v4-flash"
-  # Fallback used when primary fails (must be a DIFFERENT model — Opus 4.8 audit P0-2).
-  fallback: "deepseek-reasoner"
-  # To switch: change the line above to any model ID below
-  # Examples: "MiniMax-M3", "claude-sonnet-4-20250514", "gemini-2.5-pro"
-
-  # ── Per-task model routing ──
-  # When delegate_task is called, the goal is matched against these rules.
-  # First match wins. If no match, falls back to executor.model.
-  task_rules:
-    - match: "search|product|購買|價錢|價格|price|shop|商店|查詢|research|find|lookup"
-      model: "deepseek-v4-flash"
-    - match: "code|debug|fix|bug|error|program|script|python|node|測試|修復"
-      model: "deepseek-v4-flash"
-    - match: "vision|image|photo|圖片|相片|screenshot|截圖"
-      model: "MiniMax-M3"
-    - match: "write|create|build|製作|建立|generate|生成|設計|design"
-      model: "deepseek-v4-flash"
-
-# ── Executor config ──
-executor:
-  model: "MiniMax-M2.5"
-
+adversarial:
+  angel_model: deepseek-v4-flash
+  devil_model: MiniMax-M3
+  enabled: true
+  flag_threshold: 0
+  warn_threshold: 2
 capabilities:
-  # ── MiniMax-M3 capabilities ──
-  # Multimodal model: vision (image understanding), STT (audio transcription),
-  # image_generation (text-to-image), chat, and TTS all routed through
-  # the MiniMax-M3 endpoint at https://api.minimax.io/v1
-  MiniMax-M3:
-    stt:               "MiniMax-M3"
-    image_generation:  "MiniMax-M3"
-    vision:            "MiniMax-M3"
-
-  vision:
-    model: "MiniMax-M3"
-  chat:
-    model: "deepseek-v4-flash"
-  image_generation:
-    model: "MiniMax-M3"
-  stt:
-    method: stepfun-asr
-    model: stepaudio-2.5-asr
-    base_url: https://api.stepfun.ai/step_plan/v1
-    api_key_env: STEPFUN_API_KEY
-  tts:
-    model: "MiniMax-M3"
   browser:
-    # Browser internal LLM — used for the in-browser page-understanding /
-    # summarization / form-fill reasoning loop, not the chat surface.
-    model: "deepseek-v4-flash"
+    model: deepseek-v4-flash
+  chat:
+    model: deepseek-v4-flash
   delegate_task:
-    # Sub-agent delegation LLM — picks the model per task_rules above,
-    # but the default fallback (and the meta-planner that *chooses* the
-    # sub-agent) runs on deepseek-v4-flash for speed + low cost.
-    model: "deepseek-v4-flash"
-  web_extract:
-    model: "deepseek-v4-flash"
+    fallback: deepseek-v4-flash
+    model: MiniMax-M2.5
+  executor:
+    model: MiniMax-M2.5
+  image_generation:
+    model: MiniMax-M3
+  stt:
+    api_key_env: XAI_API_KEY
+    base_url: https://api.x.ai/v1
+    language: zh
+    method: auto-asr
+    model: grok-stt
+  tts:
+    config:
+      api_model: stepaudio-2.5-tts
+      base_url: https://api.stepfun.ai/v1
+    method: model
+    model: stepaudio-2.5-tts
+    voice: Cantonese_GentleLady
+  vision:
+    model: MiniMax-M3
   web_browser:
-    model: "deepseek-v4-flash"
-
-providers:
-  # ── OpenAI-compatible (default protocol: openai-chat) ──────────
-  # Works with: DeepSeek, MiniMax, Groq, Together, OpenRouter, etc.
-  deepseek:
-    base_url: "https://api.deepseek.com/v1"
-    api_key_env: "DEEPSEEK_API_KEY"
-    models:
-      - id: "deepseek-v4-flash"
-        context_window: 65536
-        vision: false
-        cost_per_1m_input: 0.30
-        cost_per_1m_output: 1.20
-      - id: "deepseek-reasoner"
-        context_window: 65536
-        vision: false
-        cost_per_1m_input: 0.55
-        cost_per_1m_output: 2.19
-
-  minimax:
-    base_url: "https://api.minimax.io/v1"
-    api_key_env: "MINIMAX_API_KEY"
-    models:
-      - id: "MiniMax-M3"
-        context_window: 1048576
-        vision: true
-        cost_per_1m_input: 2.00
-        cost_per_1m_output: 8.00
-      - id: "MiniMax-M2.5"
-        context_window: 1048576
-        vision: false
-        cost_per_1m_input: 0.50
-        cost_per_1m_output: 2.00
-
-  # ── Anthropic protocol ─────────────────────────────────────────
-  # All Claude models via anthropic.com
-  # anthropic:
-  #   base_url: "https://api.anthropic.com/v1"
-  #   api_key_env: "ANTHROPIC_API_KEY"
-  #   protocol: anthropic
-  #   models:
-  #     - id: "claude-sonnet-4-20250514"
-  #       context_window: 200000
-  #       vision: true
-  #       cost_per_1m_input: 3.00
-  #       cost_per_1m_output: 15.00
-
-  # ── Google protocol ────────────────────────────────────────────
-  # All Gemini models via Google AI Studio
-  # google:
-  #   base_url: "https://generativelanguage.googleapis.com/v1beta"
-  #   api_key_env: "GEMINI_API_KEY"
-  #   protocol: google
-  #   models:
-  #     - id: "gemini-2.5-pro"
-  #       context_window: 1048576
-  #       vision: true
-  #       cost_per_1m_input: 1.25
-  #       cost_per_1m_output: 5.00
-
-  # ── Custom protocols ──────────────────────────────────────────
-  # Any provider can be added with register_protocol("name", handler_fn).
-  # See core/llm.py for examples.
-
+    model: step-3.7-flash
+  web_extract:
+    model: step-3.7-flash
+evolve:
+  known_issues:
+  - detected: '2026-06-16T15:45:01.097470'
+    rate: 6/7
+    tool: write_file
+executor:
+  model: step-3.7-flash
+fact_check:
+  mode: normal
+mode: quick
+model:
+  default: deepseek-v4-flash
+  fallback: MiniMax-M3
+  task_rules:
+  - match: search|product|購買|價錢|價格|price|shop|商店|查詢|research|find|lookup
+    model: step-3.7-flash
+  - match: code|debug|fix|bug|error|program|script|python|node|測試|修復
+    model: step-3.7-flash
+  - match: vision|image|photo|圖片|相片|screenshot|截圖
+    model: step-3.7-flash
+  - match: write|create|build|製作|建立|generate|生成|設計|design
+    model: step-3.7-flash
 permissions:
   risk_levels:
     high:
-      - path: "/etc/*"
-      - path: "/usr/*"
-      - path: "/boot/*"
-      - path: "*.pem"
-      - path: "*.key"
-      - path: ".env"
-      - cmd_prefix: "rm -rf"
-      - cmd_prefix: "sudo"
-      - cmd_prefix: "dd if="
-    medium:
-      - tool: "write_file"
-      - tool: "bash"
+    - path: /etc/*
+    - path: /usr/*
+    - path: /boot/*
+    - path: '*.pem'
+    - path: '*.key'
+    - path: .env
+    - cmd_prefix: rm -rf
+    - cmd_prefix: sudo
+    - cmd_prefix: dd if=
     low:
-      - tool: "read_file"
-      - tool: "web_search"
-
+    - tool: read_file
+    - tool: web_search
+    medium:
+    - tool: write_file
+    - tool: bash
+providers:
+  deepseek:
+    api_key_env: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com/v1
+    models:
+    - capabilities:
+      - chat
+      context_window: 65536
+      cost_per_1m_input: 0.3
+      cost_per_1m_output: 1.2
+      id: deepseek-v4-flash
+    - capabilities:
+      - chat
+      context_window: 65536
+      id: deepseek-v4-pro
+    - capabilities:
+      - chat
+      context_window: 65536
+      id: deepseek-reasoner
+  minimax:
+    api_key_env: MINIMAX_API_KEY
+    base_url: https://api.minimax.chat/v1
+    models:
+    - capabilities:
+      - chat
+      - vision
+      - tts
+      - image_generation
+      context_window: 1048576
+      id: MiniMax-M3
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: MiniMax-M2.5
+  moonshot:
+    api_key_env: MOONSHOT_API_KEY
+    base_url: https://api.moonshot.ai/v1
+    models:
+    - context_window: 262144
+      cost_per_1m_input: 1.0
+      cost_per_1m_output: 3.0
+      id: kimi-k2.6
+      vision: true
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: moonshot-v1-8k-vision-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: moonshot-v1-8k
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: kimi-k2.5
+    - capabilities:
+      - chat
+      - vision
+      context_window: 32000
+      id: moonshot-v1-32k-vision-preview
+    - capabilities:
+      - chat
+      context_window: 32000
+      id: moonshot-v1-32k
+    - capabilities:
+      - chat
+      - vision
+      context_window: 128000
+      id: moonshot-v1-128k-vision-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: moonshot-v1-auto
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: kimi-k2.7-code-highspeed
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: kimi-k2.7-code
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: moonshot-v1-128k
+  stepfun:
+    api_key_env: STEPFUN_API_KEY
+    base_url: https://api.stepfun.ai/step_plan/v1
+    models:
+    - context_window: 262144
+      cost_per_1m_input: 0.5
+      cost_per_1m_output: 2.0
+      id: step-3.7-flash
+      vision: false
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: step-3.5-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: step-3.5-flash-2603
+    - capabilities:
+      - chat
+      - tts
+      context_window: 131072
+      id: stepaudio-2.5-tts
+    - capabilities:
+      - chat
+      - stt
+      context_window: 131072
+      id: stepaudio-2.5-asr
+    - capabilities:
+      - chat
+      - image_generation
+      context_window: 131072
+      id: step-image-edit-2
+    - capabilities:
+      - chat
+      - tts
+      context_window: 131072
+      id: step-tts-2
+  xai:
+    api_key_env: XAI_API_KEY
+    base_url: https://api.x.ai/v1
+    models:
+    - capabilities:
+      - chat
+      - stt
+      context_window: 131072
+      id: grok-stt
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-3
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-3-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-4.20-0309-non-reasoning
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-4.20-0309-reasoning
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-4.20-multi-agent-0309
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-4.3
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-build-0.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-imagine-image
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-imagine-image-quality
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-imagine-video
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-imagine-video-1.5-preview
+router:
+  strategy: balanced
+telegram:
+  admin_chat_id: 565235243
+  allowed_users:
+  - 565235243
+  chat_id: 565235243
+  token: 8819557857:AAFCSB5BGe6LOJraLhyqeCK06WjN1pS7npk
 tone:
-  default: "casual"
+  default: casual
   profiles:
-    casual:
-      description: "日常對話 — 粵語口語、短句、emoji OK"
     business:
-      description: "客戶文件 — 合作邀約 tone、唔出個人名、冇 deadline 壓力"
+      description: 客戶文件 — 合作邀約 tone、唔出個人名、冇 deadline 壓力
+    casual:
+      description: 日常同 Sunny 吹水 — 粵語口語、短句、emoji OK
     client-doc:
-      description: "Client facing 文件 — 零 comment、零 meta、直接出 artifact"
-    teaching:
-      description: "教學文件 — 直接俾 .md、唔問要唔要 extra format"
+      description: Client facing 文件 — 零 comment、零 meta、直接出 artifact
     ot-rt:
-      description: "快速執行 — 做完先報、唔逐 step confirm"
+      description: 快速執行 — 做完先報、唔逐 step confirm
     stepwise:
-      description: "逐步執行 — 每步報 result、等 confirm 先繼續"
-
-fact_check:
-  mode: "normal"
-
-adversarial:
-  enabled: true
-  # angel_model: "kimi-k2.6"    # Optional: override Angel's model (default: model.default)
-  # devil_model: "kimi-k2.6"    # Optional: override Devil's model (default: model.default)
-  flag_threshold: 0
-  warn_threshold: 2
-
-# ── Tribunal (Multi-Model Consensus) ──
-# Optional — if omitted, Tribunal auto-detects from available models.
+      description: 逐步執行 — 每步報 result、等 confirm 先繼續
+    teaching:
+      description: 教學文件 — 直接俾 .md、唔問要唔要 extra format
 tribunal:
-  # The judge that synthesises the final verdict
-  chief:
-    name: "deepseek-v4-pro"
-    provider: "deepseek"
-
-  # The panel of judges that evaluate independently
   bench:
-    - name: "deepseek-v4-flash"
-      provider: "deepseek"
-      role: "analyst"
-    - name: "MiniMax-M3"
-      provider: "minimax"
-      role: "creative"
-    # Add more judges as needed:
-    # - name: "claude-sonnet-4"
-    #   provider: "anthropic"
-    #   role: "cautious"
-
-# ── Messaging Platforms ──────────────────────────────────────────────────────────
-# Uncomment and configure the platforms you want to use.
-# BAW can run multiple platforms simultaneously.
-
-# ── Telegram ──
-# telegram:
-#   token: "YOUR_BOT_TOKEN"           # From @BotFather
-#   # Optional: restrict to specific chats
-#   # allowed_chats: ["123456789", "-1001234567890"]
-
-# ── Discord ──
-# discord:
-#   token: "YOUR_BOT_TOKEN"           # From Discord Developer Portal
-#   # Optional: restrict to specific channels
-#   # allowed_channels: ["1234567890123456789"]
-#   # Command prefix (e.g. "baw " means only respond to "baw hello")
-#   prefix: "baw "
-
-# ── Slack (Socket Mode) ──
-# slack:
-#   bot_token: "xoxb-YOUR-BOT-TOKEN"  # Bot User OAuth Token
-#   app_token: "xapp-YOUR-APP-TOKEN"  # App-Level Token (Socket Mode)
-#   # Optional: respond only in these channels
-#   # allowed_channels: ["C1234567890"]
-#   # Optional: respond only to these users
-#   # allowed_users: ["U1234567890"]
-#   # Optional: command prefix (empty = respond to DMs and @mentions)
-#   prefix: ""
-
-# ── Matrix ──
-# matrix:
-#   homeserver: "https://matrix.org"
-#   username: "@baw:matrix.org"
-#   # Use either password OR access_token (token is preferred)
-#   password: "YOUR_PASSWORD"
-#   # access_token: "YOUR_ACCESS_TOKEN"
-
-# ── Signal ──
-# signal:
-#   phone: "+15551234567"             # Your Signal phone number
-#   signal_cli_path: "signal-cli"     # Path to signal-cli binary
-#   # Note: signal-cli daemon must be running separately for receiving messages
-
-# ── WhatsApp (Cloud API) ──
-# whatsapp:
-#   token: "YOUR_PERMANENT_TOKEN"     # From Meta Developer Portal
-#   phone_number_id: "YOUR_PHONE_ID"  # WhatsApp Business phone number ID
-#   # webhook_secret: "YOUR_VERIFY_TOKEN"  # For webhook verification
-#   # Note: Requires a public webhook URL (use nginx/Caddy reverse proxy)
-
-# ── Multi-platform behaviour ──
-# Optional: platform-specific overrides
-# platform_settings:
-#   telegram:
-#     max_message_length: 4096
-#   slack:
-#     max_message_length: 4000
-#   discord:
-#     max_message_length: 1900
+  - name: step-3.7-flash
+    provider: stepfun
+    role: analyst
+  - name: kimi-k2.6
+    provider: moonshot
+    role: creative
+  chief:
+    name: step-3.7-flash
+    provider: stepfun
