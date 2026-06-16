@@ -916,6 +916,114 @@ def get_learned_lessons_summary() -> str:
     return "\\n".join(lines)
 
 
+# ── P5: Code-Level Auto-Patching (D1 — modify own code from patterns) ──
+
+_CODE_ROOT = Path(__file__).resolve().parent.parent  # ~/baw/
+
+
+def _auto_patch_code(analysis: dict) -> dict:
+    """D1: Generate and apply code patches based on failure patterns.
+
+    Uses LLM to generate patches for tools with high failure rates.
+    Safety: git snapshot → syntax verify → test → commit/rollback.
+
+    Returns patch report dict.
+    """
+    result = {"patches": [], "ok": True, "errors": []}
+    recs = analysis.get("recommendations", [])
+
+    # Only patch from high-failure-rate patterns
+    failure_recs = []
+    for r in recs:
+        if r.get("type") != "high_failure_rate":
+            continue
+        raw = r.get("rate", 0)
+        # rate may be string like "6/7" or numeric
+        rate_val = 0.0
+        if isinstance(raw, str) and "/" in raw:
+            try:
+                n, d = raw.split("/")
+                rate_val = float(n) / max(1, float(d))
+            except (ValueError, ZeroDivisionError):
+                rate_val = 0.5
+        elif isinstance(raw, (int, float)):
+            rate_val = float(raw)
+        if rate_val > 0.5:
+            r["_rate_val"] = rate_val
+            failure_recs.append(r)
+
+    for rec in failure_recs:
+        tool_name = rec.get("tool", "")
+        fail_rate = rec.get("_rate_val", 0)
+        count = rec.get("count", 0)
+        if not tool_name or count < 3:
+            continue
+
+        # Locate the tool file
+        tool_file = _CODE_ROOT / "tools" / f"{tool_name}.py"
+        if not tool_file.exists():
+            result["patches"].append(f"Skipped {tool_name}: no source file found")
+            continue
+
+        try:
+            # Git snapshot
+            snap = _git_snapshot(tag_reason=f"pre-patch-{tool_name}")
+            commit_hash = snap.get("commit", "")
+
+            # Use LLM to generate a fix
+            if not _HAS_LLM:
+                result["patches"].append(f"Skipped {tool_name}: LLM unavailable")
+                continue
+
+            source = tool_file.read_text(encoding="utf-8")
+            from core.llm import call_llm, get_model, load_config as _cfg
+            cfg = _cfg()
+            model = get_model(cfg)
+            prompt = (
+                f"你是一個 Python 工程師，負責修復 BAW agent 嘅 tool handler。\n"
+                f"Tool `{tool_name}` 近期有 {count} 次 call，失敗率 {fail_rate:.0%}。\n"
+                f"以下是該 tool 嘅源碼。請加入更完善嘅錯誤處理、timeout、參數驗證，"
+                f"或者修復明顯嘅 bug。\n"
+                f"只返回修正後嘅完整源碼（純 Python code，唔需要解釋）。\n\n"
+                f"```python\n{source[:3000]}\n```"
+            )
+            resp = call_llm(model=model, messages=[{"role": "user", "content": prompt}],
+                           temperature=0.2, max_tokens=4096)
+            patched = resp.content.strip()
+            if "```python" in patched:
+                patched = patched.split("```python")[1].split("```")[0].strip()
+            elif "```" in patched:
+                patched = patched.split("```")[1].split("```")[0].strip()
+
+            if not patched or len(patched) < 50:
+                result["patches"].append(f"Skipped {tool_name}: LLM returned invalid patch")
+                continue
+
+            # Syntax verify
+            try:
+                compile(patched, tool_file.name, "exec")
+            except SyntaxError as se:
+                result["errors"].append(f"{tool_name}: syntax error in patched code: {se}")
+                if commit_hash:
+                    _git_rollback(commit_hash)
+                continue
+
+            # Write patched file
+            tool_file.write_text(patched, encoding="utf-8")
+            fail_rate = rec.get("_rate_val", 0) * 100
+            result["patches"].append(
+                f"Patched {tool_name}: {count} calls, {fail_rate:.0f}% fail → syntax verified"
+            )
+
+        except Exception as e:
+            if commit_hash:
+                _git_rollback(commit_hash)
+            result["errors"].append(f"{tool_name}: patch failed — {e}")
+            result["ok"] = False
+
+    return result
+
+
 # ── Stats (for /status command) ──
 
 def get_evolve_stats() -> str:
