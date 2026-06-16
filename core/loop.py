@@ -923,6 +923,11 @@ def run_agent(
     Returns: (response_text, info_dict)
     """
     # ── Initialise ──
+    # CRITICAL: Register all tools BEFORE any LLM call.
+    # Without this, get_openai_tools() returns empty → model has no tools to call.
+    from tools import register_all
+    register_all()
+
     model = get_model(config, model_id)
     model_temperature = getattr(model, "temperature", 0.7)
     perm = PermissionEngine(config)
@@ -1589,9 +1594,13 @@ def run_agent(
         total_llm_calls = 0
         session_cost = 0.0
 
-        # Tool execution loop (max 5 iterations)
+        # ── Promise tracker ──
+        # Tracks what the model promised to do, then verifies it was done.
+        _pending_promises: list[str] = []
+
+        # Tool execution loop (max 8 iterations — more room for verification)
         _inline_resp = None
-        for _i in range(5):
+        for _i in range(8):
             fb = call_llm_with_fallback(
                 config, ctx.to_openai_messages(),
                 tools=get_openai_tools(), temperature=model_temperature,
@@ -1603,7 +1612,84 @@ def run_agent(
             record_cost(f"{model.provider}/{model.id}", _inline_resp.input_tokens, _inline_resp.output_tokens, cost)
 
             if not _inline_resp.tool_calls:
-                break  # Done
+                # ── Promise-based verification guard ──
+                # 1. Extract promises from the model's text
+                # 2. Check if pending promises were fulfilled
+                # 3. If new promises made but no tools called → force execution
+                _response_text = _inline_resp.content or ""
+                _content_lower = _response_text.lower()
+                _promise_patterns = [
+                    ("i will ", "I will"), ("i'll ", "I'll"),
+                    ("let me ", "Let me"),
+                    ("下一步", "下一步"), ("會去", "會去"),
+                    ("我會", "我會"), ("我會先", "我會先"),
+                    ("go do", "go do"), ("going to", "going to"),
+                    ("check and", "check and"), ("look into", "look into"),
+                    ("investigate", "investigate"), ("find out", "find out"),
+                    ("我而家", "我而家"), ("跟住", "跟住"),
+                    ("之後會", "之後會"), ("先檢查", "先檢查"),
+                ]
+
+                # Extract new promises from this response
+                _new_promises = []
+                for p_lower, p_label in _promise_patterns:
+                    if p_lower in _content_lower:
+                        # Extract the sentence containing the promise
+                        for _sent in _response_text.split("。"):
+                            if p_lower in _sent.lower():
+                                _new_promises.append(_sent.strip()[:120])
+                                break
+
+                if _new_promises:
+                    # Model made promises but no tools → HARD enforcement
+                    _promise_list = "\n".join(f"  ✗ \"{p}\"" for p in _new_promises[:3])
+
+                    if _pending_promises:
+                        # Also show what was previously promised
+                        _old_list = "\n".join(f"  ⏳ \"{p}\"" for p in _pending_promises[-3:])
+                        _repropmpt = (
+                            f"[PROMISE BROKEN] You previously promised:\n{_old_list}\n\n"
+                            f"And NOW you promised:\n{_promise_list}\n\n"
+                            f"ZERO tools were called. Every promise is a lie until a tool executes.\n"
+                            f"You MUST call a tool RIGHT NOW. Pick ONE thing from your promises\n"
+                            f"and execute it. No more text. Only tool calls."
+                        )
+                    else:
+                        _repropmpt = (
+                            f"[PROMISE BROKEN] You said:\n{_promise_list}\n\n"
+                            f"But called ZERO tools. These are empty words.\n"
+                            f"You MUST call a tool NOW. Execute the FIRST promised action.\n"
+                            f"No explanation. No planning text. Just a tool call."
+                        )
+
+                    # Track these new promises
+                    _pending_promises.extend(_new_promises)
+                    if len(_pending_promises) > 10:
+                        _pending_promises = _pending_promises[-10:]
+
+                    # After 3 retries, inject the actual tool list
+                    if _i >= 3:
+                        _tool_names = [t["function"]["name"] for t in get_openai_tools()]
+                        _repropmpt += (
+                            "\n\nAvailable tools:\n"
+                            + "\n".join(f"  - {n}" for n in _tool_names)
+                            + "\n\nPick ONE tool that matches your promise. Call it NOW."
+                        )
+
+                    ctx.add_user(_repropmpt)
+                    continue
+
+                # No promises, no tools → genuinely done
+                if _pending_promises:
+                    # Model stopped talking but pending promises were never kept
+                    _old_list = "\n".join(f"  ⏳ \"{p}\"" for p in _pending_promises[-3:])
+                    ctx.add_user(
+                        f"[PROMISE AUDIT] You still have unfulfilled promises:\n{_old_list}\n\n"
+                        f"You stopped responding. Fulfill at least ONE promise by calling a tool."
+                    )
+                    continue
+
+                break  # Really done
 
             for tc in _inline_resp.tool_calls:
                 func = tc.get("function", {})

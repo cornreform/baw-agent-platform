@@ -651,15 +651,64 @@ def cmd_setup(data_dir: Path):
     has_stepfun = "STEPFUN_API_KEY" in all_keys
     has_xai = "XAI_API_KEY" in all_keys
 
+    def _probe_stt_endpoint(base_url: str, api_key_env: str, model_id: str) -> bool:
+        """Quick probe: check if an STT endpoint is reachable.
+        Returns True if endpoint responds (any valid API response, not 404)."""
+        import httpx as _hx
+        api_key = os.environ.get(api_key_env, "")
+        if not api_key:
+            return False
+        b_url = base_url.rstrip("/")
+        # Try common STT endpoint paths
+        for path in ["/stt", "/audio/transcriptions", "/audio/asr/sse"]:
+            url = f"{b_url}{path}"
+            try:
+                resp = _hx.post(
+                    url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    # Send tiny valid JSON to see if endpoint recognises the format
+                    json={"model": model_id, "test": True},
+                    timeout=5,
+                )
+                # 404 = endpoint doesn't exist at this path
+                # 400/422 = endpoint exists but rejects our request format (probe succeeded)
+                # 200 = endpoint exists and accepted (unlikely without real audio)
+                if resp.status_code != 404:
+                    print(f"  {C.DIM}  Probe {path}: HTTP {resp.status_code}{C.RESET}")
+                    return True
+            except Exception:
+                continue
+        return False
+
     def _auto_stt() -> dict | None:
+        # Priority 1: Stepfun (proven working ASR endpoint)
         if has_stepfun:
             plan = plan_choices.get("STEPFUN_API_KEY", "standard")
             stt_base = "https://api.stepfun.ai/step_plan/v1" if plan == "step_plan" else "https://api.stepfun.ai/v1"
-            return {"method": "auto-asr", "model": "stepaudio-2.5-asr", "base_url": stt_base, "api_key_env": "STEPFUN_API_KEY"}
-        if has_minimax:
-            return {"method": "model", "model": "MiniMax-M3"}
+            print(f"  {C.DIM}  Probing Stepfun ASR...{C.RESET}")
+            if _probe_stt_endpoint(stt_base, "STEPFUN_API_KEY", "stepaudio-2.5-asr"):
+                return {"method": "auto-asr", "model": "stepaudio-2.5-asr", "base_url": stt_base, "api_key_env": "STEPFUN_API_KEY"}
+
+        # Priority 2: xAI/Grok (uses /v1/stt, not /v1/audio/transcriptions)
         if has_xai:
-            return {"method": "auto-asr", "model": "grok-stt", "base_url": "https://api.x.ai/v1", "api_key_env": "XAI_API_KEY"}
+            print(f"  {C.DIM}  Probing xAI/Grok STT...{C.RESET}")
+            if _probe_stt_endpoint("https://api.x.ai/v1", "XAI_API_KEY", "grok-stt"):
+                return {"method": "auto-asr", "model": "grok-stt", "base_url": "https://api.x.ai/v1", "api_key_env": "XAI_API_KEY"}
+
+        # Priority 3: MiniMax (claims model-level STT)
+        if has_minimax:
+            print(f"  {C.DIM}  MiniMax model STT (no endpoint needed){C.RESET}")
+            return {"method": "model", "model": "MiniMax-M3"}
+
+        # Fallback: faster-whisper if installed
+        try:
+            import faster_whisper as _fw
+            _ = _fw  # suppress unused
+            print(f"  {C.DIM}  Using faster-whisper (local, free){C.RESET}")
+            return {"method": "faster-whisper", "model": "base"}
+        except ImportError:
+            pass
+
         return None
 
     def _auto_tts() -> dict | None:
@@ -723,7 +772,12 @@ def cmd_setup(data_dir: Path):
                 extras = list(dict.fromkeys(filter(None, [auto_cfg.get("model")] + (auto_models or []))))
                 mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, current_model=cur, extra_models=extras)
                 if mid:
-                    caps[key] = {"model": mid}
+                    # Merge auto-cfg's infrastructure fields (method, base_url, api_key_env, config)
+                    # with user's chosen model. Without this, e.g. STT gets only model="grok-stt"
+                    # but missing method, base_url, api_key_env — and fails at runtime.
+                    result = dict(auto_cfg)  # copy all auto-detected fields
+                    result["model"] = mid    # override model with user's choice
+                    caps[key] = result
                     _ok(f"{name} configured ({mid})")
                     changed_caps = True
         elif providers_cfg:
@@ -737,7 +791,10 @@ def cmd_setup(data_dir: Path):
                     extras = auto_models or None
                     mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, current_model=cur, extra_models=extras)
                     if mid:
-                        caps[key] = {"model": mid}
+                        # When no auto-cfg, keep existing fields + swap model
+                        result = dict(existing) if existing else {}
+                        result["model"] = mid
+                        caps[key] = result
                         _ok(f"{name} configured ({mid})")
                         changed_caps = True
             else:
@@ -834,6 +891,41 @@ def cmd_setup(data_dir: Path):
                 token = input(f"  {C.MAGENTA}?{C.RESET} Telegram Bot Token: ").strip()
             if token:
                 cfg.setdefault("telegram", {})["token"] = token
+                # Configure allowed_users
+                current_users = cfg.get("telegram", {}).get("allowed_users", [])
+                if current_users:
+                    current_str = ", ".join(str(u) for u in current_users)
+                    _print_item("allowed_users", current_str)
+                    change = input(f"  {C.MAGENTA}?{C.RESET} Change allowed users? (y/N): ").strip().lower()
+                    if change == "y":
+                        users_raw = input(f"  {C.MAGENTA}?{C.RESET} Allowed user IDs (comma-separated): ").strip()
+                        if users_raw:
+                            users = []
+                            for part in users_raw.replace(",", " ").split():
+                                part = part.strip()
+                                try:
+                                    users.append(int(part))
+                                except ValueError:
+                                    _warn(f"Invalid user ID: {part} — skipped")
+                            if users:
+                                cfg["telegram"]["allowed_users"] = users
+                                _ok(f"Allowed users set: {users}")
+                else:
+                    users_raw = input(f"  {C.MAGENTA}?{C.RESET} Allowed Telegram user IDs (comma-separated, or blank for all): ").strip()
+                    if users_raw:
+                        users = []
+                        for part in users_raw.replace(",", " ").split():
+                            part = part.strip()
+                            try:
+                                users.append(int(part))
+                            except ValueError:
+                                _warn(f"Invalid user ID: {part} — skipped")
+                        if users:
+                            cfg.setdefault("telegram", {})["allowed_users"] = users
+                        else:
+                            cfg.setdefault("telegram", {})["allowed_users"] = []
+                    else:
+                        cfg.setdefault("telegram", {})["allowed_users"] = []
                 _ok("Telegram configured")
                 platforms_configured.append("Telegram")
             else:
@@ -915,6 +1007,37 @@ def cmd_setup(data_dir: Path):
     if new_env:
         _ok(f"API keys saved to {env_path}")
     print()
+
+    # ── Self-test: verify each configured capability is complete ──
+    _print_section("Self-Test")
+    _all_good = True
+    cap_checks = {
+        "stt": ["method", "model", "base_url", "api_key_env"],
+        "tts": ["method", "model"],
+        "vision": ["model"],
+        "image_generation": ["model"],
+        "browser": ["model"],
+    }
+    for cap_name, required_fields in cap_checks.items():
+        cap_cfg = cfg.get("capabilities", {}).get(cap_name, {})
+        if not cap_cfg:
+            continue  # not configured, skip
+        missing = [f for f in required_fields if f not in cap_cfg or not str(cap_cfg.get(f, "")).strip()]
+        if missing:
+            _warn(f"{cap_name}: missing fields {missing}")
+            _print_note(f"  Run: baw config set capabilities.{cap_name}.<field> <value>")
+            _all_good = False
+        else:
+            # Check api_key_env actually set in env
+            env_key = cap_cfg.get("api_key_env", "")
+            if env_key and env_key not in os.environ and env_key not in existing_env:
+                # Also check the loaded env file
+                _warn(f"{cap_name}: {env_key} not found in env")
+                _all_good = False
+    if _all_good:
+        _ok("All capabilities have complete configuration")
+    print()
+
     _print_note("Next steps:")
     _print_note("  1. Run 'baw --doctor'     — verify everything works")
     _print_note("  2. Run 'baw \"hello\"'      — test the agent")

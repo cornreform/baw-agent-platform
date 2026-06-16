@@ -284,6 +284,7 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: st
         MAX_VERIFY_RETRIES = 2  # P1-4: hard cap so we don't loop forever
         OVERALL_TIMEOUT = 300  # 5 minutes max for entire sub-agent
         _start_time = __import__('time').time()
+        _sub_promises: list[str] = []  # Promise tracker across iterations
 
         try:
             for iteration in range(max_iterations):
@@ -308,7 +309,53 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: st
                     final_content = resp.content
 
                 if not resp.tool_calls:
-                    break
+                    # ── Promise-based verification guard (sub-agent) ──
+                    _resp_text = resp.content or ""
+                    _resp_lower = _resp_text.lower()
+                    _promise_patterns = [
+                        ("i will ", "I will"), ("i'll ", "I'll"),
+                        ("let me ", "Let me"),
+                        ("下一步", "下一步"), ("會去", "會去"),
+                        ("我會", "我會"), ("我會先", "我會先"),
+                        ("go do", "go do"), ("going to", "going to"),
+                        ("check and", "check and"), ("look into", "look into"),
+                        ("investigate", "investigate"), ("find out", "find out"),
+                        ("我而家", "我而家"), ("跟住", "跟住"),
+                        ("之後會", "之後會"), ("先檢查", "先檢查"),
+                    ]
+                    _new_subs = []
+                    for p_lower, p_label in _promise_patterns:
+                        if p_lower in _resp_lower:
+                            for _sent in _resp_text.split("。"):
+                                if p_lower in _sent.lower():
+                                    _new_subs.append(_sent.strip()[:120])
+                                    break
+                    if _new_subs:
+                        _sub_list = "\n".join(f"  ✗ \"{p}\"" for p in _new_subs[:3])
+                        _repropmpt = (
+                            f"[PROMISE BROKEN] You said:\n{_sub_list}\n\n"
+                            f"ZERO tools called. You MUST call a tool NOW.\n"
+                            f"No text. Only tool calls."
+                        )
+                        _sub_promises.extend(_new_subs)
+                        if iteration >= 3:
+                            _tool_names = [t["function"]["name"] for t in openai_tools]
+                            _repropmpt += (
+                                "\n\nAvailable tools:\n"
+                                + "\n".join(f"  - {n}" for n in _tool_names)
+                                + "\n\nPick ONE tool matching your promise. Call it NOW."
+                            )
+                        ctx.add_user(_repropmpt)
+                        continue
+                    # Check if previous promises were never kept
+                    if _sub_promises:
+                        _old_list = "\n".join(f"  ⏳ \"{p}\"" for p in _sub_promises[-3:])
+                        ctx.add_user(
+                            f"[PROMISE AUDIT] Unfulfilled:\n{_old_list}\n"
+                            "Call a tool NOW or the task FAILS."
+                        )
+                        continue
+                    break  # Really done
 
                 _tool_calls_made += len(resp.tool_calls)
                 ctx.add_assistant(resp.content, resp.tool_calls)

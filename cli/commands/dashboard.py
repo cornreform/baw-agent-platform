@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer
+from textual.widgets import Header, Footer, Static
 from textual.containers import Grid
 from textual.binding import Binding
 from rich.table import Table
@@ -219,18 +219,11 @@ class BAWDashboard(App):
         margin: 1 1;
     }
     #sys, #models, #conn, #sessions, #memory, #activity {
-        border: round #2a1535;
         background: #131320;
         padding: 0 1;
         overflow: hidden;
         min-height: 6;
     }
-    #sys { border: round #8855aa; }
-    #models { border: round #8855aa; }
-    #conn { border: round #8855aa; }
-    #sessions { border: round #8855aa; }
-    #memory { border: round #8855aa; }
-    #activity { border: round #8855aa; }
     """
 
     BINDINGS = [
@@ -251,7 +244,7 @@ class BAWDashboard(App):
         yield Header(show_clock=True)
         with Grid(id="grid"):
             for pid, (title, _) in self.PANELS.items():
-                yield Panel("", id=pid, title=title, border_style="magenta")
+                yield Static(Panel("", title=title, border_style="magenta"), id=pid)
         yield Footer()
 
     def on_mount(self) -> None:
@@ -264,11 +257,10 @@ class BAWDashboard(App):
         self._refresh()
 
     def _refresh(self) -> None:
-        for pid, (_, renderer) in self.PANELS.items():
+        for pid, (title, renderer) in self.PANELS.items():
             try:
-                p = self.query_one(f"#{pid}", Panel)
-                p.renderable = renderer()
-                p.refresh()
+                p = self.query_one(f"#{pid}", Static)
+                p.update(Panel(renderer(), title=title, border_style="magenta"))
             except Exception:
                 pass
 
