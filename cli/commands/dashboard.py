@@ -1,5 +1,6 @@
-"""baw dashboard — compact live TUI dashboard powered by Textual.
-Purple + Gold theme. 5-second auto-refresh. No scrollbars — fits terminal.
+"""baw dashboard — btop-inspired compact TUI dashboard.
+Purple + Gold theme. Thin box-drawing borders. No scrollbars.
+5-second auto-refresh. Fits terminal without overflow.
 """
 from __future__ import annotations
 import os, json, re
@@ -10,11 +11,11 @@ from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer
 from textual.containers import Grid
 from textual.binding import Binding
-from textual.color import Color
 from rich.table import Table
 from rich.panel import Panel
 
 BAW_HOME = Path.home() / ".baw"
+BOX = "round"  # thin rounded corners
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -50,32 +51,64 @@ def _relative_time(ts: float) -> str:
     if diff < 86400: return f"{int(diff/3600)}h"
     return f"{int(diff/86400)}d"
 
+def _bar(pct: float, width: int = 8) -> str:
+    """Render a horizontal bar using block chars."""
+    filled = int(pct / 100 * width)
+    bar = "█" * filled + "░" * (width - filled)
+    if pct > 80:
+        return f"[red]{bar}[/]"
+    if pct > 50:
+        return f"[yellow]{bar}[/]"
+    return f"[green]{bar}[/]"
+
 # ═══════════════════════════════════════════════════════════════════════
-# Panels — use compact single-str renderables
+# Panels — compact label:value lines
 # ═══════════════════════════════════════════════════════════════════════
 
-def _panel_system() -> str:
+def _render_system() -> str:
     uptime = "—"
+    cpu_pct = mem_pct = 0
     try:
         with open("/proc/uptime") as f:
             sec = int(float(f.read().split()[0]))
         d, r = divmod(sec, 86400)
         h, m = divmod(r, 3600)
         m //= 60
-        if d:   uptime = f"{d}d {h}h"
-        elif h: uptime = f"{h}h {m}m"
-        else:   uptime = f"{m}m"
+        uptime = f"{d}d {h}h {m}m" if d else f"{h}h {m}m" if h else f"{m}m"
+    except Exception:
+        pass
+    try:
+        with open("/proc/loadavg") as f:
+            load = f.read().split()[:3]
+        cpu_pct = min(100, float(load[0]) * 100 / (os.cpu_count() or 1))
+        mem = psutil_usage() if "psutil" in dir() else 0
     except Exception:
         pass
 
-    lines = [
-        f"[bold magenta]Host[/]    {os.uname().nodename}",
-        f"[bold magenta]Uptime[/]  {uptime}",
-        f"[bold magenta]Now[/]     {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-    ]
-    return "\n".join(lines)
+    return (
+        f"[bold magenta]host[/]  {os.uname().nodename}\n"
+        f"[bold magenta]up[/]    {uptime}\n"
+        f"[bold magenta]now[/]   {datetime.now().strftime('%H:%M:%S')}\n"
+        f"[bold magenta]cpu[/]   [green]{cpu_pct:.0f}%[/] {_bar(cpu_pct)}"
+    )
 
-def _panel_models() -> str:
+def psutil_usage() -> float:
+    """Return memory usage percentage."""
+    try:
+        with open("/proc/meminfo") as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split()
+                if parts[0].rstrip(":") in ("MemTotal", "MemAvailable", "MemFree"):
+                    meminfo[parts[0].rstrip(":")] = int(parts[1])
+            if "MemTotal" in meminfo and "MemAvailable" in meminfo:
+                used = meminfo["MemTotal"] - meminfo["MemAvailable"]
+                return used / meminfo["MemTotal"] * 100
+    except Exception:
+        pass
+    return 0
+
+def _render_models() -> str:
     cfg = _parse_yaml(BAW_HOME / "config.yaml")
     default = cfg.get("model", {}).get("default", "—")
     fallback = cfg.get("model", {}).get("fallback", "—")
@@ -84,12 +117,11 @@ def _panel_models() -> str:
     caps = cfg.get("capabilities", {})
 
     lines = [
-        f"[bold yellow]Default[/]  {default}",
-        f"[bold yellow]Fallback[/] {fallback}",
-        f"[bold yellow]Angel[/]    [green]{default}[/]",
-        f"[bold yellow]Devil[/]    [red]{devil}[/]",
+        f"[bold yellow]default[/]  {default}",
+        f"[bold yellow]fallback[/] {fallback}",
+        f"[bold yellow]angel[/]    [green]{default}[/]",
+        f"[bold yellow]devil[/]    [red]{devil}[/]",
     ]
-    # Cap routing — only non-default
     routes = []
     for cap in ("stt", "tts", "vision", "image_generation"):
         cc = caps.get(cap, {})
@@ -97,22 +129,18 @@ def _panel_models() -> str:
         if m and m != default:
             routes.append(f"[dim]{cap}:[/] {m}")
     if routes:
-        lines.append(f"[bold yellow]Routes[/]  {' | '.join(routes)}")
+        lines.append(f"[bold yellow]routes[/]  {' | '.join(routes)}")
     return "\n".join(lines)
 
-def _panel_connectors() -> str:
+def _render_connectors() -> str:
     te = BAW_HOME / "telegram.env"
+    sd = BAW_HOME / "sessions"
+    total = sum(len(f.read_text().splitlines()) for f in sd.glob("*.jsonl")) if sd.exists() else 0
     if te.exists() and "BAW_TELEGRAM_TOKEN" in te.read_text():
-        # Count msgs across sessions
-        sd = BAW_HOME / "sessions"
-        total = sum(len(f.read_text().splitlines()) for f in sd.glob("*.jsonl")) if sd.exists() else 0
-        return (
-            "[green]● Telegram connected[/]\n"
-            f"[dim]Messages: {total}[/]"
-        )
-    return "○ [dim]Telegram not configured[/]"
+        return f"[green]● telegram[/]\n[dim]msgs: {total}[/]"
+    return "[dim]○ telegram not configured[/]"
 
-def _panel_sessions() -> str:
+def _render_sessions() -> str:
     sd = BAW_HOME / "sessions"
     lines = []
     if sd.exists():
@@ -121,15 +149,15 @@ def _panel_sessions() -> str:
             n = len(f.read_text().splitlines())
             sid = f.stem[:12]
             t = _relative_time(os.path.getmtime(f))
-            lines.append(f"[magenta]{sid}[/]  [white]{n:>3} msgs[/]  [dim]{t}[/]")
+            lines.append(f"[magenta]{sid}[/] [white]{n:>3}[/] [dim]{t}[/]")
     if not lines:
-        lines.append("[dim]No sessions yet[/]")
+        lines.append("[dim]no sessions yet[/]")
     return "\n".join(lines)
 
-def _panel_memory() -> str:
+def _render_memory() -> str:
     md = BAW_HOME / "memory"
     if not md.exists():
-        return "[dim]No memory store[/]"
+        return "[dim]no memory store[/]"
     store = md / "store.jsonl"
     memories = _load_jsonl(store) if store.exists() else []
     total = len(memories)
@@ -140,34 +168,33 @@ def _panel_memory() -> str:
     med = sum(1 for s in scores if 0.3 <= s <= 0.7)
     low = sum(1 for s in scores if s < 0.3)
     return (
-        f"[bold magenta]Entries[/]  {total}\n"
-        f"[bold magenta]Size[/]     {_human_size(sz)}\n"
-        f"[bold magenta]Score[/]    {avg:.2f}\n"
-        f"[bold magenta]Quality[/]  [green]{high} high[/] [yellow]{med} med[/] [red]{low} low[/]"
+        f"[bold magenta]entries[/] {total}\n"
+        f"[bold magenta]size[/]    {_human_size(sz)}\n"
+        f"[bold magenta]score[/]   {avg:.2f}\n"
+        f"[bold magenta]quality[/] [green]{high}[/] [yellow]{med}[/] [red]{low}[/]"
     )
 
-def _panel_activity() -> str:
+def _render_activity() -> str:
     ld = BAW_HOME / "logs"
     if not ld.exists():
-        return "[dim]No logs yet[/]"
+        return "[dim]no logs yet[/]"
     logs = sorted(ld.glob("*.log"), key=os.path.getmtime, reverse=True)
     if not logs:
-        return "[dim]No logs yet[/]"
+        return "[dim]no logs yet[/]"
     content = logs[0].read_text().splitlines()
     lines = []
     for line in content[-8:]:
-        # Strip timestamp prefix, keep message
-        short = line[:80].rsplit(" ", 1)[-1] if " " in line else line
-        lines.append(f"[dim]{short[:60]}[/]")
-    return "\n".join(lines) if lines else "[dim]Empty log[/]"
+        short = line[:70].rsplit(" ", 1)[-1] if " " in line else line
+        lines.append(f"[dim]{short[:55]}[/]")
+    return "\n".join(lines) if lines else "[dim]empty log[/]"
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# App — responsive 3×2 grid, no scroll
+# App
 # ═══════════════════════════════════════════════════════════════════════
 
 class BAWDashboard(App):
-    """Compact live TUI dashboard for BAW Agent Platform."""
+    """btop-inspired compact dashboard for BAW."""
 
     CSS = """
     Screen {
@@ -177,6 +204,7 @@ class BAWDashboard(App):
         background: #131320;
         color: magenta;
         padding: 0 1;
+        text-style: bold;
     }
     Footer {
         background: #131320;
@@ -190,15 +218,19 @@ class BAWDashboard(App):
         grid-rows: 1fr 1fr;
         margin: 1 1;
     }
-    #grid > .dash-panel {
-        border: solid #2a1535;
+    #sys, #models, #conn, #sessions, #memory, #activity {
+        border: round #2a1535;
         background: #131320;
         padding: 0 1;
         overflow: hidden;
         min-height: 6;
-        max-height: 100%;
-        content-justify: left;
     }
+    #sys { border: round #8855aa; }
+    #models { border: round #8855aa; }
+    #conn { border: round #8855aa; }
+    #sessions { border: round #8855aa; }
+    #memory { border: round #8855aa; }
+    #activity { border: round #8855aa; }
     """
 
     BINDINGS = [
@@ -206,37 +238,25 @@ class BAWDashboard(App):
         Binding("r", "refresh_data", "Refresh"),
     ]
 
-    PANEL_IDS = ["sys", "models", "conn", "sessions", "memory", "activity"]
-    PANEL_TITLES = {
-        "sys": "[bold yellow]⚙ System[/]",
-        "models": "[bold yellow]🤖 Models[/]",
-        "conn": "[bold yellow]📡 Connectors[/]",
-        "sessions": "[bold yellow]📂 Sessions[/]",
-        "memory": "[bold yellow]🧠 Memory[/]",
-        "activity": "[bold yellow]📜 Activity[/]",
-    }
-    PANEL_RENDERERS = {
-        "sys": _panel_system,
-        "models": _panel_models,
-        "conn": _panel_connectors,
-        "sessions": _panel_sessions,
-        "memory": _panel_memory,
-        "activity": _panel_activity,
+    PANELS = {
+        "sys":       ("[bold yellow]⚙ system[/]", _render_system),
+        "models":    ("[bold yellow]🤖 models[/]", _render_models),
+        "conn":      ("[bold yellow]📡 connect[/]", _render_connectors),
+        "sessions":  ("[bold yellow]📂 sessions[/]", _render_sessions),
+        "memory":    ("[bold yellow]🧠 memory[/]", _render_memory),
+        "activity":  ("[bold yellow]📜 activity[/]", _render_activity),
     }
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Grid(id="grid"):
-            for pid in self.PANEL_IDS:
-                p = Panel("", id=pid, classes="dash-panel",
-                          title=self.PANEL_TITLES[pid],
-                          border_style="magenta")
-                yield p
+            for pid, (title, _) in self.PANELS.items():
+                yield Panel("", id=pid, title=title, border_style="magenta")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "🖤 BAW Dashboard"
-        self.sub_title = "Black And White"
+        self.title = "🖤 BAW"
+        self.sub_title = "dashboard"
         self._refresh()
         self.set_interval(5, self._refresh)
 
@@ -244,12 +264,11 @@ class BAWDashboard(App):
         self._refresh()
 
     def _refresh(self) -> None:
-        for pid in self.PANEL_IDS:
+        for pid, (_, renderer) in self.PANELS.items():
             try:
-                panel = self.query_one(f"#{pid}", Panel)
-                content = self.PANEL_RENDERERS[pid]()
-                panel.renderable = content
-                panel.refresh()
+                p = self.query_one(f"#{pid}", Panel)
+                p.renderable = renderer()
+                p.refresh()
             except Exception:
                 pass
 
