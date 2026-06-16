@@ -129,6 +129,10 @@ def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
                 pass
             last_error = f"timeout after {timeout}s"
             if attempt < MAX_ATTEMPTS:
+                # Non-idempotent tools: don't retry on timeout (may have partially executed)
+                _NON_IDEMPOTENT = {"write_file", "patch", "delegate_task", "bash"}
+                if name in _NON_IDEMPOTENT:
+                    break
                 timeout = min(timeout * 2, 120)  # Double timeout each retry
                 continue
         except Exception as e:

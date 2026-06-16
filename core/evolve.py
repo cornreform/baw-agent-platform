@@ -23,6 +23,30 @@ except ImportError:
     _HAS_LLM = False
 
 
+# ── Recursion guard for self-modifying evolution ──
+_evolve_depth = 0
+_evolve_depth_lock = threading.Lock()
+
+def _depth_guard(func):
+    """Prevent recursive self-improvement calls > 3 deep."""
+    def wrapper(*args, **kwargs):
+        global _evolve_depth
+        with _evolve_depth_lock:
+            if _evolve_depth >= 3:
+                return {
+                    "analyzed": True,
+                    "error": "Recursion limit (3) reached — aborted",
+                    "patches": ["EVOLVE RECURSION GUARD TRIGGERED — aborting to prevent infinite loop"],
+                }
+            _evolve_depth += 1
+        try:
+            return func(*args, **kwargs)
+        finally:
+            with _evolve_depth_lock:
+                _evolve_depth -= 1
+    return wrapper
+
+
 # ── Paths ────────────────────────────────────────────────────────
 
 def _data_dir() -> Path:
@@ -420,6 +444,7 @@ def approve_pending(index: int, approved: bool = True) -> dict:
 
 # ── Layer 3: Auto-Optimization ────────────────────────────────────
 
+@_depth_guard
 def auto_optimize(dry_run: bool = False) -> dict:
     """Run analysis and apply optimizations based on detected patterns.
 

@@ -2,6 +2,7 @@
 
 import subprocess
 import shlex
+import os
 from pathlib import Path
 
 
@@ -51,6 +52,14 @@ def bash(command: str, workdir: str | None = None, timeout: int = 60) -> str:
     if blocked:
         return reason
     try:
+        # Sanitize env: strip API keys and secrets from subprocess
+        _clean_env = {
+            k: v for k, v in os.environ.items()
+            if not k.endswith("_API_KEY")
+            and not k.endswith("_SECRET")
+            and not k.endswith("_TOKEN")
+            and not k == "token"
+        }
         result = subprocess.run(
             command,
             shell=True,
@@ -58,6 +67,7 @@ def bash(command: str, workdir: str | None = None, timeout: int = 60) -> str:
             text=True,
             timeout=timeout,
             cwd=workdir or str(Path.cwd()),
+            env=_clean_env,
         )
         output = ""
         if result.stdout:

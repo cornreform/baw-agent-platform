@@ -44,9 +44,11 @@ class MemoryStore:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def _save_all(self):
-        """Overwrite store.jsonl with entire cache (used for updates)."""
+        """Overwrite store.jsonl with entire cache (using atomic write)."""
         lines = [json.dumps(e, ensure_ascii=False) for e in self._cache]
-        self.store_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        tmp = self.store_path.with_suffix(".jsonl.tmp")
+        tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        tmp.replace(self.store_path)  # atomic on same filesystem (Linux)
 
     def _get_edges(self) -> dict:
         """Load edge relationships."""
