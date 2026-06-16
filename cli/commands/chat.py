@@ -267,14 +267,14 @@ TOOL_EXECUTORS = {
 # Welcome screen
 # ═══════════════════════════════════════════════════════════════════════
 
-BAW_BANNER = r"""
-    ██████╗  █████╗ ██╗    ██╗
-    ██╔══██╗██╔══██╗██║    ██║
-    ██████╔╝███████║██║ █╗ ██║
-    ██╔══██╗██╔══██╗██║███╗██║
-    ██████╔╝██║  ██║╚███╔███╔╝
-    ╚═════╝ ╚═╝  ╚═╝ ╚══╝╚══╝
-"""
+BAW_BANNER = [
+    "[baw.brand]██████╗ [/][baw.gold] █████╗ [/][baw.brand]██╗    ██╗[/]",
+    "[baw.brand]██╔══██╗[/][baw.gold]██╔══██╗[/][baw.brand]██║    ██║[/]",
+    "[baw.brand]██████╔╝[/][baw.gold]███████║[/][baw.brand]██║ █╗ ██║[/]",
+    "[baw.brand]██╔══██╗[/][baw.gold]██╔══██╗[/][baw.brand]██║███╗██║[/]",
+    "[baw.brand]██████╔╝[/][baw.gold]██║  ██║[/][baw.brand]╚███╔███╔╝[/]",
+    "[baw.brand]╚═════╝ [/][baw.gold]╚═╝  ╚═╝[/][baw.brand] ╚══╝╚══╝[/]",
+]
 
 def _welcome(cfg):
     model = cfg.get("model", {}).get("default", "?")
@@ -287,9 +287,8 @@ def _welcome(cfg):
     fc_mode = cfg.get("fact_check", {}).get("mode", "normal")
     caps = cfg.get("capabilities", {})
 
-    for line in BAW_BANNER.splitlines():
-        if line.strip():
-            plain_console.print(Text(line, style="baw.brand", justify="center"))
+    for line in BAW_BANNER:
+        plain_console.print(line, justify="center")
     plain_console.print(Text("Black And White · Agent Platform", style="baw.subtitle", justify="center"))
     plain_console.print(Rule(style="baw.accent"))
 
