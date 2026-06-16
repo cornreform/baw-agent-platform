@@ -313,6 +313,14 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "  NEVER say 'I will' or write about what you'll do next. Call the tool NOW.\n"
                 "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary."
             )
+            system_prompt += (
+                "\n\n## CONFIG COMMAND RULES (quick mode)\n"
+                "When user sends config params (method=X model=Y base_url=Z):\n"
+                "- Use ONLY the `config` tool. MAX 3 steps: get → set → verify.\n"
+                "- NEVER delegate to sub-agents. NEVER use execute_code/bash/write_file.\n"
+                "- NEVER say 'I will follow up.' DO IT NOW, report result.\n"
+                "- After setting, read back with config(action=get) to confirm.\n"
+            )
         else:
             system_prompt = evidence_rule + soul_text
     else:
@@ -331,6 +339,9 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "  `config(action=validate)` to check syntax\n"
             "  NEVER use `write_file` or `bash` to edit config.yaml directly —\n"
             "  the `config` tool handles backup, validation, and auto-rollback.\n"
+            "  **Config command rule**: when user sends params (method=X model=Y),\n"
+            "  use config tool only. MAX 3 steps: get→set→verify. NO sub-agents.\n"
+            "  NEVER say 'I will follow up' — DO IT NOW, report result.\n"
             "- After editing config, call /reload or restart to apply\n"
             "\n"
             "### [WARN] STT setup (auto-detect protocol)\n"
