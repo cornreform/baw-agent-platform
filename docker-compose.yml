@@ -14,7 +14,7 @@ services:
     env_file:
       - /home/user/.baw/telegram.env
       - /home/user/.baw/.env
-    # No Hermes paths. No host network. No privileged.
+    # No external paths. No host network. No privileged.
     network_mode: bridge
     # ── Resource limits (grok-4.1 A5) ──
     deploy:

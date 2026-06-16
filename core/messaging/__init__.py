@@ -1027,7 +1027,7 @@ class BaseConnector(ABC):
                 pass
 
             _sys = (
-                "你是 BAW（Black And White）— the user 的 Agent Platform。\n"
+                "你是 BAW（Black And White）— 你的 Agent Platform。\n"
                 "你可以執行命令、操作文件、搜索網頁、生成圖像、TTS 等。\n"
                 "你不是普通的語言模型 — 你是有行動能力的 agent。\n"
                 "直接回應，保持簡潔自然。如果問題簡單就直接答，唔好問「需要我幫你做咩」。\n"
@@ -2110,7 +2110,7 @@ class BaseConnector(ABC):
                         f"Analyse the FAILURE PATTERNS above. Produce a DIAGNOSIS with:\n"
                         f"1. What was tried: summarise the {_round} different approaches briefly\n"
                         f"2. Root cause: what actually failed (specific API error, missing package, quota, etc.)\n"
-                        f"3. Actionable fix: what the user can DO right now to unblock this\n"
+                        f"3. Actionable fix: what you can DO right now to unblock this\n"
                         f"   (e.g. 'pip install edge-tts', 'top up MiniMax credits', 'switch to Step Plan endpoint', 'use curl instead of Python SDK')\n"
                         f"4. Alternative path: what BAW could try next if the fix is applied\n"
                         f"\nFormat:\n"

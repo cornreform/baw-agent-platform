@@ -325,7 +325,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             system_prompt = evidence_rule + soul_text
     else:
         system_prompt = (
-            "You are BAW (Black And White), the user's agent platform.\n"
+            "You are BAW (Black And White), your agent platform.\n"
             "Respond in Traditional Chinese (Cantonese).\n"
             "Be concise, lead with results.\n"
             "Never ask the user what to do — figure it out yourself.\n"
@@ -659,7 +659,7 @@ def _build_todo_block(data_dir: Path) -> str:
                 "  1. PLAN — read source, define fields, write todos\n"
                 "  2. FETCH — call `tools.http_fetch.http_fetch(url)`. If it returns\n"
                 "     `strategy == 'BROWSER_REQUIRED'`, the page is a Next.js / Gatsby /\n"
-                "     React SPA — mirror it to the suggested `mirror_path` via Hermes\n"
+                "     React SPA — mirror it to the suggested `mirror_path` via browser render\n"
                 "     `web_extract` (which renders JS), then call `read_mirror(mirror_path)`\n"
                 "     to get the parse input. **Never** use `urllib` against an SPA and\n"
                 "     declare the result valid. **Never** `subprocess.run([\"curl\", ...])`\n"

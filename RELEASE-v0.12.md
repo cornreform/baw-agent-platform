@@ -18,7 +18,7 @@
   - 新增 provider / model / capability 全部對話控制
   - `/reload` 指令套用修改
   - SOUL.md 加入完整 config schema + 修改指引
-- **GitHub Release 自動化** — Sticky 可以直接 publish release
+- **GitHub Release 自動化** — The system can directly publish release
   - `gh` CLI v2.45.0 安裝 + auth login
   - 修正 PATH 遮擋問題（舊 Python `gh` script）
   - `git tag` → `git push` → `gh release create` 全自動

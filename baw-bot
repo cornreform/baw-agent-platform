@@ -126,7 +126,7 @@ Examples:
         print("Configure each platform in config.yaml under its name.")
         return
 
-    # Auto-load .env for API keys (Hermes profile first, then BAW's own)
+    # Auto-load .env for API keys (BAW's own)
     for env_path in [
 
         Path.home() / ".baw" / ".env",
