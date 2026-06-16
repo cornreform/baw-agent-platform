@@ -224,7 +224,12 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: st
             "8) NEVER fabricate model names or test results. If API fails, report the error.\n"
             "9) After modifying config, read it back to confirm the change was applied. Report before/after.\n"
             "10) If asked to send files (MEDIA:), the response MUST include 'MEDIA:/path/to/file' tag for each file. If the file doesn't exist, report this honestly — do NOT pretend to send.\n"
-            "11) If you finish without making ANY tool calls, you MUST return the literal string '0 tool calls' at the start of your reply. This signals failure to the orchestrator."
+            "11) CRITICAL — TOOL CALLING METHOD: You have direct access to tools via FUNCTION CALLING (JSON). "
+            "Call read_file, write_file, bash, web_search etc. directly as tool calls — "
+            "NOT by wrapping them in Python code or bash commands. "
+            "Do NOT write: bash('python3 -c \"read_file(...)\"') — that fails because read_file is not a Python builtin. "
+            "Instead, call: read_file(path='/path/to/file') directly as a tool call.\n"
+            "12) If you finish without making ANY tool calls, you MUST return the literal string '0 tool calls' at the start of your reply. This signals failure to the orchestrator."
         ),
         temperature=0.3,
     )
