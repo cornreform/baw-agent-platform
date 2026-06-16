@@ -15,6 +15,13 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
+# LLM-assisted classification (used when keyword extraction doesn't fully cover corrections)
+try:
+    from core.llm import call_llm, get_model, load_config as _llm_load_config, ModelDef
+    _HAS_LLM = True
+except ImportError:
+    _HAS_LLM = False
+
 
 # ── Paths ────────────────────────────────────────────────────────
 
@@ -463,6 +470,15 @@ def auto_optimize(dry_run: bool = False) -> dict:
     cfg_path = _data_dir() / "config.yaml"
     files_modified = []
 
+    # ── LLM-assisted correction classification (enhances keyword extraction) ──
+    llm_lessons = _llm_classify_corrections([
+        r.get("suggestion", "") for r in recs if r.get("type") == "frequent_corrections"
+    ])
+    if llm_lessons:
+        added = _write_learned_lessons(llm_lessons)
+        if added:
+            result["patches"].append(f"LLM-classified {added} new correction lessons")
+
     # ── Patch SOUL.md based on frequent corrections ──
     correction_recs = [r for r in recs if r.get("type") == "frequent_corrections"]
     if correction_recs:
@@ -649,6 +665,68 @@ def _load_learned_lessons() -> list[dict]:
 
 def _save_learned_lessons(lessons: list[dict]):
     _LEARNED_PATH.write_text(json.dumps(lessons, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _llm_classify_corrections(correction_texts: list[str]) -> list[dict]:
+    """Use LLM to classify corrections beyond keyword matching.
+
+    Batches up to 10 corrections into one lightweight LLM call.
+    Falls back gracefully if LLM is unavailable.
+    Returns lessons in same format as _extract_correction_lessons().
+    """
+    if not _HAS_LLM or not correction_texts:
+        return []
+    if len(correction_texts) > 10:
+        correction_texts = correction_texts[-10:]  # batch limit
+
+    try:
+        config = _llm_load_config()
+        model = get_model(config)  # uses default model (cheapest)
+    except Exception:
+        return []
+
+    prompt = (
+        "您是一個用戶行爲分析器。以下是用戶對 AI 回覆的修正。"
+        "請爲每個修正歸類，返回 JSON 數組。\n\n"
+        "類別: response_length(長度), format(格式), language(語言), "
+        "cost(成本), tone(語氣), avoid_behavior(不應做), "
+        "instruction(執行方式), other(其他)\n\n"
+        "格式: [{\"text\":\"原文\", \"category\":\"類別\", \"value\":\"偏好\", \"confidence\":0.0}]\n\n"
+        "用戶的修正：\n" +
+        "\n".join(f'{i+1}. "{t[:120]}"' for i, t in enumerate(correction_texts))
+    )
+
+    try:
+        messages = [{"role": "user", "content": prompt}]
+        resp = call_llm(model=model, messages=messages, temperature=0.2, max_tokens=1024)
+        content = resp.content.strip()
+        # Extract JSON from response
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        results = json.loads(content)
+        if not isinstance(results, list):
+            results = [results]
+    except Exception:
+        return []
+
+    lessons = []
+    for r in results:
+        cat = r.get("category", "other")
+        val = r.get("value", "") or ""
+        conf = r.get("confidence", 0.5)
+        text = r.get("text", "")[:60]
+        if conf >= 0.5 and val:
+            lessons.append({
+                "type": cat,
+                "value": val,
+                "source": text,
+                "learned_at": int(time.time()),
+                "method": "llm",
+                "confidence": round(conf, 2),
+            })
+    return lessons
 
 
 def _extract_correction_lessons(correction_texts: list[str]) -> list[dict]:
