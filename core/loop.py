@@ -1269,6 +1269,14 @@ def run_agent(
                     _arg_str = str(args)[:80]
                     print(f" {_arg_str}", end="", flush=True)
                 exe_result = execute_tool(name, args)
+                # ── Loop detection: track consecutive failures ──
+                if "Error" in exe_result[:100] or "Traceback" in exe_result:
+                    from core.watchdog import track_consecutive_failure, _recover_restart
+                    if track_consecutive_failure(name):
+                        _recover_restart(f"{name} failed 5x consecutive")
+                else:
+                    from core.watchdog import clear_consecutive_failures
+                    clear_consecutive_failures(name)
                 # ── Auto-verify after write tools ──
                 exe_result = _verify_after_write(name, args, exe_result, data_dir)
                 if _show_progress:
@@ -1574,6 +1582,14 @@ def run_agent(
                 ctx.add_tool_result(tc.get("id", ""), name, f"[BLOCKED] {perm_result['reason']}")
                 continue
             exe_result = execute_tool(name, args)
+            # ── Loop detection: track consecutive failures ──
+            if "Error" in exe_result[:100] or "Traceback" in exe_result:
+                from core.watchdog import track_consecutive_failure, _recover_restart
+                if track_consecutive_failure(name):
+                    _recover_restart(f"{name} failed 5x consecutive")
+            else:
+                from core.watchdog import clear_consecutive_failures
+                clear_consecutive_failures(name)
             # ── Auto-verify after write tools ──
             exe_result = _verify_after_write(name, args, exe_result, data_dir)
             if interactive:
