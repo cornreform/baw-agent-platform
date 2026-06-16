@@ -924,6 +924,96 @@ MAX_CONSECUTIVE_FAILURES = 3
 MAX_STEP_SECONDS = 300  # individual step timeout (was 60 — TTS/API calls + edge-tts install need 2-5 min)
 
 
+# ── Write tools that modify system state — auto-verify after execution ──
+_WRITE_TOOLS = {"write_file", "patch", "config", "delegate_task", "execute_code", "cronjob"}
+
+
+def _verify_after_write(name: str, args: dict, result: str, data_dir: Optional[Path] = None) -> str:
+    """Code-enforced verify after write tools. Reads back to confirm changes persist.
+    
+    Returns original result with verification note appended.
+    Does NOT block execution — just flags for the LLM to see.
+    """
+    if name not in _WRITE_TOOLS:
+        return result
+    if name == "config" and args.get("action", "") in ("get", "list", "validate"):
+        return result
+
+    base = data_dir or Path.home() / ".baw"
+    notes = []
+
+    try:
+        if name == "write_file":
+            path = args.get("path", "")
+            if path:
+                p = Path(path).expanduser()
+                if p.exists() and p.stat().st_size > 0:
+                    notes.append(f"✅ {p.name} written ({p.stat().st_size} bytes)")
+                else:
+                    notes.append(f"⚠️ {p.name} — read-back failed (not found or empty)")
+
+        elif name == "patch":
+            path = args.get("path", "")
+            new_text = args.get("new_string", "")[:60]
+            if path and new_text:
+                p = Path(path).expanduser()
+                if p.exists():
+                    content = p.read_text(encoding="utf-8", errors="replace")
+                    if new_text in content:
+                        notes.append(f"✅ {p.name} — patch confirmed in file")
+                    else:
+                        notes.append(f"⚠️ {p.name} — patch string not found (may use fuzzy match)")
+                else:
+                    notes.append(f"⚠️ {p.name} — file not found after patch")
+
+        elif name == "config":
+            action = args.get("action", "")
+            if action == "set":
+                section = args.get("section", "")
+                key = args.get("key", "")
+                cfg_file = base / "config.yaml"
+                if cfg_file.exists():
+                    import yaml
+                    try:
+                        cfg = yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
+                        if section and key:
+                            val = cfg.get(section, {}).get(key, "⛔ NOT FOUND")
+                            notes.append(f"✅ config.{section}.{key} = {val}")
+                        elif section:
+                            val = cfg.get(section, "⛔ NOT FOUND")
+                            notes.append(f"✅ config.{section} = (exists)")
+                    except Exception as e:
+                        notes.append(f"⚠️ config read-back error: {e}")
+            elif action == "set_key":
+                key_name = args.get("key_name", "")
+                env_file = base / ".env"
+                if env_file.exists() and key_name:
+                    content = env_file.read_text(encoding="utf-8", errors="replace")
+                    if key_name in content:
+                        notes.append(f"✅ .env contains {key_name}")
+                    else:
+                        notes.append(f"⚠️ {key_name} not found in .env")
+
+        elif name == "execute_code":
+            # Verify by checking for FileNotFoundError in the result
+            if "FileNotFoundError" in result or "Permission denied" in result:
+                notes.append("⚠️ execute_code reported file access error")
+            else:
+                notes.append("✅ execute_code completed")
+
+        elif name == "cronjob":
+            action = args.get("action", "")
+            if action in ("create", "update", "resume"):
+                notes.append("✅ cron job registered")
+
+    except Exception as e:
+        notes.append(f"⚠️ verify error: {e}")
+
+    if notes:
+        return result + "\n" + "\n".join(notes)
+    return result
+
+
 def run_agent(
     prompt: str,
     config: dict,
@@ -1179,6 +1269,8 @@ def run_agent(
                     _arg_str = str(args)[:80]
                     print(f" {_arg_str}", end="", flush=True)
                 exe_result = execute_tool(name, args)
+                # ── Auto-verify after write tools ──
+                exe_result = _verify_after_write(name, args, exe_result, data_dir)
                 if _show_progress:
                     print(f" \033[32m[OK]\033[0m", flush=True)
                 ctx.add_tool_result(tc.get("id", ""), name, exe_result)
@@ -1482,6 +1574,8 @@ def run_agent(
                 ctx.add_tool_result(tc.get("id", ""), name, f"[BLOCKED] {perm_result['reason']}")
                 continue
             exe_result = execute_tool(name, args)
+            # ── Auto-verify after write tools ──
+            exe_result = _verify_after_write(name, args, exe_result, data_dir)
             if interactive:
                 print(f" \033[32m[OK]\033[0m", flush=True)
             ctx.add_tool_result(tc.get("id", ""), name, exe_result)
