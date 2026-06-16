@@ -1223,6 +1223,34 @@ def run_weekly_evolution() -> dict:
     except Exception as e:
         result["dream"] = {"ok": False, "error": str(e)}
 
+    # ── Step 0.5: SOUL.md health check (replaces external cron) ──
+    try:
+        soul_path = _data_dir() / "SOUL.md"
+        template_path = Path(__file__).resolve().parent.parent / "SOUL.default.md"
+        CORE_RULES = ["Output Format", "Multi-Step Execution",
+                      "Fabrication Gate", "META-RULE", "EXECUTION PROTOCOL"]
+        missing = [r for r in CORE_RULES
+                   if soul_path.exists() and r not in soul_path.read_text(encoding="utf-8")]
+        if missing:
+            if template_path.exists():
+                template = template_path.read_text(encoding="utf-8")
+                soul_path.write_text(template, encoding="utf-8")
+                result["soul_health"] = {
+                    "ok": True,
+                    "missing_rules": missing,
+                    "action": "restored_from_template",
+                }
+            else:
+                result["soul_health"] = {
+                    "ok": False,
+                    "missing_rules": missing,
+                    "action": "template_not_found",
+                }
+        else:
+            result["soul_health"] = {"ok": True, "missing_rules": [], "action": "healthy"}
+    except Exception as e:
+        result["soul_health"] = {"ok": False, "error": str(e)}
+
     # ── Step 1: Memory analysis ──
     mem_analysis = _analyze_memory_for_preferences(days_back=7)
     result["memory_analysis"] = {
@@ -1297,6 +1325,10 @@ def run_weekly_evolution() -> dict:
     if result["dream"].get("stuck_tasks", 0) > 0 or result["dream"].get("archived_memories", 0) > 0:
         lines.append(f"  Dream: {result['dream']['stuck_tasks']} stuck tasks, "
                      f"{result['dream']['archived_memories']} archived memories")
+    if result.get("soul_health", {}).get("action") == "restored_from_template":
+        lines.append(f"  SOUL health: ⚠️ restored — missing {len(result['soul_health']['missing_rules'])} rules")
+    elif result.get("soul_health", {}).get("action") == "healthy":
+        lines.append(f"  SOUL health: ✅ all rules intact")
     lines.append(f"  記憶: {result['memory_analysis']['entries']} entries, "
                  f"{result['memory_analysis']['preferences']} preferences")
     if result["soul_revision"].get("applied", 0) > 0:
