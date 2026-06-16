@@ -50,9 +50,9 @@ def save_config(data_dir: Path, config: dict):
 
 def _print_header(title: str):
     w, _ = shutil.get_terminal_size()
-    print(f"\n{C.BOLD}{C.CYAN}{'─' * w}{C.RESET}")
+    print(f"\n{C.BOLD}{C.MAGENTA}{'─' * w}{C.RESET}")
     print(f"{C.BOLD}{C.WHITE}  {title}{C.RESET}")
-    print(f"{C.CYAN}{'─' * w}{C.RESET}\n")
+    print(f"{C.MAGENTA}{'─' * w}{C.RESET}\n")
 
 
 def _print_section(title: str):
@@ -70,11 +70,11 @@ def _print_note(text: str):
 def _input(prompt: str, default: str = "") -> str:
     """Prompt with color and optional default."""
     if default:
-        full = f"{C.CYAN}?{C.RESET} {prompt} "
+        full = f"{C.MAGENTA}?{C.RESET} {prompt} "
         full += f"{C.DIM}[{default}]{C.RESET} "
         val = input(full).strip()
         return val if val else default
-    val = input(f"{C.CYAN}?{C.RESET} {prompt} ").strip()
+    val = input(f"{C.MAGENTA}?{C.RESET} {prompt} ").strip()
     return val
 
 
@@ -90,7 +90,7 @@ def _warn(text: str):
 
 def _confirm(prompt: str, default: bool = True) -> bool:
     suffix = f"{C.DIM}[Y/n]{C.RESET}" if default else f"{C.DIM}[y/N]{C.RESET}"
-    val = input(f"{C.CYAN}?{C.RESET} {prompt} {suffix} ").strip().lower()
+    val = input(f"{C.MAGENTA}?{C.RESET} {prompt} {suffix} ").strip().lower()
     if not val:
         return default
     return val in ("y", "yes", "Y")
@@ -199,12 +199,12 @@ def cmd_config_help():
 
 def _print_logo():
     logo = r"""
-{C.BOLD}{C.GREEN}██╗    ██╗ {C.CYAN}██████╗{C.RESET}
-{C.BOLD}{C.GREEN}██║    ██║ {C.CYAN}██╔══██╗{C.RESET}
-{C.BOLD}{C.GREEN}██║ █╗ ██║ {C.CYAN}██████╔╝{C.RESET}
-{C.BOLD}{C.GREEN}██║███╗██║ {C.CYAN}██╔══██╗{C.RESET}
-{C.BOLD}{C.GREEN}╚███╔███╔╝ {C.CYAN}██████╔╝{C.RESET}
- {C.BOLD}{C.GREEN}╚══╝╚══╝  {C.CYAN}╚═════╝{C.RESET}
+{C.BOLD}{C.MAGENTA}██████╗ {C.YELLOW} █████╗ {C.MAGENTA}██╗    ██╗{C.RESET}
+{C.BOLD}{C.MAGENTA}██╔══██╗{C.YELLOW}██╔══██╗{C.MAGENTA}██║    ██║{C.RESET}
+{C.BOLD}{C.MAGENTA}██████╔╝{C.YELLOW}██████╔╝{C.MAGENTA}██║ █╗ ██║{C.RESET}
+{C.BOLD}{C.MAGENTA}██╔══██╗{C.YELLOW}██╔══██╗{C.MAGENTA}██║███╗██║{C.RESET}
+{C.BOLD}{C.MAGENTA}██████╔╝{C.YELLOW}██║  ██║{C.MAGENTA}╚███╔███╔╝{C.RESET}
+{C.BOLD}{C.MAGENTA}╚═════╝ {C.YELLOW}╚═╝  ╚═╝{C.MAGENTA} ╚══╝╚══╝ {C.RESET}
     """
     formatted = ""
     for line in logo.strip().split("\n"):
@@ -279,6 +279,70 @@ def _explain_plan(provider: str) -> str:
     return _PLAN_GUIDES.get(provider, "")
 
 
+def _collect_models_by_capability(providers: dict, capability: str = "chat") -> list[tuple[str, str, str]]:
+    """Collect model IDs from providers filtered by capability.
+
+    Returns list of (model_id, provider_key, label).
+    """
+    results = []
+    for pkey, pcfg in providers.items():
+        for m in pcfg.get("models", []):
+            mid = m["id"] if isinstance(m, dict) else m
+            caps = m.get("capabilities", []) if isinstance(m, dict) else []
+            if capability in caps or not caps:
+                results.append((mid, pkey, f"{pkey}/{mid}"))
+    return results
+
+
+def _pick_model_menu(
+    providers: dict,
+    prompt: str = "Pick a model",
+    exclude_provider: str | None = None,
+    capability: str = "chat",
+) -> str:
+    """Show a numbered menu of models from configured providers, return chosen model ID."""
+    options = []
+    for pkey, pcfg in providers.items():
+        if exclude_provider and pkey == exclude_provider:
+            continue
+        for m in pcfg.get("models", []):
+            mid = m["id"] if isinstance(m, dict) else m
+            caps = m.get("capabilities", []) if isinstance(m, dict) else []
+            # Filter by capability: show if has the cap or has no caps defined (generic)
+            if capability != "chat" and caps and capability not in caps:
+                continue
+            label = f"{pkey}: {mid}"
+            cw = m.get("context_window", "?") if isinstance(m, dict) else "?"
+            options.append((mid, label, cw, pkey))
+
+    if not options:
+        # Fallback: show all models
+        for pkey, pcfg in providers.items():
+            if exclude_provider and pkey == exclude_provider:
+                continue
+            for m in pcfg.get("models", []):
+                mid = m["id"] if isinstance(m, dict) else m
+                label = f"{pkey}: {mid}"
+                options.append((mid, label, "?", pkey))
+
+    if not options:
+        return _input(f"{prompt} (no models available, type manually)", default="")
+
+    print()
+    print(f"  {C.MAGENTA}?{C.RESET} {prompt}:")
+    for i, (mid, label, cw, pkey) in enumerate(options, 1):
+        print(f"     {C.GREEN}{i:>2}{C.RESET}) {label}  {C.DIM}({cw} ctx){C.RESET}")
+    if len(options) > 5:
+        print(f"     {C.GREEN} 0{C.RESET}) Type manually")
+
+    raw = input(f"  {C.MAGENTA}> {C.RESET}").strip()
+    if raw.isdigit() and 1 <= int(raw) <= len(options):
+        return options[int(raw) - 1][0]
+    if raw == "0":
+        return _input(f"  Enter model ID manually", default=options[0][0])
+    return options[0][0] if options else ""
+
+
 def cmd_setup(data_dir: Path):
     cfg = load_config(data_dir)
     is_first_run = not cfg.get("model") and not cfg.get("providers")
@@ -292,27 +356,7 @@ def cmd_setup(data_dir: Path):
     else:
         _print_note("Updating existing configuration. Press Enter to keep current values.")
     print()
-
-    # ── 1. Default Model ──
-    _print_section("1. Default Model")
-    _print_note("This is the main model BAW uses for chat and tool execution.")
-    _print_note("Recommendations:")
-    _print_note("  • deepseek-v4-flash  — fast, cheap, good for most tasks")
-    _print_note("  • MiniMax-M3         — multimodal (vision + TTS + chat)")
-    _print_note("  • claude-sonnet-4    — highest quality, most expensive")
-    current_model = cfg.get("model", {}).get("default", "deepseek-v4-flash")
-    model_id = _input("Default model ID", default=current_model)
-    cfg.setdefault("model", {})["default"] = model_id
-
-    _print_note("Fallback model (used when main model fails — must be DIFFERENT provider):")
-    current_fb = cfg.get("model", {}).get("fallback", "MiniMax-M3")
-    fb_id = _input("Fallback model ID", default=current_fb)
-    if fb_id:
-        cfg.setdefault("model", {})["fallback"] = fb_id
-
-    # ── 2. API Keys (with validation) ──
-    _print_section("2. API Keys")
-    _print_note("Enter API keys one by one. Leave blank to skip.")
+    _print_section("1. API Keys")
     _print_note("Each key will be tested immediately — you'll know if it works.")
     env_path = data_dir / ".env"
     existing_env = {}
@@ -323,60 +367,173 @@ def cmd_setup(data_dir: Path):
                 k, v = line.split("=", 1)
                 existing_env[k.strip()] = v.strip()
 
-    providers_prompt = [
-        ("DEEPSEEK_API_KEY", "DeepSeek", "deepseek", "https://api.deepseek.com/v1"),
-        ("MINIMAX_API_KEY", "MiniMax", "minimax", "https://api.minimax.io/v1"),
-        ("OPENAI_API_KEY", "OpenAI", "openai", "https://api.openai.com/v1"),
-        ("STEPFUN_API_KEY", "Stepfun", "stepfun", ""),
-        ("MOONSHOT_API_KEY", "Moonshot/Kimi", "moonshot", "https://api.moonshot.ai/v1"),
-        ("ANTHROPIC_API_KEY", "Anthropic", "anthropic", "https://api.anthropic.com/v1"),
-        ("GEMINI_API_KEY", "Google Gemini", "gemini", "https://generativelanguage.googleapis.com/v1beta"),
+    all_providers = [
+        # (idx, env_key, label, provider_key, base_url, models_for_auto_config)
+        (1,  "DEEPSEEK_API_KEY", "DeepSeek",      "deepseek", "https://api.deepseek.com/v1",
+         [{"id": "deepseek-v4-flash", "capabilities": ["chat"], "context_window": 65536,
+           "cost_per_1m_input": 0.30, "cost_per_1m_output": 1.20},
+          {"id": "deepseek-v4-pro", "capabilities": ["chat"], "context_window": 65536}]),
+        (2,  "MINIMAX_API_KEY", "MiniMax",        "minimax", "https://api.minimax.io/v1",
+         [{"id": "MiniMax-M3", "capabilities": ["chat", "vision", "tts"], "context_window": 1048576},
+          {"id": "MiniMax-M2.7-highspeed", "capabilities": ["chat"], "context_window": 1048576},
+          {"id": "MiniMax-M2.7", "capabilities": ["chat"], "context_window": 1048576},
+          {"id": "MiniMax-M2.5-highspeed", "capabilities": ["chat"], "context_window": 1048576},
+          {"id": "MiniMax-M2.5", "capabilities": ["chat"], "context_window": 1048576},
+          {"id": "MiniMax-M2.1-highspeed", "capabilities": ["chat"], "context_window": 1048576},
+          {"id": "MiniMax-M2.1", "capabilities": ["chat"], "context_window": 1048576},
+          {"id": "MiniMax-M2", "capabilities": ["chat"], "context_window": 1048576}]),
+        (3,  "OPENAI_API_KEY", "OpenAI",          "openai", "https://api.openai.com/v1",
+         [{"id": "gpt-4o", "capabilities": ["chat"], "context_window": 128000},
+          {"id": "gpt-4o-mini", "capabilities": ["chat"], "context_window": 128000},
+          {"id": "o3", "capabilities": ["chat"], "context_window": 200000},
+          {"id": "o4-mini", "capabilities": ["chat"], "context_window": 200000}]),
+        (4,  "STEPFUN_API_KEY", "Stepfun",        "stepfun", "",
+         [{"id": "step-3.7-flash", "capabilities": ["chat", "vision"], "context_window": 65536},
+          {"id": "step-3.7-pro", "capabilities": ["chat"], "context_window": 65536}]),
+        (5,  "MOONSHOT_API_KEY", "Moonshot/Kimi",  "moonshot", "https://api.moonshot.ai/v1",
+         [{"id": "moonshot-v1", "capabilities": ["chat"], "context_window": 131072}]),
+        (6,  "ANTHROPIC_API_KEY", "Anthropic",     "anthropic", "https://api.anthropic.com/v1",
+         [{"id": "claude-sonnet-4", "capabilities": ["chat"], "context_window": 200000},
+          {"id": "claude-haiku-3.5", "capabilities": ["chat"], "context_window": 200000}]),
+        (7,  "GEMINI_API_KEY", "Google Gemini",   "gemini", "https://generativelanguage.googleapis.com/v1beta",
+         [{"id": "gemini-2.0-flash", "capabilities": ["chat"], "context_window": 1048576},
+          {"id": "gemini-2.5-pro", "capabilities": ["chat"], "context_window": 1048576}]),
+        (8,  "XAI_API_KEY", "Grok / xAI",         "xai", "https://api.x.ai/v1",
+         [{"id": "grok-3", "capabilities": ["chat"], "context_window": 131072},
+          {"id": "grok-3-mini", "capabilities": ["chat"], "context_window": 131072}]),
+        (9,  "OPENROUTER_API_KEY", "OpenRouter",   "openrouter", "https://openrouter.ai/api/v1",
+         [{"id": "openrouter/auto", "capabilities": ["chat"], "context_window": 128000}]),
+        (10, "TOGETHER_API_KEY", "Together AI",   "together", "https://api.together.xyz/v1",
+         [{"id": "meta-llama/Llama-4-Scout-17B-16E-Instruct", "capabilities": ["chat"], "context_window": 131072}]),
+        (11, "GROQ_API_KEY", "Groq",               "groq", "https://api.groq.com/openai/v1",
+         [{"id": "llama-4-scout-17b-16e-instruct", "capabilities": ["chat"], "context_window": 131072},
+          {"id": "deepseek-r1-distill-llama-70b", "capabilities": ["chat"], "context_window": 131072}]),
+        (12, "MISTRAL_API_KEY", "Mistral AI",      "mistral", "https://api.mistral.ai/v1",
+         [{"id": "mistral-large-latest", "capabilities": ["chat"], "context_window": 131072},
+          {"id": "mistral-small-latest", "capabilities": ["chat"], "context_window": 131072}]),
+        (13, "PERPLEXITY_API_KEY", "Perplexity",   "perplexity", "https://api.perplexity.ai",
+         [{"id": "sonar-pro", "capabilities": ["chat", "search"], "context_window": 131072}]),
+        (14, "__CUSTOM__", "Custom (input your own)", "custom", "",
+         []),
     ]
+
+    # Show existing keys
+    if existing_env:
+        _print_note("Already configured:")
+        for idx, env_key, label, *_ in all_providers:
+            if env_key != "__CUSTOM__" and env_key in existing_env:
+                _print_item(label, f"✓ saved ({existing_env[env_key][:8]}...)")
+        print()
+
+    # Menu: pick providers
+    print(f"  {C.MAGENTA}?{C.RESET} Pick providers to configure (numbers, comma-separated):")
+    for idx, _, label, _, _, _ in all_providers:
+        print(f"     {C.GREEN}{idx:>2}{C.RESET}) {label}")
+    print(f"     {C.GREEN}a{C.RESET}) All of them")
+    print(f"     {C.GREEN}d{C.RESET}) Done, skip to next section")
+    raw = input(f"  {C.MAGENTA}> {C.RESET}").strip().lower()
+
+    if raw in ("", "d", "done", "skip"):
+        selected_providers = []
+    elif raw == "a":
+        selected_providers = all_providers
+    else:
+        indices = set()
+        for part in raw.replace(",", " ").split():
+            if part.isdigit():
+                indices.add(int(part))
+        selected_providers = [p for p in all_providers if p[0] in indices]
+
     new_env = {}
     plan_choices = {}
     validated_providers: set[str] = set()
 
-    for env_key, label, provider_key, default_base in providers_prompt:
-        current_val = existing_env.get(env_key, "")
-        hint = f" ({current_val[:8]}...)" if current_val and len(current_val) > 8 else ""
-        val = input(f"  {C.CYAN}?{C.RESET} {label} ({env_key}){hint}: ").strip()
-        if val:
-            # Determine base URL
-            base_url = default_base
-            if provider_key == "stepfun":
-                print(f"  {C.DIM}{_explain_plan('stepfun')}{C.RESET}")
-                plan = _input("  Plan type", default="standard")
-                plan_choices[env_key] = plan.lower().replace("-", "_")
-                if plan.lower() in ("step_plan", "step-plan"):
-                    base_url = "https://api.stepfun.ai/step_plan/v1"
-                elif plan.lower() == "china":
-                    base_url = "https://api.stepfun.com/v1"
-                else:
-                    base_url = "https://api.stepfun.ai/v1"
-            elif provider_key == "minimax":
-                print(f"  {C.DIM}{_explain_plan('minimax')}{C.RESET}")
-                plan = _input("  Plan type", default="standard")
-                plan_choices[env_key] = plan.lower()
-            elif provider_key == "moonshot":
-                print(f"  {C.DIM}{_explain_plan('moonshot')}{C.RESET}")
-                plan = _input("  Plan type", default="standard")
-                plan_choices[env_key] = plan.lower().replace("-", "_")
+    for idx, env_key, label, provider_key, default_base, _ in selected_providers:
+        if env_key == "__CUSTOM__":
+            # Custom provider — ask for everything
+            print(f"\n  {C.MAGENTA}┌─ Custom Provider ───────────────────{C.RESET}")
+            custom_name = _input("  Provider name (e.g. 'my-provider')", default="custom").strip()
+            if not custom_name:
+                custom_name = "custom"
+            custom_name = custom_name.replace(" ", "-").lower()
+            custom_env = _input("  Env variable name (e.g. 'MY_CUSTOM_API_KEY')", default=f"{custom_name.upper()}_API_KEY").strip()
+            if not custom_env:
+                custom_env = f"{custom_name.upper()}_API_KEY"
+            custom_base = _input("  Base URL (e.g. 'https://api.custom.com/v1')", default="").strip()
+            if not custom_base:
+                continue
+            custom_model = _input("  Default model ID (optional)", default="").strip()
 
-            # Validate key
-            if base_url:
+            current_val = existing_env.get(custom_env, "")
+            if current_val:
+                _print_item(custom_name, f"already set ({current_val[:8]}...), keeping")
+                continue
+            val = input(f"  {C.MAGENTA}?{C.RESET} {custom_name} ({custom_env}): ").strip()
+            if not val:
+                continue
+
+            # Test with custom base URL
+            if custom_base:
                 print(f"  {C.DIM}⏳ Testing key...{C.RESET}", end="", flush=True)
-                ok, msg = _validate_api_key(provider_key, base_url, val)
+                test_model = custom_model or ""
+                ok, msg = _validate_api_key(custom_name, custom_base, val, model=test_model)
                 print(f"\r  {' ' * 20}\r", end="")
                 if ok:
                     _ok(msg)
-                    validated_providers.add(provider_key)
+                    validated_providers.add(custom_name)
                 else:
                     _warn(msg)
                     if not _confirm("  Use this key anyway?", default=False):
                         continue
-            new_env[env_key] = val
-        elif current_val and not val:
-            pass
+
+            new_env[custom_env] = val
+            # Store custom config for step 3
+            plan_choices[f"__custom__{custom_name}"] = {
+                "env": custom_env, "base_url": custom_base, "model": custom_model
+            }
+            print(f"  {C.DIM}└──────────────────────────────────────{C.RESET}\n")
+            continue
+
+        current_val = existing_env.get(env_key, "")
+        if current_val:
+            _print_item(label, f"already set ({current_val[:8]}...), keeping")
+            continue
+        val = input(f"  {C.MAGENTA}?{C.RESET} {label} ({env_key}): ").strip()
+        if not val:
+            continue
+
+        base_url = default_base
+        if provider_key == "stepfun":
+            print(f"  {C.DIM}{_explain_plan('stepfun')}{C.RESET}")
+            plan = _input("  Plan type", default="standard")
+            plan_choices[env_key] = plan.lower().replace("-", "_")
+            if plan.lower() in ("step_plan", "step-plan"):
+                base_url = "https://api.stepfun.ai/step_plan/v1"
+            elif plan.lower() == "china":
+                base_url = "https://api.stepfun.com/v1"
+            else:
+                base_url = "https://api.stepfun.ai/v1"
+        elif provider_key == "minimax":
+            print(f"  {C.DIM}{_explain_plan('minimax')}{C.RESET}")
+            plan = _input("  Plan type", default="standard")
+            plan_choices[env_key] = plan.lower()
+        elif provider_key == "moonshot":
+            print(f"  {C.DIM}{_explain_plan('moonshot')}{C.RESET}")
+            plan = _input("  Plan type", default="standard")
+            plan_choices[env_key] = plan.lower().replace("-", "_")
+
+        if base_url:
+            print(f"  {C.DIM}⏳ Testing key...{C.RESET}", end="", flush=True)
+            ok, msg = _validate_api_key(provider_key, base_url, val)
+            print(f"\r  {' ' * 20}\r", end="")
+            if ok:
+                _ok(msg)
+                validated_providers.add(provider_key)
+            else:
+                _warn(msg)
+                if not _confirm("  Use this key anyway?", default=False):
+                    continue
+        new_env[env_key] = val
 
     # Write .env
     if new_env:
@@ -391,105 +548,203 @@ def cmd_setup(data_dir: Path):
 
     all_keys = {**existing_env, **new_env}
 
-    # ── 3. Providers (auto-configure) ──
-    _print_section("3. Providers")
+    # ── 3. Providers (auto-configure from keys) ──
+    _print_section("2. Providers")
     providers = cfg.setdefault("providers", {})
 
-    if "DEEPSEEK_API_KEY" in all_keys and "deepseek" not in providers:
-        providers["deepseek"] = {
-            "api_key_env": "DEEPSEEK_API_KEY",
-            "base_url": "https://api.deepseek.com/v1",
-            "models": [
-                {"id": "deepseek-v4-flash", "capabilities": ["chat"], "context_window": 65536,
-                 "cost_per_1m_input": 0.30, "cost_per_1m_output": 1.20},
-                {"id": "deepseek-v4-pro", "capabilities": ["chat"], "context_window": 65536},
-            ],
-        }
-        _ok("DeepSeek provider configured")
+    # Build env_key -> provider data map
+    _provider_map = {}
+    for _idx, _ek, _label, _pk, _base, _models in all_providers:
+        if _ek != "__CUSTOM__":
+            _provider_map[_ek] = (_pk, _base, _models, _label)
+        else:
+            _provider_map["__custom__"] = ("custom", "", [], "Custom")
 
-    if "MINIMAX_API_KEY" in all_keys and "minimax" not in providers:
-        providers["minimax"] = {
-            "api_key_env": "MINIMAX_API_KEY",
-            "base_url": "https://api.minimax.io/v1",
-            "models": [
-                {"id": "MiniMax-M3", "capabilities": ["chat", "vision", "tts"], "context_window": 1048576},
-                {"id": "MiniMax-M2.7-highspeed", "capabilities": ["chat"], "context_window": 1048576},
-                {"id": "MiniMax-M2.7", "capabilities": ["chat"], "context_window": 1048576},
-                {"id": "MiniMax-M2.5-highspeed", "capabilities": ["chat"], "context_window": 1048576},
-                {"id": "MiniMax-M2.5", "capabilities": ["chat"], "context_window": 1048576},
-                {"id": "MiniMax-M2.1-highspeed", "capabilities": ["chat"], "context_window": 1048576},
-                {"id": "MiniMax-M2.1", "capabilities": ["chat"], "context_window": 1048576},
-                {"id": "MiniMax-M2", "capabilities": ["chat"], "context_window": 1048576},
-            ],
-        }
-        _ok("MiniMax provider configured")
+    configured_any = False
+    for env_key, (provider_key, base_url, models, label) in _provider_map.items():
+        if env_key == "__custom__":
+            # Handle custom providers stored in plan_choices
+            for _ck, _cv in plan_choices.items():
+                if _ck.startswith("__custom__"):
+                    _name = _ck.replace("__custom__", "")
+                    if _name and _name not in providers:
+                        providers[_name] = {
+                            "api_key_env": _cv["env"],
+                            "base_url": _cv["base_url"],
+                            "protocol": "openai-chat",
+                            "models": ([{"id": _cv["model"], "capabilities": ["chat"], "context_window": 131072}]
+                                       if _cv["model"] else [{"id": "custom-model", "capabilities": ["chat"], "context_window": 131072}]),
+                        }
+                        _ok(f"Custom provider '{_name}' configured")
+                        configured_any = True
+            continue
 
-    if "OPENAI_API_KEY" in all_keys and "openai" not in providers:
-        providers["openai"] = {
-            "api_key_env": "OPENAI_API_KEY",
-            "base_url": "https://api.openai.com/v1",
-            "models": [
-                {"id": "gpt-4o", "capabilities": ["chat"], "context_window": 128000},
-                {"id": "gpt-4o-mini", "capabilities": ["chat"], "context_window": 128000},
-            ],
-        }
-        _ok("OpenAI provider configured")
+        if env_key not in all_keys:
+            continue
+        if provider_key in providers:
+            continue
 
-    if not providers:
+        providers[provider_key] = {
+            "api_key_env": env_key,
+            "base_url": base_url,
+            "models": models or [{"id": provider_key, "capabilities": ["chat"], "context_window": 131072}],
+        }
+        _ok(f"{label} provider configured")
+        configured_any = True
+
+    if not configured_any:
         _warn("No API keys configured — BAW needs at least one provider to work")
         _print_note("Run 'baw --setup' again after getting API keys")
 
-    # ── 4. Capabilities ──
+    # ── 3. Default Model (dropdown from configured providers) ──
+    _print_section("3. Default Model")
+    current_model = cfg.get("model", {}).get("default", "")
+    if providers:
+        model_id = _pick_model_menu(providers, "Default model (main model for chat/tools)")
+        if not model_id:
+            model_id = current_model or "deepseek-v4-flash"
+        cfg.setdefault("model", {})["default"] = model_id
+
+        # Find default provider for exclusion
+        _default_provider = ""
+        for _pk, _pc in providers.items():
+            for _m in _pc.get("models", []):
+                _mid = _m["id"] if isinstance(_m, dict) else _m
+                if _mid == model_id:
+                    _default_provider = _pk
+                    break
+            if _default_provider:
+                break
+
+        _print_note("Fallback model (different provider than default):")
+        fb_id = _pick_model_menu(providers, "Fallback model", exclude_provider=_default_provider)
+        if fb_id:
+            cfg.setdefault("model", {})["fallback"] = fb_id
+        elif cfg.get("model", {}).get("fallback"):
+            # Keep existing fallback
+            pass
+    else:
+        _print_note("No providers configured yet. Set model manually or configure providers first.")
+        model_id = _input("Default model ID", default=current_model or "deepseek-v4-flash")
+        cfg.setdefault("model", {})["default"] = model_id
+
+    # ── 4. Capabilities (interactive model picker per tool) ──
     _print_section("4. Capabilities")
     caps = cfg.setdefault("capabilities", {})
     changed_caps = False
 
-    if not caps.get("chat", {}).get("model"):
-        caps["chat"] = {"model": model_id}
-        changed_caps = True
+    caps.setdefault("chat", {})["model"] = model_id
+    changed_caps = True
 
+    # Default auto-detect logic
     has_minimax = "MINIMAX_API_KEY" in all_keys
     has_stepfun = "STEPFUN_API_KEY" in all_keys
+    has_xai = "XAI_API_KEY" in all_keys
 
-    if not caps.get("stt"):
+    def _auto_stt() -> dict | None:
         if has_stepfun:
             plan = plan_choices.get("STEPFUN_API_KEY", "standard")
             stt_base = "https://api.stepfun.ai/step_plan/v1" if plan == "step_plan" else "https://api.stepfun.ai/v1"
-            caps["stt"] = {
-                "method": "auto-asr",
-                "model": "stepaudio-2.5-asr",
-                "base_url": stt_base,
-                "api_key_env": "STEPFUN_API_KEY",
-            }
-            _ok("STT configured (Stepfun)")
-        elif has_minimax:
-            caps["stt"] = {"method": "model", "model": "MiniMax-M3"}
-            _ok("STT configured (MiniMax)")
-        changed_caps = True
+            return {"method": "auto-asr", "model": "stepaudio-2.5-asr", "base_url": stt_base, "api_key_env": "STEPFUN_API_KEY"}
+        if has_minimax:
+            return {"method": "model", "model": "MiniMax-M3"}
+        if has_xai:
+            return {"method": "auto-asr", "model": "grok-stt", "base_url": "https://api.x.ai/v1", "api_key_env": "XAI_API_KEY"}
+        return None
 
-    if not caps.get("tts"):
+    def _auto_tts() -> dict | None:
         if has_stepfun:
             plan = plan_choices.get("STEPFUN_API_KEY", "standard")
             tts_base = "https://api.stepfun.ai/step_plan/v1" if plan == "step_plan" else "https://api.stepfun.ai/v1"
-            caps["tts"] = {"method": "model", "model": "stepaudio-2.5-tts", "voice": "Cantonese_GentleLady",
-                          "config": {"api_model": "stepaudio-2.5-tts", "base_url": tts_base}}
-            _ok("TTS configured (Stepfun)")
-        elif has_minimax:
-            caps["tts"] = {"model": "MiniMax-M3", "voice": "Cantonese_GentleLady",
-                          "config": {"api_model": "speech-2.8-hd"}}
-            _ok("TTS configured (MiniMax)")
-        changed_caps = True
-
-    if not caps.get("vision"):
+            return {"method": "model", "model": "stepaudio-2.5-tts", "voice": "Cantonese_GentleLady",
+                    "config": {"api_model": "stepaudio-2.5-tts", "base_url": tts_base}}
         if has_minimax:
-            caps["vision"] = {"model": "MiniMax-M3"}
-            _ok("Vision configured (MiniMax-M3)")
-        elif has_stepfun:
-            caps["vision"] = {"model": "step-3.7-flash"}
-            _ok("Vision configured (Stepfun)")
+            return {"model": "MiniMax-M3", "voice": "Cantonese_GentleLady",
+                    "config": {"api_model": "speech-2.8-hd"}}
+        if has_xai:
+            return {"method": "model", "model": "grok-tts"}
+        return None
 
-    if changed_caps:
-        _print_note("Capabilities auto-configured. Adjust later: baw --cfg set capabilities.<name>.<key> <value>")
+    def _auto_vision() -> dict | None:
+        if has_minimax:
+            return {"model": "MiniMax-M3"}
+        if has_stepfun:
+            return {"model": "step-3.7-flash"}
+        if has_xai:
+            return {"model": "grok-3"}
+        return None
+
+    def _auto_image_gen() -> dict | None:
+        if "OPENAI_API_KEY" in all_keys:
+            return {"model": "dall-e-3"}
+        if has_minimax:
+            return {"model": "MiniMax-M3"}
+        if has_xai:
+            return {"model": "grok-3"}
+        return None
+
+    def _auto_browser() -> dict | None:
+        # Browser uses a chat model — prefer default model or any available
+        if model_id:
+            return {"model": model_id}
+        return None
+
+    def _configure_cap(name: str, key: str, auto_fn, providers_cfg: dict):
+        """Interactive capability config: show auto-detect, let user accept/pick/skip."""
+        nonlocal changed_caps
+
+        # Show current config if exists
+        existing = caps.get(key)
+        if existing:
+            desc = existing.get("model", existing.get("method", "?"))
+            print(f"  {C.DIM}Current {name}: {desc}{C.RESET}")
+
+        auto_cfg = auto_fn()
+        if auto_cfg:
+            desc = auto_cfg.get("model", auto_cfg.get("method", "auto"))
+            print(f"  {C.DIM}Auto-detect: {desc}{C.RESET}")
+            choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (d)efault / (p)ick model / (s)kip [{C.DIM}D{C.RESET}]: ").strip().lower()
+            if choice in ("", "d", "default"):
+                caps[key] = auto_cfg
+                _ok(f"{name} configured ({desc})")
+                changed_caps = True
+            elif choice == "p":
+                mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key)
+                if mid:
+                    caps[key] = {"model": mid}
+                    _ok(f"{name} configured ({mid})")
+                    changed_caps = True
+        elif providers_cfg:
+            if existing:
+                print(f"  {C.DIM}No auto-detect for {name}{C.RESET}")
+                choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (k)eep current / (p)ick model / (s)kip [{C.DIM}K{C.RESET}]: ").strip().lower()
+                if choice in ("", "k", "keep"):
+                    pass  # keep existing
+                elif choice == "p":
+                    mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key)
+                    if mid:
+                        caps[key] = {"model": mid}
+                        _ok(f"{name} configured ({mid})")
+                        changed_caps = True
+            else:
+                choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (p)ick model / (s)kip [{C.DIM}S{C.RESET}]: ").strip().lower()
+                if choice == "p":
+                    mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key)
+                    if mid:
+                        caps[key] = {"model": mid}
+                        _ok(f"{name} configured ({mid})")
+                        changed_caps = True
+        else:
+            _print_note(f"{name}: skipped (no providers configured)")
+
+    if providers:
+        _configure_cap("STT (Speech-to-Text)", "stt", _auto_stt, providers)
+        _configure_cap("TTS (Text-to-Speech)", "tts", _auto_tts, providers)
+        _configure_cap("Vision", "vision", _auto_vision, providers)
+        _configure_cap("Image Generation", "image_generation", _auto_image_gen, providers)
+        _configure_cap("Browser", "browser", _auto_browser, providers)
+    else:
+        _print_note("No providers — capabilities skipped. Add API keys and re-run setup to configure.")
 
     # ── 5. Behaviour ──
     _print_section("5. Behaviour")
@@ -552,7 +807,7 @@ def cmd_setup(data_dir: Path):
         elif choice == "1":
             token = os.environ.get("BAW_TELEGRAM_TOKEN", "")
             if not token:
-                token = input(f"  {C.CYAN}?{C.RESET} Telegram Bot Token: ").strip()
+                token = input(f"  {C.MAGENTA}?{C.RESET} Telegram Bot Token: ").strip()
             if token:
                 cfg.setdefault("telegram", {})["token"] = token
                 _ok("Telegram configured")
@@ -562,7 +817,7 @@ def cmd_setup(data_dir: Path):
         elif choice == "2":
             token = os.environ.get("BAW_DISCORD_TOKEN", "")
             if not token:
-                token = input(f"  {C.CYAN}?{C.RESET} Discord Bot Token: ").strip()
+                token = input(f"  {C.MAGENTA}?{C.RESET} Discord Bot Token: ").strip()
             if token:
                 prefix = _input("  Command prefix (e.g. 'baw ')", default="baw ")
                 cfg.setdefault("discord", {})["token"] = token
@@ -574,10 +829,10 @@ def cmd_setup(data_dir: Path):
         elif choice == "3":
             bot_token = os.environ.get("BAW_SLACK_BOT_TOKEN", "")
             if not bot_token:
-                bot_token = input(f"  {C.CYAN}?{C.RESET} Slack Bot Token (xoxb-...): ").strip()
+                bot_token = input(f"  {C.MAGENTA}?{C.RESET} Slack Bot Token (xoxb-...): ").strip()
             app_token = os.environ.get("BAW_SLACK_APP_TOKEN", "")
             if not app_token:
-                app_token = input(f"  {C.CYAN}?{C.RESET} Slack App Token (xapp-...): ").strip()
+                app_token = input(f"  {C.MAGENTA}?{C.RESET} Slack App Token (xapp-...): ").strip()
             if bot_token and app_token:
                 cfg.setdefault("slack", {})["bot_token"] = bot_token
                 cfg["slack"]["app_token"] = app_token
@@ -587,15 +842,15 @@ def cmd_setup(data_dir: Path):
                 _print_note("Both tokens required — skipped")
         elif choice == "4":
             homeserver = _input("Matrix homeserver", default="https://matrix.org")
-            username = input(f"  {C.CYAN}?{C.RESET} Matrix username (@user:matrix.org): ").strip()
-            token = input(f"  {C.CYAN}?{C.RESET} Access token (or leave blank for password): ").strip()
+            username = input(f"  {C.MAGENTA}?{C.RESET} Matrix username (@user:matrix.org): ").strip()
+            token = input(f"  {C.MAGENTA}?{C.RESET} Access token (or leave blank for password): ").strip()
             if username:
                 cfg.setdefault("matrix", {})["homeserver"] = homeserver
                 cfg["matrix"]["username"] = username
                 if token:
                     cfg["matrix"]["access_token"] = token
                 else:
-                    pwd = input(f"  {C.CYAN}?{C.RESET} Password: ").strip()
+                    pwd = input(f"  {C.MAGENTA}?{C.RESET} Password: ").strip()
                     if pwd:
                         cfg["matrix"]["password"] = pwd
                 _ok("Matrix configured")
@@ -603,7 +858,7 @@ def cmd_setup(data_dir: Path):
             else:
                 _print_note("No username — skipped")
         elif choice == "5":
-            phone = input(f"  {C.CYAN}?{C.RESET} Signal phone number (+1555...): ").strip()
+            phone = input(f"  {C.MAGENTA}?{C.RESET} Signal phone number (+1555...): ").strip()
             if phone:
                 cfg.setdefault("signal", {})["phone"] = phone
                 _ok("Signal configured (requires signal-cli daemon)")
@@ -611,8 +866,8 @@ def cmd_setup(data_dir: Path):
             else:
                 _print_note("No phone — skipped")
         elif choice == "6":
-            token = input(f"  {C.CYAN}?{C.RESET} WhatsApp Cloud API token: ").strip()
-            phone_id = input(f"  {C.CYAN}?{C.RESET} Phone Number ID: ").strip()
+            token = input(f"  {C.MAGENTA}?{C.RESET} WhatsApp Cloud API token: ").strip()
+            phone_id = input(f"  {C.MAGENTA}?{C.RESET} Phone Number ID: ").strip()
             if token and phone_id:
                 cfg.setdefault("whatsapp", {})["token"] = token
                 cfg["whatsapp"]["phone_number_id"] = phone_id

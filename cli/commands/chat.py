@@ -91,6 +91,16 @@ def _memory_size() -> str:
         return f"{sz/1000:.0f}KB"
     return "—"
 
+def _persist_config(cfg: dict) -> None:
+    """Write the in-memory config back to ~/.baw/config.yaml."""
+    import yaml
+    p = BAW_HOME / "config.yaml"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(yaml.dump(cfg, allow_unicode=True, default_flow_style=False))
+    from core.config import invalidate_cache
+    invalidate_cache()
+
+
 def _recent_sessions_table(n: int = 5) -> Table | None:
     sd = BAW_HOME / "sessions"
     if not sd.exists():
@@ -349,21 +359,30 @@ def _welcome(cfg):
 # Agent loop — streaming + tool calling
 # ═══════════════════════════════════════════════════════════════════════
 
-MAX_TOOL_TURNS = 5
+MAX_TOOL_TURNS = 12
 
 def _run_agent(client, model_id, messages, cfg):
     """Run agent loop: stream response, handle tool calls, return final text + usage."""
     total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-    for turn in range(MAX_TOOL_TURNS):
-        spinner = Spinner("dots2", text=f"[baw.muted]{model_id} thinking…[/]", style="baw.muted")
-        text_buffer = ""
-        reasoning_buffer = ""  # DeepSeek reasoning_content
-        tool_calls_buffer: list[dict] = []
-        current_tool_index = -1
-        usage = None
+    tool_icons = {
+        "web_search": "🔍", "read_file": "📄", "write_file": "✏️",
+        "patch": "🔧", "search_files": "🔎", "memory": "🧠",
+        "terminal": "💻", "bash": "💻", "web_extract": "🌐",
+        "config": "⚙️", "todo": "📋", "delegate_task": "🤖",
+        "session_search": "📂", "cronjob": "⏰",
+    }
 
-        with Live(spinner, console=plain_console, refresh_per_second=10, transient=True) as live:
+    for turn in range(MAX_TOOL_TURNS):
+        turn_label = f"  {C.DIM}[{turn+1}/{MAX_TOOL_TURNS}]{C.RESET}" if turn > 0 else ""
+        with Live(Text(f"  {C.MAGENTA}🧠 BAW thinking…{C.RESET}  {turn_label}", style=""), 
+                  console=plain_console, refresh_per_second=10, transient=True) as live:
+            text_buffer = ""
+            reasoning_buffer = ""
+            tool_calls_buffer: list[dict] = []
+            usage = None
+            has_thought = False
+
             try:
                 for chunk in client.chat.completions.create(
                     model=model_id,
@@ -372,7 +391,6 @@ def _run_agent(client, model_id, messages, cfg):
                     stream=True,
                     stream_options={"include_usage": True},
                 ):
-                    # Usage
                     if hasattr(chunk, "usage") and chunk.usage:
                         usage = {
                             "prompt_tokens": chunk.usage.prompt_tokens or 0,
@@ -384,21 +402,26 @@ def _run_agent(client, model_id, messages, cfg):
                     if delta is None:
                         continue
 
-                    # DeepSeek reasoning_content (not displayed, but must pass back)
+                    # Reasoning content
                     if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        if not has_thought:
+                            live.update(Text(f"  {C.DIM}💭 BAW reasoning…{C.RESET}  {turn_label}", style=""))
+                            has_thought = True
                         reasoning_buffer += delta.reasoning_content
 
                     # Text content
                     if delta.content:
                         if live.is_started:
                             live.stop()
-                            if turn == 0:
-                                plain_console.print(Text("🖤  BAW", style="baw.gold"))
+                        if turn == 0 and not text_buffer:
+                            plain_console.print(Text(f"  {C.MAGENTA}🖤 BAW{C.RESET}", style=""))
                         text_buffer += delta.content
                         plain_console.print(delta.content, end="", style="white")
 
                     # Tool calls
                     if delta.tool_calls:
+                        if live.is_started:
+                            live.update(Text(f"  {C.MAGENTA}🔧 Executing tool…{C.RESET}  {turn_label}", style=""))
                         for tc in delta.tool_calls:
                             idx = tc.index
                             if idx >= len(tool_calls_buffer):
@@ -407,21 +430,22 @@ def _run_agent(client, model_id, messages, cfg):
                                 tool_calls_buffer[idx]["id"] = tc.id
                             if tc.function:
                                 if tc.function.name:
-                                    tool_calls_buffer[idx]["function"]["name"] = tc.function.name
+                                    current_tool_name = tc.function.name
+                                    icon = tool_icons.get(current_tool_name, "🔧")
+                                    live.update(Text(f"  {icon} {C.MAGENTA}{current_tool_name}{C.RESET}  {turn_label}", style=""))
+                                    tool_calls_buffer[idx]["function"]["name"] = current_tool_name
                                 if tc.function.arguments:
                                     tool_calls_buffer[idx]["function"]["arguments"] += tc.function.arguments
 
                 if live.is_started:
                     live.stop()
                     if turn == 0 and not text_buffer and tool_calls_buffer:
-                        plain_console.print(Text("🖤  BAW", style="baw.gold"))
+                        plain_console.print(Text(f"  {C.MAGENTA}🔧 BAW executing…{C.RESET}", style=""))
 
             except Exception as e:
                 live.stop()
-                plain_console.print(f"\n[baw.error]✗ API error:[/] {e}")
+                plain_console.print(f"\n  {C.RED}✗ API error: {e}{C.RESET}")
                 return None, None
-
-        plain_console.print()
 
         # Accumulate usage
         if usage:
@@ -430,7 +454,6 @@ def _run_agent(client, model_id, messages, cfg):
 
         # If text response (no tool calls) → done
         if text_buffer and not tool_calls_buffer:
-            # Append to messages with reasoning for DeepSeek pass-back
             ass_msg = {"role": "assistant", "content": text_buffer.strip()}
             if reasoning_buffer:
                 ass_msg["reasoning_content"] = reasoning_buffer
@@ -439,9 +462,6 @@ def _run_agent(client, model_id, messages, cfg):
 
         # If tool calls → execute and continue
         if tool_calls_buffer:
-            tool_icons = {"web_search": "🔍", "read_file": "📄", "write_file": "✏️"}
-
-            # Add assistant message with tool calls + reasoning
             ass_msg = {
                 "role": "assistant",
                 "content": text_buffer or None,
@@ -460,22 +480,23 @@ def _run_agent(client, model_id, messages, cfg):
 
                 icon = tool_icons.get(fn_name, "🔧")
                 arg_preview = str(fn_args)[:80]
-                plain_console.print(f"  {icon} [baw.muted]{fn_name}({arg_preview})[/]")
+                plain_console.print(f"  {icon} {C.YELLOW}{fn_name}{C.RESET} {C.DIM}({arg_preview}){C.RESET}")
 
                 result = TOOL_EXECUTORS.get(fn_name, lambda a: json.dumps({"error": "unknown tool"}))(fn_args)
 
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": result[:2000],  # truncate for context
+                    "content": result[:2000],
                 })
 
+            if turn < MAX_TOOL_TURNS - 1:
+                plain_console.print(f"  {C.DIM}⏳ Processing results…{C.RESET}")
             continue  # Next agent turn
 
-        # Empty response
-        return None, None
-
-    return None, total_usage
+    # Max turns reached
+    plain_console.print(f"\n  {C.YELLOW}⚠ Max turns ({MAX_TOOL_TURNS}) reached. Task may be incomplete.{C.RESET}")
+    return text_buffer.strip() if text_buffer else None, total_usage
 
 
 def _print_status(cfg, model_id, usage):
@@ -533,7 +554,8 @@ def _slash(cmd: str, cfg, msgs, mid_ref: list) -> str | bool | None:
         if len(parts) > 1:
             cfg["model"]["default"] = parts[1]
             mid_ref[0] = parts[1]
-            plain_console.print(f"[baw.success]✓ model → {parts[1]}[/]")
+            _persist_config(cfg)
+            plain_console.print(f"[baw.success]✓ model → {parts[1]} (persisted)[/]")
         else:
             plain_console.print(f"[baw.purple]current:[/] [baw.gold]{mid_ref[0]}[/]")
             plain_console.print("[baw.muted]usage: /model <name>[/]")

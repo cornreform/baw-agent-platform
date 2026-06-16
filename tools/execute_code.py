@@ -29,8 +29,14 @@ _TOOL_PARAMS = {
     "write_file": ["path", "content"],
     "patch": ["path", "old_string", "new_string", "replace_all"],
     "search_files": ["pattern", "target", "path", "file_glob", "limit"],
+    "terminal": ["command", "timeout", "workdir"],
     "bash": ["command", "timeout", "workdir"],
     "memory": ["action", "target", "content", "old_text"],
+    "session_search": ["query", "session_id", "profile"],
+    "cronjob": ["action", "prompt", "schedule", "name"],
+    "delegate_task": ["goal", "context", "toolsets"],
+    "config": ["action", "path", "value"],
+    "todo": ["todos", "merge"],
 }
 
 _TOOL_IMPORTS = {}
@@ -53,7 +59,9 @@ def _import_tools():
                     if i < len(args):
                         merged[p] = args[i]
                 merged.update(kwargs)
-                result = execute_tool(tname, merged)
+                # Alias: terminal -> bash (tool is registered as 'bash')
+                actual_name = "bash" if tname == "terminal" else tname
+                result = execute_tool(actual_name, merged)
                 return result
             _wrapper.__name__ = tname
             return _wrapper
@@ -179,11 +187,13 @@ TOOL_DEF = {
     "name": "execute_code",
     "description": (
         "Execute Python code with access to BAW tools. "
-        "Use this for multi-step logic that chains tool calls (web_search, read_file, "
-        "write_file, patch, terminal) with processing between them. "
+        "Use this for multi-step logic that chains tool calls with processing between them. "
         "Injected tools: web_search, web_extract, read_file, write_file, patch, "
-        "search_files, terminal (as bash), memory, json_parse, shell_quote, retry. "
-        "Works like writing a short Python script — use print() for output."
+        "search_files, terminal (bash), memory, session_search, cronjob, "
+        "delegate_task, config, todo, json_parse, shell_quote, retry. "
+        "Works like writing a short Python script — use print() for output. "
+        "IMPORTANT: Call these as regular Python functions, e.g. "
+        "content = read_file('/path') ; print(content)"
     ),
     "handler": execute_code,
     "parameters": {
@@ -198,6 +208,11 @@ TOOL_DEF = {
                                "search_files(pattern, target, path, file_glob, limit), "
                                "terminal(command, timeout, workdir), "
                                "memory(action, target, content, old_text), "
+                               "session_search(query, session_id, profile), "
+                               "cronjob(action, prompt, schedule, name), "
+                               "delegate_task(goal, context, toolsets), "
+                               "config(action, key, value), "
+                               "todo(todos, merge), "
                                "json_parse(text), shell_quote(s), retry(fn, max_attempts, delay). "
                                "Use print() for output.",
             },
