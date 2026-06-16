@@ -167,6 +167,7 @@ def validate_capability_health(config: dict) -> list[dict]:
 
     Returns list of {capability, issue, fix_applied} dicts.
     Auto-heals: contradictory fields, missing env vars, method drift.
+    **Code-enforced** — runs before EVERY LLM call in run_agent().
     """
     import os
     from pathlib import Path
@@ -183,6 +184,7 @@ def validate_capability_health(config: dict) -> list[dict]:
             continue
 
         method = cap_cfg.get("method", "")
+        model_id = cap_cfg.get("model", "")
         base_url = cap_cfg.get("base_url", "")
         api_key_env = cap_cfg.get("api_key_env", "")
 
@@ -196,32 +198,66 @@ def validate_capability_health(config: dict) -> list[dict]:
                 "fix_applied": "removed base_url + api_key_env (local method doesn't need them)",
             })
 
-        # Pattern 2: Remote method + no base_url = broken
+        # Pattern 2: Remote method + no base_url — auto-fallback to local
         if method in REMOTE_METHODS and not base_url:
+            local_fallback = _pick_local_fallback(cap_name)
+            cap_cfg["method"] = local_fallback
+            cap_cfg.pop("base_url", None)
+            cap_cfg.pop("api_key_env", None)
+            cap_cfg.pop("model", None)
             fixes.append({
                 "capability": cap_name,
-                "issue": f"remote method '{method}' without base_url",
-                "fix_applied": "none — need user to set base_url",
+                "issue": f"remote method '{method}' without base_url — broken config",
+                "fix_applied": f"auto-fallback to '{local_fallback}' (local, free, always works)",
             })
 
-        # Pattern 3: api_key_env set but env var doesn't exist
+        # Pattern 3: api_key_env set but env var doesn't exist — auto-fallback to local
         if api_key_env and not _env_var_exists(api_key_env):
-            # WARN only — don't modify config permanently (key may return via config(action=set_key))
-            import logging
-            logger = logging.getLogger("baw.capabilities")
-            logger.warning(
-                f"[health] {cap_name}: api_key_env '{api_key_env}' not set — "
-                f"key not found in .env or environment. "
-                f"Use `config(action=set_key, key_name='{api_key_env}', key_value=...)` to add it. "
-                f"Continuing with configured method (will fail if remote)."
-            )
+            local_fallback = _pick_local_fallback(cap_name)
+            old_method = method or model_id or api_key_env
+            cap_cfg["method"] = local_fallback
+            cap_cfg.pop("base_url", None)
+            cap_cfg.pop("api_key_env", None)
+            cap_cfg.pop("model", None)
             fixes.append({
                 "capability": cap_name,
-                "issue": f"api_key_env '{api_key_env}' not found in .env or environment",
-                "fix_applied": "warning logged — config unchanged. Add key via config(action=set_key).",
+                "issue": f"api_key_env '{api_key_env}' not found — '{old_method}' will fail",
+                "fix_applied": f"auto-fallback to '{local_fallback}' (local, no API key needed)",
             })
+
+        # Pattern 4: base_url + api_key_env both set but model ID doesn't match any provider
+        if base_url and api_key_env and model_id:
+            provider = _find_provider_for_base_url(config, base_url)
+            if provider:
+                model_exists = any(
+                    m.get("id") == model_id
+                    for m in config.get("providers", {}).get(provider, {}).get("models", [])
+                )
+                if not model_exists:
+                    fixes.append({
+                        "capability": cap_name,
+                        "issue": f"model '{model_id}' not listed in provider '{provider}' models",
+                        "fix_applied": "none — model may still work if provider accepts unknown model IDs",
+                    })
 
     return fixes
+
+
+def _pick_local_fallback(cap_name: str) -> str:
+    """Pick the best local fallback method for a capability."""
+    local_map = {
+        "stt": "faster-whisper",
+        "tts": "edge-tts",
+    }
+    return local_map.get(cap_name, "local")
+
+
+def _find_provider_for_base_url(config: dict, base_url: str) -> Optional[str]:
+    """Find which provider in config matches a given base_url."""
+    for pname, pdata in config.get("providers", {}).items():
+        if pdata.get("base_url", "").rstrip("/") == base_url.rstrip("/"):
+            return pname
+    return None
 
 
 def _env_var_exists(env_var: str) -> bool:
