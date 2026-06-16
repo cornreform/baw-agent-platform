@@ -362,7 +362,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "  `config(action=set, path='providers.x.base_url', value='https://...')`\n"
             "  `config(action=get, path='model.default')` to read\n"
             "  `config(action=validate)` to check syntax\n"
-            "  NEVER use `write_file` or `bash` to edit config.yaml directly —\n"
+            "  NEVER use `write_file` or `bash` to edit config.yaml or .env files directly — use `config(action=set)` for config.yaml and `config(action=set_key)` for .env —\n"
             "  the `config` tool handles backup, validation, and auto-rollback.\n"
             "  **Config command rule**: when user sends params (method=X model=Y),\n"
             "  use config tool only. MAX 3 steps: get→set→verify. NO sub-agents.\n"
