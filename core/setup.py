@@ -702,65 +702,42 @@ def cmd_setup(data_dir: Path):
             return {"model": model_id}
         return None
 
-    def _configure_cap(name: str, key: str, auto_fn, providers_cfg: dict):
-        """Interactive capability config: show auto-detect, let user accept/pick/skip."""
+    def _auto_configure(name: str, key: str, auto_fn) -> bool:
+        """Silently auto-configure a capability. Returns True if changed."""
         nonlocal changed_caps
-
-        # Show current config if exists
-        existing = caps.get(key)
-        if existing:
-            desc = existing.get("model", existing.get("method", "?"))
-            print(f"  {C.DIM}Current {name}: {desc}{C.RESET}")
-
         auto_cfg = auto_fn()
         if auto_cfg:
-            desc = auto_cfg.get("model", auto_cfg.get("method", "auto"))
-            print(f"  {C.DIM}Auto-detect: {desc}{C.RESET}")
-            choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (d)efault / (a)uto / (p)ick model / (s)kip [{C.DIM}D{C.RESET}]: ").strip().lower()
-            if choice in ("", "d", "default", "a", "auto"):
-                caps[key] = auto_cfg
-                _ok(f"{name} configured ({desc})")
-                changed_caps = True
-            elif choice == "p":
-                cur = existing.get("model") if existing else None
-                extras = [auto_cfg.get("model")] if auto_cfg else None
-                mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, current_model=cur, extra_models=extras)
-                if mid:
-                    caps[key] = {"model": mid}
-                    _ok(f"{name} configured ({mid})")
-                    changed_caps = True
-        elif providers_cfg:
+            existing = caps.get(key)
             if existing:
-                print(f"  {C.DIM}No auto-detect for {name}{C.RESET}")
-                choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (k)eep current / (p)ick model / (s)kip [{C.DIM}K{C.RESET}]: ").strip().lower()
-                if choice in ("", "k", "keep"):
-                    pass  # keep existing
-                elif choice == "p":
-                    cur = existing.get("model") if existing else None
-                    mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key, current_model=cur)
-                    if mid:
-                        caps[key] = {"model": mid}
-                        _ok(f"{name} configured ({mid})")
-                        changed_caps = True
-            else:
-                choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (p)ick model / (s)kip [{C.DIM}S{C.RESET}]: ").strip().lower()
-                if choice == "p":
-                    mid = _pick_model_menu(providers_cfg, f"Pick model for {name}", capability=key)
-                    if mid:
-                        caps[key] = {"model": mid}
-                        _ok(f"{name} configured ({mid})")
-                        changed_caps = True
-        else:
-            _print_note(f"{name}: skipped (no providers configured)")
+                # Keep existing unless it's broken (no model, no method)
+                if existing.get("model") or existing.get("method"):
+                    return False
+            caps[key] = auto_cfg
+            changed_caps = True
+            return True
+        return False
 
+    auto_results = []
     if providers:
-        _configure_cap("STT (Speech-to-Text)", "stt", _auto_stt, providers)
-        _configure_cap("TTS (Text-to-Speech)", "tts", _auto_tts, providers)
-        _configure_cap("Vision", "vision", _auto_vision, providers)
-        _configure_cap("Image Generation", "image_generation", _auto_image_gen, providers)
-        _configure_cap("Browser", "browser", _auto_browser, providers)
-    else:
-        _print_note("No providers — capabilities skipped. Add API keys and re-run setup to configure.")
+        for cap_name, cap_key, auto_fn in [
+            ("STT", "stt", _auto_stt),
+            ("TTS", "tts", _auto_tts),
+            ("Vision", "vision", _auto_vision),
+            ("Image Generation", "image_generation", _auto_image_gen),
+            ("Browser", "browser", _auto_browser),
+        ]:
+            was_configured = _auto_configure(cap_name, cap_key, auto_fn)
+            desc = caps.get(cap_key, {}).get("model", caps.get(cap_key, {}).get("method", "—"))
+            status = f"{C.GREEN}✓{C.RESET}" if was_configured else f"{C.DIM}kept{not was_configured and caps.get(cap_key) or '—'}{C.RESET}"
+            auto_results.append((cap_name, desc, was_configured))
+
+        print()
+        _print_header("Auto-Configured Capabilities")
+        for name, desc, changed in auto_results:
+            icon = f"{C.GREEN}✓{C.RESET}" if changed else f"{C.DIM}─{C.RESET}"
+            status = f"{C.WHITE}{desc}{C.RESET}" if desc != "—" else f"{C.DIM}not configured{C.RESET}"
+            print(f"  {icon} {C.BOLD}{name}{C.RESET}: {status}")
+        print()
 
     # ── 5. Behaviour ──
     _print_section("5. Behaviour")
