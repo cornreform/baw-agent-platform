@@ -960,19 +960,22 @@ class BaseConnector(ABC):
             logger.info(f"[DirectShortcut] triggered for: {text[:60]}")
             return _direct_result
 
-        # ── Chat bypass ──────────────────────────────────────────────
-        _work_kw = ["幫我", "設定", "整", "改", "生成", "建立", "部署", "寫",
-                      "create", "build", "deploy", "write", "fix", "debug", "install",
-                      "code", "implement", "config", "run ", "exec", "curl", "api",
-                      "git", "send", "分析", "研究", "research", "compare",
-                      "/baw", "search", "memory", "記低", "搜尋", "執行",
-                      "tts", "voice", "audio", "聲", "讀出", "播放",
-                      "狀態", "status", "model", "用緊", "用紧", "用緊邊個", "用紧边个", "邊個 model", "边个 model",
-                      "delete", "remove", "clear", "reset", "kill"]
+        # ── Chat bypass (NARROW WHITELIST only) ──
+        # Default = BAW loop with INLINE GUARD. ChatBypass = lightweight LLM with NO tools,
+        # so it's ONLY for obvious casual chat that needs zero execution.
+        _chat_only_patterns = [
+            r"^(hi|hello|hey|yo|good\s+(morning|afternoon|evening)|what'?s\s+up)\b",
+            r"^(你好|早晨|晚安|嗨|喂|哈佬|哈囉)\b",
+            r"^(多謝|謝謝|thank|thanks|thx|thks|good\b|great\b|awesome\b|正[呀]?|好嘢|好叻|正呀|勁[呀]?|好波)\b",
+            r"^(明白|了解|清楚|ok|okay|收到|得[了]?|好[的啦]?|嗯|係[呀的]?)[!.\s]*$",
+            r"^[是好]的[!.\s]*$",
+            r"^hi$|^hello$|^hey$|^yo$",
+            r"^(我覺|我認|我諗|我覺得|我認為).{0,30}$",
+        ]
         _is_chat = (
             len(text.strip()) < 80
             and not text.startswith("/")
-            and not any(kw in text.lower() for kw in _work_kw)
+            and any(_re.match(p, text.strip(), _re.IGNORECASE) for p in _chat_only_patterns)
         )
         if _is_chat:
             try:
