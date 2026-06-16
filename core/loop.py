@@ -955,7 +955,7 @@ def run_agent(
     system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
 
     # ── Tier-based routing decision ──
-    from .router import route_task
+    from .router import route_task, INLINE_DIRECT, INLINE_WITH_HINT
     _ctx_tokens_est = len(prompt) // 3  # rough estimate
     _route = route_task(
         prompt, config,
@@ -1535,8 +1535,13 @@ def run_agent(
     # ═══════════════════════════════════════════════════════════════
     # INLINE GUARD: Router scored this as a simple, direct task.
     # Skip planner + sub-agent pipeline entirely — execute directly.
+    #
+    # Three modes:
+    #   INLINE_DIRECT  (0-5)  → strict inline, NO sub-agents
+    #   INLINE_WITH_HINT (6-7) → inline, but CAN delegate sub-tasks
+    #   DELEGATE       (8+)   → full delegate path (separate section)
     # ═══════════════════════════════════════════════════════════════
-    _is_inline = getattr(_route, 'delegate', True) is False
+    _inline_mode = getattr(_route, 'inline_mode', INLINE_DIRECT)
     _is_config_cmd = bool(re.search(
         r'(config\\s+stt|config\\s+tts|config\\s+vision|'
         r'method\\s*=\\s*\\S+\\s+model\\s*=\\s*\\S+|'
@@ -1544,9 +1549,9 @@ def run_agent(
         prompt, re.IGNORECASE
     ))
 
-    if _is_inline or _is_config_cmd:
-        logger.info(f"[loop] INLINE execution (delegate={_route.delegate}, config_cmd={_is_config_cmd})")
-        # CRITICAL: Force NO delegation. Model handles task directly with tools.
+    if _is_config_cmd or _inline_mode == INLINE_DIRECT:
+        logger.info(f"[loop] INLINE_DIRECT execution (inline_mode={_inline_mode}, config_cmd={_is_config_cmd})")
+        # Force NO delegation. Model handles task directly with tools.
         _inline_sys = system_prompt + (
             "\n\n## [INLINE MODE] Direct execution — NO planner, NO sub-agents\n"
             "You are the worker. Execute the task directly using your available tools.\n"
@@ -1554,7 +1559,27 @@ def run_agent(
             "- Execute NOW. Do NOT write a plan. Do NOT say 'I will follow up.'\n"
             "- After making changes, verify with read-back. Report result.\n"
         )
+        _exec_mode = "inline-direct"
 
+    elif _inline_mode == INLINE_WITH_HINT:
+        logger.info(f"[loop] INLINE_WITH_HINT execution (score={_route.score})")
+        # Inline execution, but model MAY delegate sub-tasks via delegate_task
+        _inline_sys = system_prompt + (
+            "\n\n## [INLINE MODE] Direct execution — you can delegate sub-tasks\n"
+            "You are the primary worker. Execute the task directly using your tools.\n"
+            "- For simple steps: do them yourself inline.\n"
+            "- For complex sub-tasks that need independent reasoning: "
+            "you MAY use `delegate_task()` to hand them off.\n"
+            "- Do NOT write a plan. Do NOT say 'I will follow up.'\n"
+            "- After making changes, verify with read-back. Report result.\n"
+        )
+        _exec_mode = "inline-with-hint"
+
+    else:
+        # Score 8+ → go to delegate path below
+        _exec_mode = None
+
+    if _exec_mode:
         # Build inline context — use ctx.add_* to keep Message objects (not dicts)
         if not ctx:
             ctx = Context(system_prompt=_inline_sys)
@@ -1600,7 +1625,7 @@ def run_agent(
         output += f"\n\n{format_cost_summary()}"
 
         try:
-            mem.remember(f"User: {prompt[:150]} -> BAW (inline): {(_inline_resp.content or '')[:150]}")
+            mem.remember(f"User: {prompt[:150]} -> BAW ({_exec_mode}): {(_inline_resp.content or '')[:150]}")
         except Exception:
             pass
 
@@ -1610,7 +1635,7 @@ def run_agent(
             "model": f"{model.provider}/{model.id}",
             "iterations": 1,
             "steps": 1,
-            "mode": "inline",
+            "mode": _exec_mode,
             "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
         }
 

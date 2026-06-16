@@ -215,55 +215,98 @@ def get_tier_preferences(config: dict) -> dict[str, list[str]]:
     return merged
 
 
-def pick_model_for_tier(tier: str, config: dict) -> str:
-    """Pick the first AVAILABLE model for the tier.
+# ── Rotation tracker for balanced strategy ──
+_rotation_idx: dict[str, int] = {}  # tier name → next index to try
 
-    The tier→model mapping is config-driven. If the user hasn't
-    configured anything, falls back to DEFAULT_TIER_PREFERENCES.
-    This function makes NO quality judgement — it just picks the
-    first model in the preference list that's configured and
-    has chat capability.
+
+def pick_model_for_tier(tier: str, config: dict) -> str:
+    """Pick a model for the tier.
+
+    Two strategies (config.router.strategy):
+      - "simple" (default): first available model in preference list
+      - "balanced": weighted round-robin through available models
+
+    The tier→model mapping is config-driven. Falls back to
+    DEFAULT_TIER_PREFERENCES if user hasn't configured anything.
+    Returns any chat-capable model as last resort.
     """
+    available = _get_available_chat_models(config)
+    preferences = get_tier_preferences(config)
+    tier_prefs = preferences.get(tier, preferences.get(TIER_MODERATE, []))
+
+    # Filter to only available models
+    available_prefs = [m for m in tier_prefs if m in available]
+    if not available_prefs:
+        # Last resort: any chat model
+        if available:
+            return next(iter(available))
+        return "step-3.7-flash"
+
+    strategy = (
+        config.get("router", {}).get("strategy", "simple") or "simple"
+    )
+
+    if strategy == "balanced":
+        # Round-robin: cycle through available preference list
+        idx = _rotation_idx.get(tier, 0)
+        _rotation_idx[tier] = (idx + 1) % len(available_prefs)
+        return available_prefs[idx % len(available_prefs)]
+
+    # Simple: first available
+    return available_prefs[0]
+
+
+def _get_available_chat_models(config: dict) -> set[str]:
+    """Return set of model IDs that have chat capability and API keys."""
     available = set()
     _SPECIALIZED = {"tts", "asr", "speech", "audio", "image", "dall-e", "whisper", "dall"}
     for pname, pcfg in config.get("providers", {}).items():
-        # Check API key is actually available before listing models
         api_key_env = pcfg.get("api_key_env", "")
         if api_key_env and not os.environ.get(api_key_env):
-            continue  # skip providers with missing API keys
+            continue
         for m in pcfg.get("models", []):
             mid = m.get("id", "")
             mid_lower = mid.lower()
             caps = m.get("capabilities", [])
-            # Skip specialized models (TTS/STT/image) — can't do tool calling
             if any(kw in mid_lower for kw in _SPECIALIZED):
                 continue
             if "chat" in caps and mid:
                 available.add(mid)
-
-    preferences = get_tier_preferences(config)
-    for candidate in preferences.get(tier, preferences.get(TIER_MODERATE, [])):
-        if candidate in available:
-            return candidate
-    # Last resort: any chat model
-    if available:
-        return next(iter(available))
-    return "step-3.7-flash"
+    return available
 
 
 # ── Decision: inline vs delegate ──
 
+INLINE_DIRECT = "direct"       # 0-5: inline, no sub-agent mention
+INLINE_WITH_HINT = "with_hint" # 6-7: inline but can delegate sub-tasks
+INLINE_DELEGATE = None         # 8+: full delegate to sub-agent
+
+
 def should_delegate(score: int) -> bool:
     """Return True if this task should go to a sub-agent.
 
-    Inline (model itself uses tools):
-      - trivial  (0-3)
-      - moderate (4-6)
-    Delegated (sub-agent does it):
-      - complex  (7-9)
-      - expert   (10)
+    Graduated delegation:
+      - 0-5:  INLINE direct — model handles everything inline
+      - 6-7:  INLINE with sub-agent hint — model CAN delegate sub-tasks
+      - 8-9:  DELEGATE to sub-agent
+      - 10:   EXPERT — multi-tier cascade
     """
-    return score >= 7
+    return score >= 8
+
+
+def get_inline_mode(score: int) -> str | None:
+    """Return the inline execution mode for a given score.
+
+    Returns:
+      INLINE_DIRECT    -> 0-5: strict inline, no sub-agent
+      INLINE_WITH_HINT -> 6-7: inline but model may delegate sub-tasks
+      None             -> 8+:  full delegate path
+    """
+    if score <= 5:
+        return INLINE_DIRECT
+    if score <= 7:
+        return INLINE_WITH_HINT
+    return INLINE_DELEGATE
 
 
 # ── Multi-tier cascade (for expert tasks) ──
@@ -287,18 +330,21 @@ class RouteDecision:
 
     def __init__(self, score: int, tier: str, model_id: str,
                  delegate: bool, multi_tier: bool,
+                 inline_mode: str | None = INLINE_DIRECT,
                  reasoning: str = ""):
         self.score = score
         self.tier = tier
         self.model_id = model_id
         self.delegate = delegate
         self.multi_tier = multi_tier
+        self.inline_mode = inline_mode
         self.reasoning = reasoning
 
     def __repr__(self):
         return (f"RouteDecision(score={self.score}, tier={self.tier!r}, "
                 f"model={self.model_id!r}, delegate={self.delegate}, "
-                f"multi_tier={self.multi_tier})")
+                f"multi_tier={self.multi_tier}, "
+                f"inline_mode={self.inline_mode})")
 
 
 def route_task(
@@ -320,13 +366,17 @@ def route_task(
     model_id = pick_model_for_tier(tier, config)
     delegate = should_delegate(score)
     multi_tier = needs_multi_tier(score)
+    inline_mode = get_inline_mode(score)
 
     reasons = []
     reasons.append(f"score={score}")
     reasons.append(f"tool_hint={estimated_tool_count}")
     reasons.append(f"ctx={context_tokens}")
     reasons.append(f"tier={tier}→{model_id}")
-    reasons.append(f"{'DELEGATE' if delegate else 'INLINE'}")
+    mode_label = "INLINE_DIRECT" if inline_mode == INLINE_DIRECT else (
+        "INLINE_WITH_HINT" if inline_mode == INLINE_WITH_HINT else "DELEGATE"
+    )
+    reasons.append(mode_label)
     if multi_tier:
         reasons.append("MULTI_TIER_CASCADE")
 
@@ -336,6 +386,7 @@ def route_task(
         model_id=model_id,
         delegate=delegate,
         multi_tier=multi_tier,
+        inline_mode=inline_mode,
         reasoning=" | ".join(reasons),
     )
 
