@@ -89,7 +89,7 @@ class TestHandoff:
         inbox = temp_baw_home / "INBOX.md"
         inbox.write_text("""## Handoff
 From: agent
-To: Sticky
+To: agent
 Priority: P0
 Task: Fix sensor
 """, encoding="utf-8")
