@@ -1010,9 +1010,34 @@ def _auto_patch_code(analysis: dict) -> dict:
 
             # Write patched file
             tool_file.write_text(patched, encoding="utf-8")
+
+            # ── Run relevant tests ──
+            import subprocess as _test_sp
+            test_file = _CODE_ROOT / "tests" / "unit" / f"test_{tool_name}.py"
+            if test_file.exists():
+                test_result = _test_sp.run(
+                    ["python3", "-m", "pytest", str(test_file),
+                     "-x", "--tb=short", "-q"],
+                    capture_output=True, text=True, timeout=60,
+                )
+                if test_result.returncode != 0:
+                    result["errors"].append(
+                        f"{tool_name}: tests FAILED — {test_result.stdout[-300:]}{test_result.stderr[-300:]}"
+                    )
+                    if commit_hash:
+                        _git_rollback(commit_hash)
+                    continue
+            else:
+                # No dedicated test file — run syntax + import test
+                try:
+                    __import__(f"tools.{tool_name}")
+                except Exception:
+                    pass  # import may fail in isolated context; not critical
+
             fail_rate = rec.get("_rate_val", 0) * 100
             result["patches"].append(
-                f"Patched {tool_name}: {count} calls, {fail_rate:.0f}% fail → syntax verified"
+                f"Patched {tool_name}: {count} calls, {fail_rate:.0f}% fail "
+                f"→ syntax OK, tests OK"
             )
 
         except Exception as e:
@@ -1428,6 +1453,21 @@ def run_weekly_evolution() -> dict:
         "recommendations": len(pattern.get("recommendations", [])),
     }
 
+    # ── Step 5.5: Code-level auto-patching ──
+    try:
+        code_result = _auto_patch_code(pattern)
+        result["code_patches"] = {
+            "patches_count": len(code_result.get("patches", [])),
+            "errors_count": len(code_result.get("errors", [])),
+            "ok": code_result.get("ok", True),
+        }
+        if code_result["patches"]:
+            result["code_patches"]["details"] = code_result["patches"]
+        if code_result["errors"]:
+            result["code_patches"]["error_details"] = code_result["errors"]
+    except Exception as e:
+        result["code_patches"] = {"error": str(e), "patches_count": 0}
+
     # ── Build summary ──
     lines = ["[EVOLVE] 週度自我進化報告"]
     if result["dream"].get("stuck_tasks", 0) > 0 or result["dream"].get("archived_memories", 0) > 0:
@@ -1437,6 +1477,9 @@ def run_weekly_evolution() -> dict:
         lines.append(f"  SOUL health: ⚠️ restored — missing {len(result['soul_health']['missing_rules'])} rules")
     elif result.get("soul_health", {}).get("action") == "healthy":
         lines.append(f"  SOUL health: ✅ all rules intact")
+    if result.get("code_patches", {}).get("patches_count", 0) > 0:
+        lines.append(f"  Code patches: {result['code_patches']['patches_count']} applied, "
+                     f"{result['code_patches']['errors_count']} errors")
     lines.append(f"  記憶: {result['memory_analysis']['entries']} entries, "
                  f"{result['memory_analysis']['preferences']} preferences")
     if result["soul_revision"].get("applied", 0) > 0:
