@@ -394,8 +394,8 @@ def cmd_setup(data_dir: Path):
           {"id": "MiniMax-M2.1", "capabilities": ["chat"], "context_window": 1048576},
           {"id": "MiniMax-M2", "capabilities": ["chat"], "context_window": 1048576}]),
         (3,  "OPENAI_API_KEY", "OpenAI",          "openai", "https://api.openai.com/v1",
-         [{"id": "gpt-4o", "capabilities": ["chat"], "context_window": 128000},
-          {"id": "gpt-4o-mini", "capabilities": ["chat"], "context_window": 128000},
+         [{"id": "gpt-4o", "capabilities": ["chat", "vision"], "context_window": 128000},
+          {"id": "gpt-4o-mini", "capabilities": ["chat", "vision"], "context_window": 128000},
           {"id": "o3", "capabilities": ["chat"], "context_window": 200000},
           {"id": "o4-mini", "capabilities": ["chat"], "context_window": 200000}]),
         (4,  "STEPFUN_API_KEY", "Stepfun",        "stepfun", "",
@@ -410,7 +410,7 @@ def cmd_setup(data_dir: Path):
          [{"id": "gemini-2.0-flash", "capabilities": ["chat"], "context_window": 1048576},
           {"id": "gemini-2.5-pro", "capabilities": ["chat"], "context_window": 1048576}]),
         (8,  "XAI_API_KEY", "Grok / xAI",         "xai", "https://api.x.ai/v1",
-         [{"id": "grok-3", "capabilities": ["chat"], "context_window": 131072},
+         [{"id": "grok-3", "capabilities": ["chat", "vision"], "context_window": 131072},
           {"id": "grok-3-mini", "capabilities": ["chat"], "context_window": 131072}]),
         (9,  "OPENROUTER_API_KEY", "OpenRouter",   "openrouter", "https://openrouter.ai/api/v1",
          [{"id": "openrouter/auto", "capabilities": ["chat"], "context_window": 128000}]),
@@ -757,10 +757,16 @@ def cmd_setup(data_dir: Path):
         # Known special model IDs not in any provider's model list
         _stt_extra = ["grok-stt"] if has_xai else []
         _tts_extra = ["grok-tts"] if has_xai else []
+        _vision_extra = ["grok-3"] if has_xai and not has_minimax and not has_stepfun else []
+        _image_gen_extra = []
+        if "OPENAI_API_KEY" in all_keys:
+            _image_gen_extra.append("dall-e-3")
+        if has_xai:
+            _image_gen_extra.append("grok-3")
         _configure_cap("STT (Speech-to-Text)", "stt", _auto_stt, providers, auto_models=_stt_extra)
         _configure_cap("TTS (Text-to-Speech)", "tts", _auto_tts, providers, auto_models=_tts_extra)
-        _configure_cap("Vision", "vision", _auto_vision, providers)
-        _configure_cap("Image Generation", "image_generation", _auto_image_gen, providers)
+        _configure_cap("Vision", "vision", _auto_vision, providers, auto_models=_vision_extra)
+        _configure_cap("Image Generation", "image_generation", _auto_image_gen, providers, auto_models=_image_gen_extra)
         _configure_cap("Browser", "browser", _auto_browser, providers)
     else:
         _print_note("No providers — capabilities skipped. Add API keys and re-run setup to configure.")
