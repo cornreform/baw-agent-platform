@@ -80,15 +80,15 @@ class TestHandoff:
 
     def test_inbox_written(self, temp_baw_home: Path):
         inbox = temp_baw_home / "INBOX.md"
-        inbox.write_text("## Handoff from Robi\n- Task: check sensors\n", encoding="utf-8")
+        inbox.write_text("## Handoff from agent\n- Task: check sensors\n", encoding="utf-8")
         assert inbox.exists()
         content = inbox.read_text(encoding="utf-8")
-        assert "Robi" in content
+        assert "agent" in content
 
     def test_handoff_format_valid(self, temp_baw_home: Path):
         inbox = temp_baw_home / "INBOX.md"
         inbox.write_text("""## Handoff
-From: Robi
+From: agent
 To: Sticky
 Priority: P0
 Task: Fix sensor

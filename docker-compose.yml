@@ -14,7 +14,7 @@ services:
     env_file:
       - /home/radxa/.baw/telegram.env
       - /home/radxa/.baw/.env
-    # No Hermes paths. No host network. No privileged.
+    # No external paths. No host network. No privileged.
     network_mode: bridge
     # ── Resource limits (grok-4.1 A5) ──
     deploy:

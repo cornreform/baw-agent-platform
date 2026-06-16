@@ -23,7 +23,7 @@ from .tools import list_tools
 
 ANALYSIS_PROMPT = """你係 BAW Skill Engineer。
 
-用戶提供咗一個技能描述/規格，可能來自 OpenClaude、Hermes、Codex 或者其他平台。
+用戶提供咗一個技能描述/規格，可能來自 OpenClaude 或者其他平台。
 你需要：
 
 1. **分析** — 呢個技能想做啲咩？核心目標係乜？

@@ -64,7 +64,7 @@ cd ~/baw && python -m core.preflight https://example.com
 **4 個 check 自動行**：
 | Check | 查咩 | BLOCK 條件 |
 |---|---|---|
-| `tool_availability` | `urllib` / `requests` / `bs4` / `yaml` / Hermes `web_extract` | 任何一個 critical tool missing |
+| `tool_availability` | `urllib` / `requests` / `bs4` / `yaml` / `web_extract` | 任何一個 critical tool missing |
 | `network` | URL 個 host 解唔解決 | DNS failure |
 | `disk` | `data_dir()` 仲有幾多 free space | < 50 MB |
 | `path_resolution` | `core.paths.repo_root()` 係咪指到真嘅 BAW root | repo root 冇 `cli/main.py` |
@@ -245,7 +245,7 @@ baw <thing> --help
 | Syntax error in tool file | 冇 import-test 就 ship | 寫完即 `python3 -c "import ast; ast.parse(open('tools/<thing>.py').read())"` |
 | NYC 預設座標 | IP geolocation 假設失敗 | 用 Hong Kong 已知 district centroid，或者直接 query by district name |
 | 永遠 NYC IP | 冇 retry 唔同 geolocation service | 加 fallback：Cloudflare headers > ipinfo.io > 預設 HK |
-| **Next.js / Gatsby / React SPA** | `urllib` 攞到嘅只係 static HTML shell，餐廳 data 係 JS runtime 注入。`__NEXT_DATA__` 可能唔存在。`requests_html` / `playwright` 唔係 stdlib | **用 mirror pattern**：用 `web_extract`（Hermes 內置 browser-fetch 工具）攞 rendered markdown → save 入 `data/<thing>_source.md` → tool parse markdown。**Annotate 個 source file 解釋點解咁做** |
+| **Next.js / Gatsby / React SPA** | `urllib` 攞到嘅只係 static HTML shell，餐廳 data 係 JS runtime 注入。`__NEXT_DATA__` 可能唔存在。`requests_html` / `playwright` 唔係 stdlib | **用 mirror pattern**：用 `web_extract`（內置 browser-fetch 工具）攞 rendered markdown → save 入 `data/<thing>_source.md` → tool parse markdown。**Annotate 個 source file 解釋點解咁做** |
 | 假設 upstream publish 咗 1000/1000 | Lottery 2026-06-12，petwellhk.com 只 publish 50 sample | Tool 出 stats() 顯示 available_in_dataset vs total_announced，user 一睇就知上游未出齊 |
 
 ---
