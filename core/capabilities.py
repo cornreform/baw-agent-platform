@@ -206,15 +206,19 @@ def validate_capability_health(config: dict) -> list[dict]:
 
         # Pattern 3: api_key_env set but env var doesn't exist
         if api_key_env and not _env_var_exists(api_key_env):
-            cap_cfg.pop("api_key_env", None)
-            if method not in LOCAL_METHODS:
-                cap_cfg.pop("base_url", None)
-                cap_cfg["method"] = "faster-whisper"
-                cap_cfg["model"] = "base"
+            # WARN only — don't modify config permanently (key may return via config(action=set_key))
+            import logging
+            logger = logging.getLogger("baw.capabilities")
+            logger.warning(
+                f"[health] {cap_name}: api_key_env '{api_key_env}' not set — "
+                f"key not found in .env or environment. "
+                f"Use `config(action=set_key, key_name='{api_key_env}', key_value=...)` to add it. "
+                f"Continuing with configured method (will fail if remote)."
+            )
             fixes.append({
                 "capability": cap_name,
                 "issue": f"api_key_env '{api_key_env}' not found in .env or environment",
-                "fix_applied": "removed api_key_env, fell back to faster-whisper (local)",
+                "fix_applied": "warning logged — config unchanged. Add key via config(action=set_key).",
             })
 
     return fixes
