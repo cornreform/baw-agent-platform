@@ -2634,6 +2634,11 @@ def run_agent(
             "  3. Key info (e.g. '7 models available now')\n"
             "- BAD: dumping a file path with no explanation — user can't tell what changed.\n"
             "- GOOD: 'Read config — stepfun has 7 models (added step-tts-2 via parent path)'"
+            "- [CRITICAL] FAILURE RESPONSE RULE: If the goal was NOT achieved, you MUST provide:\n"
+            "  1. What was attempted (which approaches/tools were tried)\n"
+            "  2. Why each approach failed (specific error, not generic)\n"
+            "  3. Concrete next steps the user can try (manual commands, alternative tools, API key setup)\n"
+            "  NEVER just say you could not complete the task. Provide solution-oriented diagnosis.\n"
         )
         ctx.add_user(_synthesis_prompt)
 
