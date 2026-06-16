@@ -343,8 +343,7 @@ def _pick_model_menu(
     print(f"  {C.MAGENTA}?{C.RESET} {prompt}:")
     for i, (mid, label, cw, pkey) in enumerate(options, 1):
         print(f"     {C.GREEN}{i:>2}{C.RESET}) {label}  {C.DIM}({cw} ctx){C.RESET}")
-    if len(options) > 5:
-        print(f"     {C.GREEN} 0{C.RESET}) Type manually")
+    print(f"     {C.GREEN} 0{C.RESET}) Type manually")
 
     raw = input(f"  {C.MAGENTA}> {C.RESET}").strip()
     if raw.isdigit() and 1 <= int(raw) <= len(options):
