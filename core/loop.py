@@ -1594,7 +1594,7 @@ def run_agent(
                 else:
                     exe_result = execute_tool(name, args)
                     ctx.add_tool_result(tc.get("id", ""), name, exe_result)
-                    checkpointer.checkpoint(name, args, exe_result)
+                    checkpointer.save(None, name, exe_result)
 
         output += (_inline_resp.content if _inline_resp else "") or ""
         output += f"\n\n{format_cost_summary()}"
