@@ -1190,24 +1190,40 @@ def _apply_soul_revisions(revisions: list[dict]) -> dict:
 
 
 def run_weekly_evolution() -> dict:
-    """Main entry point for weekly self-evolution cron job.
+    """Unified weekly self-evolution pipeline.
 
-    1. Analyze memory for user preferences
-    2. Generate SOUL.md revision suggestions
-    3. Apply revisions safely (with git snapshot + verify)
-    4. Run standard pattern analysis
-    5. Return summary report
+    1. Dream phase: stuck task cleanup + memory curation (dream.py)
+    2. Memory analysis: extract user preferences from memory store
+    3. LLM-assisted correction classification (B1 enhancement)
+    4. Behavior pattern analysis: tool success rate, corrections, trends
+    5. Auto-optimization with apply (not dry-run)
+    6. Generate consolidated summary report
     """
     result = {
         "ok": True,
         "timestamp": datetime.now().isoformat(),
+        "dream": {},
         "memory_analysis": {},
-        "soul_revision": {},
+        "llm_classification": {},
+        "auto_optimize": {},
         "pattern_analysis": {},
         "summary": "",
     }
 
-    # Step 1: Memory analysis
+    # ── Step 0: Dream phase (stuck tasks + memory curation) ──
+    try:
+        from core.dream import dream
+        dream_result = dream(data_dir=_data_dir())
+        result["dream"] = {
+            "ok": dream_result.get("ok", True),
+            "stuck_tasks": dream_result.get("stuck_tasks", 0),
+            "stale_tasks": dream_result.get("stale_tasks", 0),
+            "archived_memories": dream_result.get("archived_memories", 0),
+        }
+    except Exception as e:
+        result["dream"] = {"ok": False, "error": str(e)}
+
+    # ── Step 1: Memory analysis ──
     mem_analysis = _analyze_memory_for_preferences(days_back=7)
     result["memory_analysis"] = {
         "has_data": mem_analysis.get("has_data", False),
@@ -1216,14 +1232,33 @@ def run_weekly_evolution() -> dict:
         "corrections": len(mem_analysis.get("corrections", [])),
     }
 
-    # Step 2: Generate revisions
+    # ── Step 2: LLM-assisted correction classification ──
+    try:
+        flush_behavior()
+        analysis = analyze(hours_back=168)
+        corrections = analysis.get("corrections", 0)
+        if corrections > 0:
+            recs = analysis.get("recommendations", [])
+            correction_texts = [r.get("suggestion", "")
+                               for r in recs if r.get("type") == "frequent_corrections"]
+            llm_lessons = _llm_classify_corrections(correction_texts)
+            llm_added = _write_learned_lessons(llm_lessons) if llm_lessons else 0
+            result["llm_classification"] = {
+                "corrections_found": corrections,
+                "llm_lessons_extracted": len(llm_lessons),
+                "new_lessons_saved": llm_added,
+            }
+        else:
+            result["llm_classification"] = {"corrections_found": 0}
+    except Exception as e:
+        result["llm_classification"] = {"error": str(e)}
+
+    # ── Step 3: Generate and apply SOUL revisions ──
     revisions = _generate_soul_revisions(mem_analysis)
     result["soul_revision"] = {
         "suggestions_count": len(revisions),
         "suggestions": [f"{r['section']} ({r['priority']}): {r['reason']}" for r in revisions[:5]],
     }
-
-    # Step 3: Apply if we have data
     if revisions and mem_analysis.get("has_data"):
         applied = _apply_soul_revisions(revisions)
         result["soul_revision"]["applied"] = applied.get("applied", 0)
@@ -1235,7 +1270,20 @@ def run_weekly_evolution() -> dict:
         result["soul_revision"]["applied"] = 0
         result["soul_revision"]["note"] = "無足夠資料進行修訂" if not mem_analysis.get("has_data") else "無需修訂"
 
-    # Step 4: Standard pattern analysis
+    # ── Step 4: Auto-optimize with apply (non-dry-run) ──
+    try:
+        opt_result = auto_optimize(dry_run=False)
+        result["auto_optimize"] = {
+            "patterns_found": opt_result.get("patterns_found", 0),
+            "soul_patched": opt_result.get("soul_patched", False),
+            "config_patched": opt_result.get("config_patched", False),
+            "patches": opt_result.get("patches", []),
+            "rolled_back": opt_result.get("rolled_back", False),
+        }
+    except Exception as e:
+        result["auto_optimize"] = {"error": str(e), "patterns_found": 0}
+
+    # ── Step 5: Pattern analysis ──
     pattern = analyze(hours_back=168)
     result["pattern_analysis"] = {
         "success_rate": pattern.get("success_rate", 0),
@@ -1244,19 +1292,23 @@ def run_weekly_evolution() -> dict:
         "recommendations": len(pattern.get("recommendations", [])),
     }
 
-    # Build summary
+    # ── Build summary ──
     lines = ["[EVOLVE] 週度自我進化報告"]
-    lines.append(f"  記憶分析: {result['memory_analysis']['entries']} 筆記錄, "
-                f"{result['memory_analysis']['preferences']} 偏好, "
-                f"{result['memory_analysis']['corrections']} 修正")
+    if result["dream"].get("stuck_tasks", 0) > 0 or result["dream"].get("archived_memories", 0) > 0:
+        lines.append(f"  Dream: {result['dream']['stuck_tasks']} stuck tasks, "
+                     f"{result['dream']['archived_memories']} archived memories")
+    lines.append(f"  記憶: {result['memory_analysis']['entries']} entries, "
+                 f"{result['memory_analysis']['preferences']} preferences")
     if result["soul_revision"].get("applied", 0) > 0:
-        lines.append(f"  SOUL.md: 已應用 {result['soul_revision']['applied']} 項修訂")
-        for c in result["soul_revision"].get("suggestions", [])[:3]:
-            lines.append(f"    • {c}")
-    else:
-        lines.append(f"  SOUL.md: {result['soul_revision'].get('note', '無修訂')}")
-    lines.append(f"  系統表現: {pattern.get('success_rate', 0)}% 成功率, "
-                f"{pattern.get('corrections', 0)} 次用戶修正")
+        lines.append(f"  SOUL: {result['soul_revision']['applied']} revisions applied")
+    if result["llm_classification"].get("new_lessons_saved", 0) > 0:
+        lines.append(f"  LLM: {result['llm_classification']['new_lessons_saved']} new lessons classified")
+    if result["auto_optimize"].get("soul_patched") or result["auto_optimize"].get("config_patched"):
+        lines.append(f"  Auto-fix: SOUL={result['auto_optimize']['soul_patched']}, "
+                     f"Config={result['auto_optimize']['config_patched']}")
+    lines.append(f"  系統: {pattern.get('success_rate', 0)}% success, "
+                 f"{pattern.get('tool_calls', 0)} tool calls, "
+                 f"{pattern.get('corrections', 0)} corrections")
 
     result["summary"] = "\n".join(lines)
     return result
