@@ -199,7 +199,21 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
-            return f"📊 [{len(self.calls)} LLM calls] {_human_tokens(ti)}↑{_human_tokens(to)}↓ | total: {_human_tokens(total)} tokens"
+            # Build per-call breakdown
+            lines = [f"📊 **{len(self.calls)} LLM calls** — total: {_human_tokens(total)} tokens"]
+            MAX_BAR = 20
+            if ti > 0:
+                max_ti = max(c["tokens_in"] for c in self.calls) or 1
+                for i, c in enumerate(self.calls, 1):
+                    _model_short = c["model"].split("/")[-1][:18]
+                    _bar_len = max(1, int(c["tokens_in"] / max_ti * MAX_BAR))
+                    _bar = "█" * _bar_len + "░" * (MAX_BAR - _bar_len)
+                    lines.append(
+                        f"`#{i:<2} {_model_short:<18}` {_bar} "
+                        f"{_human_tokens(c['tokens_in'])}→{_human_tokens(c['tokens_out'])}"
+                    )
+            lines.append(f"∑ {_human_tokens(ti)}↑ + {_human_tokens(to)}↓ = {_human_tokens(total)}")
+            return "\n".join(lines)
 
     def html_summary(self) -> str:
         with self._lock:
@@ -208,7 +222,20 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
-            return f"📊 <b>[{len(self.calls)} LLM calls]</b> {_human_tokens(ti)}↑{_human_tokens(to)}↓ | <b>total: {_human_tokens(total)} tokens</b>"
+            parts = [f"📊 <b>{len(self.calls)} LLM calls</b> — total: {_human_tokens(total)} tokens"]
+            MAX_BAR = 20
+            if ti > 0:
+                max_ti = max(c["tokens_in"] for c in self.calls) or 1
+                for i, c in enumerate(self.calls, 1):
+                    _model_short = c["model"].split("/")[-1][:18]
+                    _bar_len = max(1, int(c["tokens_in"] / max_ti * MAX_BAR))
+                    _bar = "█" * _bar_len + "░" * (MAX_BAR - _bar_len)
+                    parts.append(
+                        f"<code>#{i:<2} {_model_short:<18}</code> {_bar} "
+                        f"{_human_tokens(c['tokens_in'])}→{_human_tokens(c['tokens_out'])}"
+                    )
+            parts.append(f"∑ {_human_tokens(ti)}↑ + {_human_tokens(to)}↓ = {_human_tokens(total)}")
+            return "<br/>".join(parts)
 
     def reset(self):
         with self._lock:
@@ -294,6 +321,15 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
         "  ✗ Do NOT say 'I will follow up' or 'I will get back to you' — you have NO background thread. DO IT NOW.\\n"
         "  ✗ Orchestrator 'all done' when sub-agents used wrong tools with zero real output = FABRICATION. Verify.\\n"
         "  ✗ If your response contains 'I will', 'I need to', 'Let me' but no actual tool call, you are PLANNING not DOING. STOP.\\n"
+        "  ✗ Over-generalization from ONE search result is fabrication. \\n"
+        "     If a search says 'HTML is more reliable', that does NOT mean \\n"
+        "     'Telegram does not support Markdown'. Report the actual finding. \\n"
+        "     Do not extrapolate from a single data point to a universal claim.\\n"
+        "  ✗ Factual claims about what a system 'supports' or 'does not support' \\n"
+        "     require tool verification (config/get, read_file, or official docs). \\n"
+        "     Guessing = fabrication.\\n"
+        "  ✗ If unsure, say 'I need to check' then actually check with a tool.\\n"
+        "     Never pretend confidence when you only have partial information.\\n"
     )
 
     # ── EXECUTION PROTOCOL (injected before SOUL, always active) ──

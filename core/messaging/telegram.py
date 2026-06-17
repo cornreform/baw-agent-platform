@@ -77,19 +77,19 @@ class TelegramConnector(BaseConnector):
             # ── User-friendly fatal error notification ──
             _err_msg = ""
             if r.status_code == 401:
-                _err_msg = "**Telegram Bot 連接失敗**\n\n"
+                _err_msg = "<b>Telegram Bot 連接失敗</b>\n\n"
                 _err_msg += "原因: Bot Token 無效或已被撤銷\n"
                 _err_msg += "解決: 請去 @BotFather 重新生成 Token, 然後更新 ~/.baw/.env"
             elif r.status_code == 404:
-                _err_msg = "**Telegram Bot 連接失敗**\n\n"
+                _err_msg = "<b>Telegram Bot 連接失敗</b>\n\n"
                 _err_msg += "原因: API 端點不存在 (404)\n"
                 _err_msg += "解決: 檢查網絡連線或 Telegram API 狀態"
             elif r.status_code == 429:
-                _err_msg = "**Telegram 限流**\n\n"
+                _err_msg = "<b>Telegram 限流</b>\n\n"
                 _err_msg += "原因: 發送太多請求被限流\n"
                 _err_msg += "解決: 等幾分鐘後會自動恢復"
             else:
-                _err_msg = f"**Telegram Bot 連接失敗**\n\n"
+                _err_msg = f"<b>Telegram Bot 連接失敗</b>\n\n"
                 _err_msg += f"原因: HTTP {r.status_code}\n"
                 _err_msg += "解決: 檢查 .env 中的 TELEGRAM_BOT_TOKEN 是否正確"
             # Try to notify admin if we know the chat_id
@@ -98,7 +98,7 @@ class TelegramConnector(BaseConnector):
                 try:
                     self._client.post(
                         f"{self._api_base}/sendMessage",
-                        json={"chat_id": _admin_id, "text": _err_msg, "parse_mode": "Markdown"},
+                        json={"chat_id": _admin_id, "text": _err_msg, "parse_mode": "HTML"},
                         timeout=10,
                     )
                 except Exception:
@@ -271,7 +271,7 @@ class TelegramConnector(BaseConnector):
         """Send a plain text message. Returns message_id string or empty on failure."""
         r = self._client.post(
             f"{self._api_base}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
             timeout=10,
         )
         if r.status_code != 200:
@@ -291,7 +291,7 @@ class TelegramConnector(BaseConnector):
         """Edit an existing message. Returns message_id on success, empty on failure."""
         r = self._client.post(
             f"{self._api_base}/editMessageText",
-            json={"chat_id": chat_id, "message_id": int(message_id), "text": text, "parse_mode": "Markdown"},
+            json={"chat_id": chat_id, "message_id": int(message_id), "text": text, "parse_mode": "HTML"},
             timeout=10,
         )
         if r.status_code != 200:
@@ -1606,9 +1606,9 @@ class TelegramConnector(BaseConnector):
                 f"{self._api_base}/sendMessage",
                 json={
                     "chat_id": chat_id,
-                    "text": "**Model Configuration**\n" + "\n".join(status_lines),
+                    "text": "<b>Model Configuration</b>\n" + "\n".join(status_lines),
                     "reply_markup": {"inline_keyboard": rows},
-                    "parse_mode": "Markdown",
+                    "parse_mode": "HTML",
                 },
                 timeout=5,
             )
@@ -1651,9 +1651,9 @@ class TelegramConnector(BaseConnector):
                 json={
                     "chat_id": chat_id,
                     "message_id": msg_id,
-                    "text": "**Model Configuration**\n" + "\n".join(status_lines),
+                    "text": "<b>Model Configuration</b>\n" + "\n".join(status_lines),
                     "reply_markup": {"inline_keyboard": rows},
-                    "parse_mode": "Markdown",
+                    "parse_mode": "HTML",
                 },
                 timeout=5,
             )
@@ -1663,7 +1663,7 @@ class TelegramConnector(BaseConnector):
     def _send_model_selector_text(self, chat_id: str, text: str) -> bool:
         """Parse [MODEL_SELECT] formatted text and send provider-level keyboard."""
         lines = text.strip().split("\n")
-        title = lines[1] if len(lines) > 1 else "**Select Provider**"
+        title = lines[1] if len(lines) > 1 else "<b>Select Provider</b>"
         current_model = lines[2] if len(lines) > 2 else ""
         # Build provider keyboard
         providers = self._get_providers_config()
@@ -1678,9 +1678,9 @@ class TelegramConnector(BaseConnector):
                 f"{self._api_base}/sendMessage",
                 json={
                     "chat_id": chat_id,
-                    "text": f"{title}\nCurrent: `{current_model}`",
+                    "text": f"{title}\nCurrent: <code>{current_model}</code>",
                     "reply_markup": {"inline_keyboard": rows},
-                    "parse_mode": "Markdown",
+                    "parse_mode": "HTML",
                 },
                 timeout=5,
             )
@@ -1711,9 +1711,9 @@ class TelegramConnector(BaseConnector):
                 json={
                     "chat_id": chat_id,
                     "message_id": msg_id,
-                    "text": f"**{provider}** models:\nCurrent: `{current_model}`",
+                    "text": f"<b>{provider}</b> models:\nCurrent: <code>{current_model}</code>",
                     "reply_markup": {"inline_keyboard": rows},
-                    "parse_mode": "Markdown",
+                    "parse_mode": "HTML",
                 },
                 timeout=5,
             )
@@ -1759,9 +1759,9 @@ class TelegramConnector(BaseConnector):
                         json={
                             "chat_id": chat_id,
                             "message_id": msg_id,
-                            "text": f"**{role_name} Model**\nSelect provider:",
+                            "text": f"<b>{role_name} Model</b>\nSelect provider:",
                             "reply_markup": {"inline_keyboard": rows},
-                            "parse_mode": "Markdown",
+                            "parse_mode": "HTML",
                         },
                         timeout=5,
                     )
@@ -1778,7 +1778,7 @@ class TelegramConnector(BaseConnector):
                 else:
                     try:
                         providers = self._get_providers_config()
-                        title = "**Select Provider**"
+                        title = "<b>Select Provider</b>"
                         cc = getattr(self, '_chat_config', {}).get(chat_id, {})
                         current = cc.get("model", "deepseek-v4-flash")
                         rows = []
@@ -1789,9 +1789,9 @@ class TelegramConnector(BaseConnector):
                             json={
                                 "chat_id": chat_id,
                                 "message_id": msg_id,
-                                "text": f"{title}\nCurrent: `{current}`",
+                                "text": f"{title}\nCurrent: <code>{current}</code>",
                                 "reply_markup": {"inline_keyboard": rows},
-                                "parse_mode": "Markdown",
+                                "parse_mode": "HTML",
                             },
                             timeout=5,
                         )
@@ -1898,9 +1898,9 @@ class TelegramConnector(BaseConnector):
                             "chat_id": chat_id,
                             "message_id": msg_id,
                             "text": f"⏸️ #{case_id} │ {_ack_text}\n"
-                                     f"用戶 ID: `{cb.get('from', {}).get('id', '?')}`\n"
+                                     f"用戶 ID: <code>{cb.get('from', {}).get('id', '?')}</code>\n"
                                      f"決策已記錄。下一個 agent 回合會讀取呢個決定。",
-                            "parse_mode": "Markdown",
+                            "parse_mode": "HTML",
                         },
                         timeout=5,
                     )
