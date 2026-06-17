@@ -76,13 +76,18 @@ echo -e "${GREEN}✅${NC} Git: $(git --version 2>&1)"
 
 # ── Check Docker ──
 DOCKER_AVAILABLE=false
+BARE_METAL_READY=false
 if command -v docker &>/dev/null; then
     DOCKER_AVAILABLE=true
     echo -e "${GREEN}✅${NC} Docker: $(docker --version 2>&1)"
 else
-    echo -e "${YELLOW}⚠️  Docker not found. Telegram bot requires Docker.${NC}"
-    echo -e "   Install Docker: https://docs.docker.com/engine/install/"
-    echo ""
+    echo -e "${YELLOW}⚠️  Docker not found.${NC}"
+fi
+
+# Detect bare-metal capability
+if command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
+    BARE_METAL_READY=true
+    echo -e "${GREEN}✅${NC} systemd detected — bare-metal deployment ready"
 fi
 
 # ── Clone or update repo ──
@@ -148,14 +153,27 @@ else
     echo -e "  Add it: echo '$PATH_CMD' >> $SHELL_CONFIG && source $SHELL_CONFIG"
 fi
 
-# ── Docker deployment hint ──
+# ── Deployment setup ──
 if [ "$DOCKER_AVAILABLE" = true ]; then
     echo ""
-    echo -e "${CYAN}🐳 Setting up Docker deployment...${NC}"
+    echo -e "${CYAN}🐳 Docker deployment${NC}"
     echo -e "   Edit ${BOLD}$BAW_DIR/docker-compose.yml${NC}"
     echo -e "   Replace ${YELLOW}\$USER_HOME${NC} with your home path (currently ${YELLOW}$HOME${NC})"
-    echo ""
     echo -e "   Then run: ${BOLD}cd $BAW_DIR && docker compose up -d${NC}"
+elif [ "$BARE_METAL_READY" = true ]; then
+    echo ""
+    echo -e "${CYAN}🖥️  Bare-metal deployment${NC}"
+    # Install systemd service
+    SERVICE_FILE="$BAW_DIR/deploy/baw.service"
+    if [ -f "$SERVICE_FILE" ]; then
+        sudo cp "$SERVICE_FILE" /etc/systemd/system/baw.service
+        sudo sed -i "s|%HOME%|$HOME|g" /etc/systemd/system/baw.service
+        sudo sed -i "s|%USER%|$USER|g" /etc/systemd/system/baw.service
+        sudo systemctl daemon-reload
+        sudo systemctl enable baw
+        echo -e "   ${GREEN}✅${NC} baw.service installed + enabled"
+        echo -e "   Start with: ${BOLD}sudo systemctl start baw${NC}"
+    fi
 fi
 
 # ── Verify installation ──
@@ -182,8 +200,14 @@ echo ""
 echo -e "  ${CYAN}1.${NC} Run the setup wizard:"
 echo -e "     ${BOLD}baw --setup${NC}"
 echo ""
-echo -e "  ${CYAN}2.${NC} Start Telegram bot (requires Docker):"
-echo -e "     ${BOLD}cd $BAW_DIR && docker compose up -d${NC}"
+echo -e "  ${CYAN}2.${NC} Start the bot:"
+if [ "$DOCKER_AVAILABLE" = true ]; then
+    echo -e "     ${BOLD}cd $BAW_DIR && docker compose up -d${NC}"
+elif [ "$BARE_METAL_READY" = true ]; then
+    echo -e "     ${BOLD}sudo systemctl start baw${NC}"
+else
+    echo -e "     ${BOLD}cd $BAW_DIR && baw --run${NC}  (manual foreground)"
+fi
 echo ""
 echo -e "  ${CYAN}3.${NC} Read the docs:"
 echo -e "     ${BOLD}https://cornreform.github.io/baw-agent-platform/${NC}"
