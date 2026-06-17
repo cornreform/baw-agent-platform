@@ -1927,15 +1927,74 @@ class BaseConnector(ABC):
                     if step_type == "plan":
                         meta = args or {}
                         total = meta.get("steps", 0)
-                        plan_text = f"[SCAN] 分析中... (預計 {total} 步)"
+                        plan_text = f"🧠 分析中... (預計 {total} 步)"
                         if _progress_msg_id:
                             self.send(chat_id, plan_text, edit_msg_id=_progress_msg_id)
                         else:
                             _progress_lines = [plan_text]
                             _progress_msg_id = self.send(chat_id, plan_text)
                     elif step_type == "tool" and name:
-                        # Just update the current status line, don't accumulate
-                        _status = f"[FIX] {name[:40]}"
+                        # Progress message: emoji prefix + label + context
+                        _TOOL_LABELS = {
+                            "read_file": "📖 讀取檔案",
+                            "write_file": "📝 寫入檔案",
+                            "patch": "🔧 修改檔案",
+                            "bash": "💻 執行指令",
+                            "web_search": "🔍 搜尋網絡",
+                            "web_extract": "🌐 提取網頁",
+                            "terminal": "💻 執行指令",
+                            "execute_code": "⚙️ 執行程式碼",
+                            "delegate_task": "👥 分配子任務",
+                            "memory": "🧠 存取記憶",
+                            "session_search": "📚 搜尋對話記錄",
+                            "search_files": "🔎 搜尋檔案",
+                            "cronjob": "⏰ 設定排程",
+                            "config": "⚙️ 修改設定",
+                            "todo": "📋 更新待辦",
+                            "image_generate": "🎨 生成圖片",
+                            "text_to_speech": "🔊 生成語音",
+                            "vision_analyze": "👁️ 分析圖片",
+                            "http_fetch": "📥 下載檔案",
+                            "install": "📦 安裝套件",
+                            "knowledge_graph": "🕸️ 查詢知識圖譜",
+                            "skill_manage": "🛠️ 管理技能",
+                            "skill_view": "📄 查閱技能",
+                            "tts": "🔊 生成語音",
+                            "browser_navigate": "🌍 瀏覽網頁",
+                            "browser_click": "🖱️ 點擊頁面",
+                            "browser_type": "⌨️ 輸入文字",
+                            "browser_scroll": "📜 滾動頁面",
+                            "browser_snapshot": "📷 讀取頁面",
+                            "browser_vision": "📸 視覺分析",
+                            "browser_get_images": "🖼️ 擷取圖片",
+                            "browser_press": "⌨️ 按鍵操作",
+                            "browser_back": "🔙 返回頁面",
+                            "browser_console": "📟 讀取主控台",
+                        }
+                        _emoji = _TOOL_LABELS.get(name, f"🔧 {name}")
+                        # Include key context from args for clarity
+                        _context = ""
+                        if name == "read_file" and args.get("path"):
+                            _context = f" `{args['path'].split('/')[-1]}`"
+                        elif name == "write_file" and args.get("path"):
+                            _context = f" `{args['path'].split('/')[-1]}`"
+                        elif name == "patch" and args.get("path"):
+                            _context = f" `{args['path'].split('/')[-1]}`"
+                        elif name == "bash" and args.get("command"):
+                            _cmd = args["command"][:50]
+                            _context = f" `{_cmd}`"
+                        elif name in ("web_search", "web_extract") and args.get("query"):
+                            _context = f" `{args['query'][:40]}`"
+                        elif name == "execute_code" and args.get("code"):
+                            _context = f" ({len(args.get('code', ''))} 行)"
+                        elif name == "cronjob" and args.get("schedule"):
+                            _context = f" `{args['schedule']}`"
+                        elif name == "terminal" and args.get("command"):
+                            _cmd = args["command"][:50]
+                            _context = f" `{_cmd}`"
+                        elif name == "memory" and args.get("action"):
+                            _context = f" ({args['action']})"
+                        _status = f"{_emoji}{_context}"
                         if _progress_msg_id:
                             self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
                         else:
@@ -1945,9 +2004,9 @@ class BaseConnector(ABC):
                         s = meta.get("step", "")
                         t = meta.get("total", "")
                         g = meta.get("goal", "")[:80]
-                        _status = f"[PLAN] 步驟 {s}/{t}"
+                        _status = f"📋 步驟 {s}/{t}"
                         if g:
-                            _status += f" \u00b7 {g}"
+                            _status += f" · {g}"
                         if _progress_msg_id:
                             self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
                         else:
@@ -1959,7 +2018,7 @@ class BaseConnector(ABC):
                             logger.warning(f"[Loop] {_recalc_total} recalculations — forcing stop")
                             self._cancel_event.set()
                             return
-                        _status = "[>] 重新計算中..."
+                        _status = "🔄 重新計算中..."
                         if _progress_msg_id:
                             self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
                         else:
@@ -2198,9 +2257,9 @@ class BaseConnector(ABC):
                         lines.append(f"  • {r[:200]}")
                     output = "\n".join(lines)
                 elif info and info.get("goal_achieved") is False:
-                    output = "[FAIL] Task failed to reach goal. No additional details."
+                    output = "❗ 任務未能完成目標，需要跟進。"
                 else:
-                    output = "[OK] Completed. (No additional output — check inline progress above for step details.)"
+                    output = "✅ 任務已完成。 (無額外輸出 — 以上進度訊息已包含步驟結果)"
             # ── Hallucination guard: LLM sometimes claims it "cannot access local files"
             #    even though it has read_file/write_file/terminal tools. Override it.
             _hallucination_phrases = [

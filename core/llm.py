@@ -624,6 +624,31 @@ def call_llm_with_fallback(
 
     # ── Fallback chain ──
     _providers = config.get("providers", {})
+
+    # REQUEST-FORMAT ERRORS: messages/state corruption that will fail
+    # identically on every provider. Skip fallback entirely and raise
+    # immediately with a specific diagnostic.
+    _REQUEST_FORMAT_PATTERNS = (
+        "role 'tool' must be a response",
+        "tool_calls must be followed by",
+        "role 'tool' without",
+        "expected a tool_call response",
+        "'tool' role requires",
+        "invalid messages structure",
+        "messages sequence",
+    )
+    if any(p in error_msg.lower() for p in _REQUEST_FORMAT_PATTERNS):
+        raise RuntimeError(
+            "** 對話狀態已損壞**\n\n"
+            "LLM 請求中的 messages 順序有問題（tool role message 缺少對應的 tool_calls）。\n\n"
+            "原因: BAW 在多次 LLM 調用中，conversation state 被 corruption，\n"
+            "導致發送咗格式錯誤嘅 request 畀 API。\n\n"
+            "修復方法:\n"
+            "1. 重新發送請求 — 新 session 會重置 conversation state\n"
+            "2. 如果持續出現，檢查記憶重組或 tool call 流程有冇漏咗步驟\n\n"
+            f"原始錯誤: {error_msg[:200]}"
+        )
+
     _tried = {primary_id}
     if fallback_id:
         _tried.add(fallback_id)
