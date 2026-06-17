@@ -729,6 +729,10 @@ class BaseConnector(ABC):
                 return "Usage: /resume <session_id>\nUse /list to see available sessions."
             if cmd == "summarize":
                 return self._summarize_session(msg.chat_id)
+            if cmd == "compact":
+                session = self._get_or_create_session(msg.chat_id)
+                baw = self._baw_ensure()
+                return self._compress_session(baw["config"], baw["data_dir"], session)
             if cmd == "pickup":
                 return self._pickup_last_session(msg.chat_id)
 
@@ -1268,6 +1272,53 @@ class BaseConnector(ABC):
             return f"[PLAN] **Session Summary** (`{ses['id'][:12]}`)\n\n{response}"
         except Exception as e:
             return f"[FAIL] Summarization failed: {e}"
+
+    def _compress_session(self, config: dict, data_dir: Path, session: dict) -> str:
+        """Compress session: summarize early part, keep last 4 messages + summary header.
+        Returns summary text. Can be called on-demand (/compact) or auto-triggered."""
+        conv_history = session.get("messages", [])
+        if not conv_history:
+            return "📭 No messages to compress."
+
+        _summary = "[Conversation auto-compressed]"
+        try:
+            from ..llm import call_llm_with_fallback
+            _sum_text = "\n".join(
+                m.get("content", "")[:200]
+                for m in conv_history[:30]
+            )
+            _sum_resp = call_llm_with_fallback(
+                config,
+                [{"role": "user", "content": f"Summarize this conversation in Traditional Chinese, capturing key decisions, facts, and pending actions. Bullet points only.\n\n{_sum_text}"}],
+                temperature=0.3,
+            )
+            _summary = _sum_resp.response.content.strip() or _summary
+        except Exception as e:
+            logger.warning(f"[Context] Summarization via LLM failed: {e}")
+
+        # Save summary to memory
+        try:
+            from ..memory import MemoryStore
+            _mem = MemoryStore(data_dir)
+            _mem.remember(
+                f"[Session Summary] {_summary}",
+                tags=["session-summary", "manual" if _summary != "[Conversation auto-compressed]" else "auto"],
+                source="agent",
+            )
+        except Exception as e:
+            logger.warning(f"[Context] Memory save failed: {e}")
+
+        # Compress session: keep last 4 msgs + summary header
+        _keep = 4
+        _compressed = conv_history[-_keep:]
+        _compressed.insert(0, {
+            "role": "user",
+            "content": f"[Session compressed. Earlier conversation summarized.]\n{_summary}",
+        })
+        session["messages"] = _compressed
+        logger.info(f"[Context] Compressed from {len(conv_history)} → {len(_compressed)} messages")
+        self._save_session_to_disk(session=session)
+        return f"✅ Compressed: {len(conv_history)} → {len(_compressed)} messages\n📝 Summary:\n{_summary}"
 
     def _pickup_last_session(self, chat_id: str) -> str:
         """Find the most recent interrupted session and resume it."""
@@ -1834,52 +1885,12 @@ class BaseConnector(ABC):
                         set_context_window(_model_id, _cw, _usage_pct)
                     except Exception:
                         pass
-                    # Lazy summarization: trigger earlier at 50% to keep context lean
+                    # Auto-compression: hard cap at 30K estimated tokens or 30% of context
                     _next_estimate = _estimated_tokens + (len(prompt) * 0.25) if prompt else 0
-                    if _usage_pct > 50 or (_next_estimate / _cw) > 0.60:
-                        logger.info(f"[Context] {_usage_pct:.0f}% full — auto-summarizing...")
-                        # Generate summary via direct LLM call (bypass run_agent to avoid recursion)
-                        _summary = "[Conversation auto-compressed]"
-                        try:
-                            from ..llm import get_model, call_llm_with_fallback
-                            _sum_text = "\n".join(
-                                m.get("content", "")[:200]
-                                for m in conv_history[:30]
-                            )
-                            _sum_resp = call_llm_with_fallback(
-                                config,
-                                [{"role": "user", "content": f"Summarize this conversation in Traditional Chinese, capturing key decisions, facts, and pending actions. Bullet points only.\n\n{_sum_text}"}],
-                                temperature=0.3,
-                            )
-                            _summary = _sum_resp.response.content.strip() or _summary
-                        except Exception as e:
-                            logger.warning(f"[Context] Summarization via LLM failed: {e}")
-
-                        # Save summary to memory
-                        try:
-                            from ..memory import MemoryStore
-                            _mem = MemoryStore(data_dir)
-                            _mem.remember(
-                                f"[Session Auto-Summary] {_summary}",
-                                tags=["session-summary", "auto"],
-                                source="agent",
-                            )
-                            logger.info(f"[Context] Summary saved to memory")
-                        except Exception as e:
-                            logger.warning(f"[Context] Memory save failed: {e}")
-
-                        # Compress session: keep last 4 msgs + summary header
-                        _keep = 4
-                        _compressed = conv_history[-_keep:]
-                        _compressed.insert(0, {
-                            "role": "user",
-                            "content": f"[Session auto-compressed. Earlier conversation summarized to memory.]\n{_summary}",
-                        })
-                        conv_history = _compressed
-                        session["messages"] = _compressed
-                        logger.info(f"[Context] Compressed to {len(_compressed)} messages")
-                    elif _usage_pct > 50:
-                        logger.info(f"[Context] {_usage_pct:.0f}% full — monitoring")
+                    if (_estimated_tokens > 30000 or _usage_pct > 30 or (_next_estimate / _cw) > 0.40) and session:
+                        logger.info(f"[Context] {_estimated_tokens} tokens ({_usage_pct:.0f}%) — auto-compressing...")
+                        self._compress_session(config, data_dir, session)
+                        conv_history = session.get("messages", [])
             else:
                 conv_history = None
 
