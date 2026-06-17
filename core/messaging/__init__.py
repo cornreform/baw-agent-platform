@@ -2226,7 +2226,7 @@ class BaseConnector(ABC):
                         "Completed. (No" not in output and \
                         "Task failed to reach goal" not in output
                     if _has_real_content:
-                        output += f"\n[COURT] Court: {agreement} (gap {gap})"
+                        output += f"\n⚖️ {agreement} (gap {gap})"
                 except Exception:
                     pass
 
