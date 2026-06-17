@@ -180,11 +180,110 @@ class Scheduler:
 
     # ── Firing ──
 
+    def _check_cron_jobs(self, now: datetime) -> list[dict]:
+        """Also check user-created cron jobs from ~/.baw/cron/jobs.json."""
+        fired = []
+        cron_path = self.data_dir / "cron" / "jobs.json"
+        if not cron_path.exists():
+            return fired
+        try:
+            data = json.loads(cron_path.read_text(encoding="utf-8"))
+            jobs = data.get("jobs", [])
+            if not isinstance(jobs, list):
+                return fired
+            modified = False
+            for job in jobs:
+                if not job.get("enabled", True):
+                    continue
+                next_ts = job.get("next_run", 0)
+                if isinstance(next_ts, (int, float)) and next_ts <= now.timestamp():
+                    # Fire the job
+                    task_id = f"cron-{int(now.timestamp())}-{job.get('name', 'job')}"
+                    task_dir = self.data_dir / TASKS_DIR / task_id
+                    task_dir.mkdir(parents=True, exist_ok=True)
+                    prompt = job.get("prompt", job.get("name", ""))
+                    (task_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
+                    (task_dir / "status.txt").write_text("queued", encoding="utf-8")
+                    # Execute via BAW agent
+                    import subprocess as sp
+                    sp.Popen(
+                        ["baw", "--mode", "hybrid", "--task-id", task_id, prompt],
+                        stdout=(task_dir / "stdout.txt").open("w"),
+                        stderr=(task_dir / "stderr.txt").open("w"),
+                        cwd=str(self.data_dir.parent),
+                    )
+                    # Update job timing
+                    sched = job.get("schedule", "")
+                    job["last_run"] = now.timestamp()
+                    job["next_run"] = self._cron_next(sched, now.timestamp())
+                    modified = True
+                    # Log
+                    log_dir = self.data_dir / "cron" / "logs"
+                    log_dir.mkdir(parents=True, exist_ok=True)
+                    log_entry = {
+                        "action": "run", "trigger": "scheduler",
+                        "time": now.timestamp(),
+                        "result": f"Fired: {job.get('name', '?')} — {prompt[:100]}",
+                    }
+                    try:
+                        with open(log_dir / f"{job.get('name', 'unknown')}.jsonl", "a") as f:
+                            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    except IOError:
+                        pass
+                    fired.append({
+                        "task": job.get("name", "?"),
+                        "task_id": task_id,
+                        "cron": sched,
+                        "time": now.isoformat(),
+                    })
+            if modified:
+                cron_path.write_text(
+                    json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+        except Exception:
+            pass
+        return fired
+
+    def _cron_next(self, sched: str, after: float) -> float:
+        """Calculate next run timestamp from cronjob schedule format."""
+        from datetime import timedelta
+        now_dt = datetime.fromtimestamp(after, tz=timezone.utc)
+        if sched == "hourly":
+            next_t = now_dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+            return next_t.timestamp()
+        if sched.endswith("m") and sched[:-1].isdigit():
+            return after + int(sched[:-1]) * 60
+        if sched.endswith("h") and sched[:-1].isdigit():
+            return after + int(sched[:-1]) * 3600
+        if sched.startswith("daily@"):
+            parts = sched.split("@")
+            if len(parts) == 2 and ":" in parts[1]:
+                h, m = map(int, parts[1].split(":"))
+                next_t = now_dt.replace(hour=h, minute=m, second=0, microsecond=0)
+                if next_t <= now_dt:
+                    next_t += timedelta(days=1)
+                return next_t.timestamp()
+        if sched.startswith("weekly@"):
+            parts = sched.split("@")
+            if len(parts) == 3:
+                day_names = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+                target_dow = day_names.get(parts[1], 0)
+                h, m = map(int, parts[2].split(":"))
+                days_ahead = target_dow - now_dt.weekday()
+                if days_ahead <= 0 or (days_ahead == 0 and (now_dt.hour > h or (now_dt.hour == h and now_dt.minute >= m))):
+                    days_ahead += 7
+                next_t = (now_dt + timedelta(days=days_ahead)).replace(
+                    hour=h, minute=m, second=0, microsecond=0
+                )
+                return next_t.timestamp()
+        return after + 3600  # fallback
+
     def poll(self) -> list[dict]:
         """Check all tasks, fire any that are due. Returns list of fired tasks."""
         now = datetime.now(timezone.utc)
         fired = []
 
+        # Check internal schedule.yaml tasks
         for task in self._tasks:
             last_run_str = self._state.get(task.name, "")
             last_run = None
@@ -205,6 +304,12 @@ class Scheduler:
                     "cron": task.cron,
                     "time": now.isoformat(),
                 })
+
+        # Also check user-created cron jobs from cronjob tool
+        try:
+            fired.extend(self._check_cron_jobs(now))
+        except Exception:
+            pass
 
         return fired
 
@@ -257,9 +362,8 @@ class Scheduler:
 
         # BAW agent mode
         import subprocess as sp
-        baw_path = __import__("sys").argv[0] if __import__("sys").argv else "baw"
         sp.Popen(
-            [baw_path, "--mode", "hybrid", "--task-id", task_id, prompt or task.name],
+            ["baw", "--mode", "hybrid", "--task-id", task_id, prompt or task.name],
             stdout=(task_dir / "stdout.txt").open("w"),
             stderr=(task_dir / "stderr.txt").open("w"),
             cwd=str(self.data_dir.parent),
