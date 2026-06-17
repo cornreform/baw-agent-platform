@@ -199,21 +199,9 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
-            # Build per-call breakdown
-            lines = [f"📊 **{len(self.calls)} LLM calls** — total: {_human_tokens(total)} tokens"]
-            MAX_BAR = 20
-            if ti > 0:
-                max_ti = max(c["tokens_in"] for c in self.calls) or 1
-                for i, c in enumerate(self.calls, 1):
-                    _model_short = c["model"].split("/")[-1][:18]
-                    _bar_len = max(1, int(c["tokens_in"] / max_ti * MAX_BAR))
-                    _bar = "█" * _bar_len + "░" * (MAX_BAR - _bar_len)
-                    lines.append(
-                        f"`#{i:<2} {_model_short:<18}` {_bar} "
-                        f"{_human_tokens(c['tokens_in'])}→{_human_tokens(c['tokens_out'])}"
-                    )
-            lines.append(f"∑ {_human_tokens(ti)}↑ + {_human_tokens(to)}↓ = {_human_tokens(total)}")
-            return "\n".join(lines)
+            return (
+                f"📊 **{len(self.calls)} LLM calls** — total: {_human_tokens(total)} tokens"
+            )
 
     def html_summary(self) -> str:
         with self._lock:
@@ -222,20 +210,9 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
-            parts = [f"📊 <b>{len(self.calls)} LLM calls</b> — total: {_human_tokens(total)} tokens"]
-            MAX_BAR = 20
-            if ti > 0:
-                max_ti = max(c["tokens_in"] for c in self.calls) or 1
-                for i, c in enumerate(self.calls, 1):
-                    _model_short = c["model"].split("/")[-1][:18]
-                    _bar_len = max(1, int(c["tokens_in"] / max_ti * MAX_BAR))
-                    _bar = "█" * _bar_len + "░" * (MAX_BAR - _bar_len)
-                    parts.append(
-                        f"<code>#{i:<2} {_model_short:<18}</code> {_bar} "
-                        f"{_human_tokens(c['tokens_in'])}→{_human_tokens(c['tokens_out'])}"
-                    )
-            parts.append(f"∑ {_human_tokens(ti)}↑ + {_human_tokens(to)}↓ = {_human_tokens(total)}")
-            return "<br/>".join(parts)
+            return (
+                f"📊 <b>{len(self.calls)} LLM calls</b> — total: {_human_tokens(total)}"
+            )
 
     def reset(self):
         with self._lock:
