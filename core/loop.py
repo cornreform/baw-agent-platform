@@ -181,7 +181,7 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
-            return f"[STATS] [{len(self.calls)} LLM calls] {_human_tokens(ti)}↑{_human_tokens(to)}↓ | total: {_human_tokens(total)} tokens"
+            return f"📊 [{len(self.calls)} LLM calls] {_human_tokens(ti)}↑{_human_tokens(to)}↓ | total: {_human_tokens(total)} tokens"
 
     def html_summary(self) -> str:
         with self._lock:
@@ -190,7 +190,7 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
-            return f"[STATS] <b>[{len(self.calls)} LLM calls]</b> {_human_tokens(ti)}↑{_human_tokens(to)}↓ | <b>total: {_human_tokens(total)} tokens</b>"
+            return f"📊 <b>[{len(self.calls)} LLM calls]</b> {_human_tokens(ti)}↑{_human_tokens(to)}↓ | <b>total: {_human_tokens(total)} tokens</b>"
 
     def reset(self):
         with self._lock:
