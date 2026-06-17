@@ -8,6 +8,9 @@ services:
     restart: unless-stopped
     # Mount BAW's persistent data (sessions, memory, vault, config)
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro
       - /home/radxa/.baw:/home/baw/.baw
       - /home/radxa/.mmx:/home/baw/.mmx
     # Load Telegram token + API keys from BAW's own env files
@@ -20,6 +23,8 @@ services:
     environment:
       - BAW_HOME=/app
       - BAW_RUNTIME_HOME=/home/baw/.baw
+    group_add:
+      - "988"
     deploy:
       resources:
         limits:
