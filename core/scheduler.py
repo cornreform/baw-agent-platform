@@ -15,7 +15,7 @@ import yaml
 import shlex
 import threading
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from croniter import croniter
 
 from .display import front_desk_task_id, front_desk_status
@@ -104,6 +104,7 @@ class Scheduler:
         self._state: dict[str, str] = {}  # task_name → last_run ISO timestamp
         self._running = False
         self._thread: threading.Thread | None = None
+        self._cron_tz_name: str | None = None
         self._load()
 
     # ── File I/O ──
@@ -242,7 +243,24 @@ class Scheduler:
                 )
         except Exception:
             pass
-        return fired
+        # ── Firing ──
+
+    def _cron_tz(self) -> str:
+        """Get configured cron timezone from config.yaml."""
+        if self._cron_tz_name is not None:
+            return self._cron_tz_name
+        try:
+            cfg_path = self.data_dir / "config.yaml"
+            if cfg_path.exists():
+                import yaml as _yaml
+                cfg = _yaml.safe_load(cfg_path.read_text())
+                tz_str = cfg.get("cron", {}).get("timezone", "UTC") or "UTC"
+                self._cron_tz_name = tz_str
+                return tz_str
+        except Exception:
+            pass
+        self._cron_tz_name = "UTC"
+        return "UTC"
 
     def _cron_next(self, sched: str, after: float) -> float:
         """Calculate next run timestamp from cronjob schedule format."""
@@ -259,24 +277,54 @@ class Scheduler:
             parts = sched.split("@")
             if len(parts) == 2 and ":" in parts[1]:
                 h, m = map(int, parts[1].split(":"))
-                next_t = now_dt.replace(hour=h, minute=m, second=0, microsecond=0)
-                if next_t <= now_dt:
-                    next_t += timedelta(days=1)
-                return next_t.timestamp()
+                return self._cron_next_tz(now_dt, h, m)
         if sched.startswith("weekly@"):
             parts = sched.split("@")
             if len(parts) == 3:
                 day_names = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
                 target_dow = day_names.get(parts[1], 0)
                 h, m = map(int, parts[2].split(":"))
-                days_ahead = target_dow - now_dt.weekday()
-                if days_ahead <= 0 or (days_ahead == 0 and (now_dt.hour > h or (now_dt.hour == h and now_dt.minute >= m))):
-                    days_ahead += 7
-                next_t = (now_dt + timedelta(days=days_ahead)).replace(
-                    hour=h, minute=m, second=0, microsecond=0
-                )
-                return next_t.timestamp()
+                return self._cron_next_tz(now_dt, h, m, for_weekly=target_dow)
         return after + 3600  # fallback
+
+    def _cron_next_tz(self, now_dt: datetime, h: int, m: int,
+                      for_weekly: int | None = None) -> float:
+        """Calculate next run respecting config timezone, return UTC timestamp."""
+        tz_name = self._cron_tz()
+        if tz_name and tz_name.upper() != "UTC":
+            try:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo(tz_name)
+                now_tz = datetime.now(tz)
+                if for_weekly is None:
+                    next_tz = now_tz.replace(hour=h, minute=m, second=0, microsecond=0)
+                    if next_tz <= now_tz:
+                        next_tz += timedelta(days=1)
+                else:
+                    target_dow = for_weekly
+                    days_ahead = target_dow - now_tz.weekday()
+                    if days_ahead <= 0 or (days_ahead == 0 and (now_tz.hour > h or (now_tz.hour == h and now_tz.minute >= m))):
+                        days_ahead += 7
+                    next_tz = (now_tz + timedelta(days=days_ahead)).replace(
+                        hour=h, minute=m, second=0, microsecond=0
+                    )
+                return next_tz.astimezone(timezone.utc).timestamp()
+            except Exception:
+                pass
+        # Fallback: UTC
+        if for_weekly is None:
+            next_t = now_dt.replace(hour=h, minute=m, second=0, microsecond=0)
+            if next_t <= now_dt:
+                next_t += timedelta(days=1)
+        else:
+            target_dow = for_weekly
+            days_ahead = target_dow - now_dt.weekday()
+            if days_ahead <= 0 or (days_ahead == 0 and (now_dt.hour > h or (now_dt.hour == h and now_dt.minute >= m))):
+                days_ahead += 7
+            next_t = (now_dt + timedelta(days=days_ahead)).replace(
+                hour=h, minute=m, second=0, microsecond=0
+            )
+        return next_t.timestamp()
 
     def poll(self) -> list[dict]:
         """Check all tasks, fire any that are due. Returns list of fired tasks."""

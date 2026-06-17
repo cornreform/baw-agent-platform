@@ -27,6 +27,26 @@ from datetime import datetime, timezone, timedelta
 
 
 CRON_DIR = None
+_CRON_TZ_CACHE: str | None = None
+
+
+def _get_cron_timezone() -> str:
+    """Read the configured cron timezone from BAW config (default UTC)."""
+    global _CRON_TZ_CACHE
+    if _CRON_TZ_CACHE is not None:
+        return _CRON_TZ_CACHE
+    try:
+        cfg_path = Path.home() / ".baw" / "config.yaml"
+        if cfg_path.exists():
+            import yaml
+            cfg = yaml.safe_load(cfg_path.read_text())
+            tz_str = cfg.get("cron", {}).get("timezone", "UTC") or "UTC"
+            _CRON_TZ_CACHE = tz_str
+            return tz_str
+    except Exception:
+        pass
+    _CRON_TZ_CACHE = "UTC"
+    return "UTC"
 _MAX_JOBS = 20
 _LOCK = threading.Lock()
 
@@ -85,6 +105,52 @@ def _parse_schedule(schedule: str) -> str | None:
     return f"Invalid schedule format: '{schedule}'. Use '30m', '2h', 'hourly', 'daily@09:00', 'weekly@sun@09:00'."
 
 
+def _apply_tz(schedule: str, h: int, m: int, now_utc: datetime,
+              for_weekly: tuple[int, int] | None = None) -> float:
+    """Calculate next run in user's timezone, return UTC timestamp.
+
+    for_weekly: (target_dow, days_ahead_base) for weekly schedule.
+    """
+    tz_name = _get_cron_timezone()
+    if tz_name and tz_name.upper() != "UTC":
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(tz_name)
+            now_tz = datetime.now(tz)
+            if for_weekly is None:
+                # daily@
+                next_tz = now_tz.replace(hour=h, minute=m, second=0, microsecond=0)
+                if next_tz <= now_tz:
+                    next_tz += timedelta(days=1)
+            else:
+                # weekly@
+                target_dow, _ = for_weekly
+                days_ahead = target_dow - now_tz.weekday()
+                if days_ahead <= 0 or (days_ahead == 0 and (now_tz.hour > h or (now_tz.hour == h and now_tz.minute >= m))):
+                    days_ahead += 7
+                next_tz = (now_tz + timedelta(days=days_ahead)).replace(
+                    hour=h, minute=m, second=0, microsecond=0
+                )
+            return next_tz.astimezone(timezone.utc).timestamp()
+        except Exception:
+            pass
+    # Fallback: interpret as UTC
+    if for_weekly is None:
+        next_t = now_utc.replace(hour=h, minute=m, second=0, microsecond=0)
+        if next_t <= now_utc:
+            next_t += timedelta(days=1)
+        return next_t.timestamp()
+    else:
+        target_dow, _ = for_weekly
+        days_ahead = target_dow - now_utc.weekday()
+        if days_ahead <= 0 or (days_ahead == 0 and (now_utc.hour > h or (now_utc.hour == h and now_utc.minute >= m))):
+            days_ahead += 7
+        next_t = (now_utc + timedelta(days=days_ahead)).replace(
+            hour=h, minute=m, second=0, microsecond=0
+        )
+        return next_t.timestamp()
+
+
 def _next_run(schedule: str) -> float:
     """Calculate next run timestamp from schedule string."""
     now = datetime.now(timezone.utc)
@@ -100,22 +166,13 @@ def _next_run(schedule: str) -> float:
     if schedule.startswith("daily@"):
         time_str = schedule.split("@")[1]
         h, m = map(int, time_str.split(":"))
-        next_t = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        if next_t <= now:
-            next_t += timedelta(days=1)
-        return next_t.timestamp()
+        return _apply_tz(schedule, h, m, now)
     if schedule.startswith("weekly@"):
         parts = schedule.split("@")
         day_names = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
         target_dow = day_names.get(parts[1], 0)
         h, m = map(int, parts[2].split(":"))
-        days_ahead = target_dow - now.weekday()
-        if days_ahead <= 0 or (days_ahead == 0 and (now.hour > h or (now.hour == h and now.minute >= m))):
-            days_ahead += 7
-        next_t = (now + timedelta(days=days_ahead)).replace(
-            hour=h, minute=m, second=0, microsecond=0
-        )
-        return next_t.timestamp()
+        return _apply_tz(schedule, h, m, now, for_weekly=(target_dow, 0))
     return now.timestamp() + 3600  # Fallback: 1 hour
 
 
