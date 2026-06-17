@@ -2340,7 +2340,8 @@ class BaseConnector(ABC):
             # ── Clear progress message after BAW completes ──
             if chat_id and _progress_msg_id:
                 try:
-                    self.send(chat_id, "[OK]", edit_msg_id=_progress_msg_id)
+                    _first_line = output.strip().split('\n')[0][:100] if output.strip() else "✅ 完成"
+                    self.send(chat_id, f"✅ {_first_line}", edit_msg_id=_progress_msg_id)
                 except Exception:
                     pass
 
