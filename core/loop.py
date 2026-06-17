@@ -386,9 +386,18 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed."
             )
             system_prompt += (
-                "\n\n## CONFIG COMMAND RULES (quick mode)\n"
-                "When user sends config params (method=X model=Y base_url=Z):\n"
-                "- Use ONLY the `config` tool. MAX 3 steps: get → set → verify.\n"
+                "\\n\\n## DELEGATION vs INLINE\\n"
+                "當你使用 <code>delegate_task</code> 時，回傳帶有「╔═══ 巳分工 ═══╗」box。\\n"
+                "彙報時必須:<br>"
+                "- <b>🔄 已分工 — <任務名></b> header<br>"
+                "- 摘要結果，唔好 dump raw box<br>"
+                "- 註明 sub-agent model<br>"
+                "- Inline 結果直接出，無 header<br>"
+            )
+            system_prompt += (
+                "\\n\\n## CONFIG COMMAND RULES (quick mode)\\n"
+                "When user sends config params (method=X mode=Y base_url=Z):\\n"
+                "- Use ONLY the `config` tool. MAX 3 steps: get → set → verify.\\n"
                 "- NEVER delegate to sub-agents. NEVER use execute_code/bash/write_file.\n"
                 "- NEVER say 'I will follow up.' DO IT NOW, report result.\n"
                 "- After setting, read back with config(action=get) to confirm.\n"
@@ -406,6 +415,15 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "  ℹ️ 任務無需操作 → when user asked a question, no action needed\n"
                 "\n"
                 "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed."
+            )
+            system_prompt += (
+                "\\n\\n## DELEGATION vs INLINE\\n"
+                "當你使用 <code>delegate_task</code> 時，回傳帶有「╔═══ 巳分工 ═══╗」box。\\n"
+                "彙報時必須:<br>"
+                "- <b>🔄 已分工 — <任務名></b> header<br>"
+                "- 摘要結果，唔好 dump raw box<br>"
+                "- 註明 sub-agent model<br>"
+                "- Inline 結果直接出，無 header<br>"
             )
     else:
         system_prompt = (
