@@ -154,6 +154,7 @@ class TelegramConnector(BaseConnector):
             {"command": "reset",   "description": "Hard reset — clear session without saving"},
             {"command": "resume",  "description": "Resume a saved session"},
             {"command": "summarize", "description": "LLM summary of current session"},
+            {"command": "compact",   "description": "Manual compress: summarize early convo + keep last 4 msgs"},
             {"command": "pickup",  "description": "Resume last interrupted session"},
             {"command": "reload",  "description": "Hot-reload tools & config"},
             {"command": "evolve",  "description": "Self-evolution stats"},

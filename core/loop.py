@@ -167,12 +167,30 @@ class CostTracker:
 
     def record(self, model_name: str, tokens_in: int, tokens_out: int, cost: float):
         with self._lock:
+            call_num = len(self.calls) + 1
             self.calls.append({
                 "model": model_name, "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
             })
             self.total_tokens_in += tokens_in
             self.total_tokens_out += tokens_out
+
+        # Detailed token log (async-safe write)
+        try:
+            _log_path = Path.home() / ".baw" / "logs" / "tokens.jsonl"
+            _log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(_log_path, "a") as _f:
+                _f.write(json.dumps({
+                    "ts": time.time(),
+                    "call": call_num,
+                    "model": model_name,
+                    "tokens_in": tokens_in,
+                    "tokens_out": tokens_out,
+                    "cumulative_in": self.total_tokens_in,
+                    "cumulative_out": self.total_tokens_out,
+                }) + "\n")
+        except Exception:
+            pass
 
     def summary(self) -> str:
         with self._lock:
