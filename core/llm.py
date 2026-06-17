@@ -538,6 +538,23 @@ def call_llm_with_fallback(
         _log.warning(f"[LLM] fallback '{fallback_id}' == primary — will be skipped")
         fallback_id = ""
 
+    # ── Fast skip: if primary model's provider has >= N circuit failures, skip primary → try fallback directly ──
+    if fallback_id and primary_id != fallback_id:
+        try:
+            _pmodel = get_model(config, primary_id)
+            with _CIRCUIT_LOCK:
+                _pstate = _CIRCUIT_STATE.get(_pmodel.provider, {})
+            if _pstate.get("failures", 0) >= 8:
+                import logging as _log2
+                _log2.warning(
+                    f"[LLM] {_pmodel.provider} has {_pstate['failures']} consecutive fails "
+                    f"— skipping primary {primary_id} → trying fallback {fallback_id}"
+                )
+                primary_id = fallback_id
+                fallback_id = ""  # prevent infinite fallback loop
+        except Exception:
+            pass
+
     # ── Auto-route based on message size ──
     primary_id = _route_model(config, messages, primary_id)
 

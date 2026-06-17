@@ -1297,6 +1297,20 @@ class TelegramConnector(BaseConnector):
                 self.send(chat_id, f"❌ Self-test failed: {e}")
             return
 
+        # ── /btw bypass: quick answer, skip queue entirely ──
+        _btw_match = text.lstrip().lower().startswith("/btw")
+        if _btw_match:
+            _btw_text = text.lstrip()[4:].strip()
+            if not _btw_text:
+                self.send(chat_id, "/btw `<question>` — Quick answer, no queue")
+                return
+            threading.Thread(
+                target=self._process_btw,
+                args=(chat_id, _btw_text),
+                daemon=True,
+            ).start()
+            return
+
         # Debounce window: suppress new threads right after /stop
         if self._debounce_until and time.time() < self._debounce_until:
             self.send(chat_id, "⏳ Please wait a moment before sending a new request.")
@@ -1348,6 +1362,30 @@ class TelegramConnector(BaseConnector):
         except Exception:
             return False
 
+    def _process_btw(self, chat_id: str, question: str):
+        """Quick LLM answer — no agent loop, no court, no queue. Runs in own thread."""
+        try:
+            from ..llm import call_llm_with_fallback, calculate_cost, get_model
+            from ..loop import build_system_prompt
+            config = self._baw_config
+            data_dir = self._data_dir
+            model = get_model(config)
+            # Minimal system prompt — no soul, no memories, no rules
+            sys_prompt = build_system_prompt(config, data_dir, fresh_start=True)
+            msgs = [
+                {"role": "system", "content": f"你係 BAW。快速回答問題。\n\n{sys_prompt}"},
+                {"role": "user", "content": question},
+            ]
+            fb = call_llm_with_fallback(config, msgs, temperature=0.7)
+            answer = fb.response.content.strip() if fb.response else "(no response)"
+            cost = calculate_cost(model, fb.response.input_tokens, fb.response.output_tokens) if fb.response else 0
+            total_tokens = (fb.response.input_tokens or 0) + (fb.response.output_tokens or 0) if fb.response else 0
+            self.send(chat_id,
+                      f"⚡ <b>BTW</b>: {answer}\n"
+                      f"📊 {cost:.4f} | {total_tokens:,} tokens")
+        except Exception as e:
+            self.send(chat_id, f"❌ BTW error: {e}")
+
     def _process_message(self, chat_id, user_id, user_name, text, msg):
         """Process a message in background thread (runs route() + send())."""
         logger.info(f"[Telegram] Processing: {text[:60]}...")
@@ -1381,21 +1419,13 @@ class TelegramConnector(BaseConnector):
                 f"⚡ 處理中: {text[:50]}{'…' if len(text) > 50 else ''}",
             )
 
-        # Typing indicator heartbeat (respects cancel event).
-        # Send a typing action every 4s — Telegram typing indicator
-        # expires after 5s, so 4s refresh keeps it continuously
-        # visible for the entire duration of the agent run.
+        # ── Typing indicator heartbeat ──
         _typing_stop = threading.Event()
         _typing_count = [0]  # mutable counter for debug
         _typing_start = [time.time()]  # mutable timestamp for elapsed calc
 
         def _typing_heartbeat():
             while not _typing_stop.is_set() and not self._cancel_event.is_set():
-                # Try up to 3 times per cycle. Telegram's sendChatAction
-                # can intermittently 429 or fail during message edits
-                # (the progress callback fires on the same client), so
-                # a single retry covers the gap and keeps the indicator
-                # visible for the whole agent run.
                 for _retry in range(3):
                     try:
                         self._client.post(
@@ -1404,19 +1434,43 @@ class TelegramConnector(BaseConnector):
                             timeout=5,
                         )
                         _typing_count[0] += 1
-                        break  # success
+                        break
                     except Exception as _te:
                         logger.debug(
                             f"[Telegram] typing heartbeat retry {_retry + 1} "
                             f"(#{_typing_count[0]}): {_te}"
                         )
-                        _typing_stop.wait(0.5)  # brief backoff
-                # Wait 3s — comfortably inside Telegram's 5s typing expiry.
+                        _typing_stop.wait(0.5)
                 _typing_stop.wait(3.0)
         _hb = threading.Thread(
             target=_typing_heartbeat, daemon=True, name=f"typing-hb-{chat_id}",
         )
         _hb.start()
+
+        # ── Progress monitor: send periodic "still working" updates ──
+        _progress_stop = threading.Event()
+
+        def _progress_monitor():
+            _milestones = [120, 420, 720, 1200, 1800, 3000]  # 2min, 7min, 12min, 20min, 30min, 50min
+            _msg_sent = False
+            while not _progress_stop.wait(1.0) and not _typing_stop.is_set() and not self._cancel_event.is_set():
+                _elapsed = int(time.time() - _typing_start[0])
+                for _m in _milestones:
+                    if _elapsed >= _m and not getattr(_progress_monitor, f"_done_{_m}", False):
+                        setattr(_progress_monitor, f"_done_{_m}", True)
+                        _msg_sent = True
+                        if _elapsed < 600:
+                            self.send(chat_id, f"⏳ Still working on your request... ({_elapsed // 60} min)")
+                        else:
+                            self.send(chat_id, f"⏳ Still working... ({_elapsed // 60} min). If stuck, use /stop to cancel.")
+                        break
+            # Final message if we ever sent progress updates
+            if _msg_sent and not self._cancel_event.is_set():
+                pass  # The actual response will follow
+        _pm = threading.Thread(
+            target=_progress_monitor, daemon=True, name=f"progress-{chat_id}",
+        )
+        _pm.start()
 
         try:
             # Check cancelled before starting BAW

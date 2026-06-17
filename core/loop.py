@@ -1176,6 +1176,8 @@ def run_agent(
     reset_cost()
     session_cost = 0.0
     court_result = None
+    _delegation_results = []
+    _synthesis_results = []
 
     # ── Resolve execution mode ──
     # Smart default: quick for simple messages, tight for complex ones

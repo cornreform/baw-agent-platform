@@ -205,7 +205,7 @@ Examples:
         from baw.core.display import btw_header
 
         model = get_model(config)
-        sys_prompt = build_system_prompt(config, data_dir)
+        sys_prompt = build_system_prompt(config, data_dir, fresh_start=True)
         msgs = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt}]
         fb = call_llm_with_fallback(config, msgs, temperature=0.7)
         cost = calculate_cost(model, fb.response.input_tokens, fb.response.output_tokens)
