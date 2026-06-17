@@ -1924,10 +1924,63 @@ class BaseConnector(ABC):
                 if not chat_id or not step_type:
                     return
                 try:
+                    # ── Language-aware labels ──
+                    _lang = self.config.get("display", {}).get("language", "zh")
+                    _TOOL_LABELS = {
+                        "zh": {
+                            "_analysis": "🧠 分析中...",
+                            "_recalc": "🔄 重新計算中...",
+                            "read_file": "📖 讀取檔案", "write_file": "📝 寫入檔案",
+                            "patch": "🔧 修改檔案", "bash": "💻 執行指令",
+                            "web_search": "🔍 搜尋網絡", "web_extract": "🌐 提取網頁",
+                            "terminal": "💻 執行指令", "execute_code": "⚙️ 執行程式碼",
+                            "delegate_task": "👥 分配子任務", "memory": "🧠 存取記憶",
+                            "session_search": "📚 搜尋對話記錄", "search_files": "🔎 搜尋檔案",
+                            "cronjob": "⏰ 設定排程", "config": "⚙️ 修改設定",
+                            "todo": "📋 更新待辦", "image_generate": "🎨 生成圖片",
+                            "text_to_speech": "🔊 生成語音", "vision_analyze": "👁️ 分析圖片",
+                            "http_fetch": "📥 下載檔案", "install": "📦 安裝套件",
+                            "knowledge_graph": "🕸️ 查詢知識圖譜",
+                            "skill_manage": "🛠️ 管理技能", "skill_view": "📄 查閱技能",
+                            "tts": "🔊 生成語音",
+                            "browser_navigate": "🌍 瀏覽網頁", "browser_click": "🖱️ 點擊頁面",
+                            "browser_type": "⌨️ 輸入文字", "browser_scroll": "📜 滾動頁面",
+                            "browser_snapshot": "📷 讀取頁面", "browser_vision": "📸 視覺分析",
+                            "browser_get_images": "🖼️ 擷取圖片",
+                            "browser_press": "⌨️ 按鍵操作", "browser_back": "🔙 返回頁面",
+                            "browser_console": "📟 讀取主控台",
+                        },
+                        "en": {
+                            "_analysis": "🧠 Analyzing...",
+                            "_recalc": "🔄 Recalculating...",
+                            "read_file": "📖 Reading file", "write_file": "📝 Writing file",
+                            "patch": "🔧 Patching file", "bash": "💻 Running command",
+                            "web_search": "🔍 Searching web", "web_extract": "🌐 Extracting page",
+                            "terminal": "💻 Running command", "execute_code": "⚙️ Executing code",
+                            "delegate_task": "👥 Delegating task", "memory": "🧠 Accessing memory",
+                            "session_search": "📚 Searching history", "search_files": "🔎 Searching files",
+                            "cronjob": "⏰ Setting schedule", "config": "⚙️ Updating config",
+                            "todo": "📋 Updating tasks", "image_generate": "🎨 Generating image",
+                            "text_to_speech": "🔊 Generating speech",
+                            "vision_analyze": "👁️ Analyzing image",
+                            "http_fetch": "📥 Downloading file", "install": "📦 Installing package",
+                            "knowledge_graph": "🕸️ Querying knowledge graph",
+                            "skill_manage": "🛠️ Managing skills", "skill_view": "📄 Viewing skill",
+                            "tts": "🔊 Generating speech",
+                            "browser_navigate": "🌍 Browsing page", "browser_click": "🖱️ Clicking element",
+                            "browser_type": "⌨️ Typing text", "browser_scroll": "📜 Scrolling page",
+                            "browser_snapshot": "📷 Reading page", "browser_vision": "📸 Visual analysis",
+                            "browser_get_images": "🖼️ Capturing images",
+                            "browser_press": "⌨️ Pressing key", "browser_back": "🔙 Going back",
+                            "browser_console": "📟 Reading console",
+                        },
+                    }
+                    _labels = _TOOL_LABELS.get(_lang, _TOOL_LABELS["zh"])
+
                     if step_type == "plan":
                         meta = args or {}
                         total = meta.get("steps", 0)
-                        plan_text = f"🧠 分析中... (預計 {total} 步)"
+                        plan_text = f"{_labels.get('_analysis', '🧠 分析中...')} ({total} {'步' if _lang == 'zh' else 'steps'})"
                         if _progress_msg_id:
                             self.send(chat_id, plan_text, edit_msg_id=_progress_msg_id)
                         else:
@@ -1935,43 +1988,7 @@ class BaseConnector(ABC):
                             _progress_msg_id = self.send(chat_id, plan_text)
                     elif step_type == "tool" and name:
                         # Progress message: emoji prefix + label + context
-                        _TOOL_LABELS = {
-                            "read_file": "📖 讀取檔案",
-                            "write_file": "📝 寫入檔案",
-                            "patch": "🔧 修改檔案",
-                            "bash": "💻 執行指令",
-                            "web_search": "🔍 搜尋網絡",
-                            "web_extract": "🌐 提取網頁",
-                            "terminal": "💻 執行指令",
-                            "execute_code": "⚙️ 執行程式碼",
-                            "delegate_task": "👥 分配子任務",
-                            "memory": "🧠 存取記憶",
-                            "session_search": "📚 搜尋對話記錄",
-                            "search_files": "🔎 搜尋檔案",
-                            "cronjob": "⏰ 設定排程",
-                            "config": "⚙️ 修改設定",
-                            "todo": "📋 更新待辦",
-                            "image_generate": "🎨 生成圖片",
-                            "text_to_speech": "🔊 生成語音",
-                            "vision_analyze": "👁️ 分析圖片",
-                            "http_fetch": "📥 下載檔案",
-                            "install": "📦 安裝套件",
-                            "knowledge_graph": "🕸️ 查詢知識圖譜",
-                            "skill_manage": "🛠️ 管理技能",
-                            "skill_view": "📄 查閱技能",
-                            "tts": "🔊 生成語音",
-                            "browser_navigate": "🌍 瀏覽網頁",
-                            "browser_click": "🖱️ 點擊頁面",
-                            "browser_type": "⌨️ 輸入文字",
-                            "browser_scroll": "📜 滾動頁面",
-                            "browser_snapshot": "📷 讀取頁面",
-                            "browser_vision": "📸 視覺分析",
-                            "browser_get_images": "🖼️ 擷取圖片",
-                            "browser_press": "⌨️ 按鍵操作",
-                            "browser_back": "🔙 返回頁面",
-                            "browser_console": "📟 讀取主控台",
-                        }
-                        _emoji = _TOOL_LABELS.get(name, f"🔧 {name}")
+                        _emoji = _labels.get(name, f"🔧 {name}")
                         # Include key context from args for clarity
                         _context = ""
                         if name == "read_file" and args.get("path"):
@@ -1986,7 +2003,8 @@ class BaseConnector(ABC):
                         elif name in ("web_search", "web_extract") and args.get("query"):
                             _context = f" `{args['query'][:40]}`"
                         elif name == "execute_code" and args.get("code"):
-                            _context = f" ({len(args.get('code', ''))} 行)"
+                            _cnt = len(args.get('code', ''))
+                            _context = f" ({_cnt} 行)" if _lang == "zh" else f" ({_cnt} lines)"
                         elif name == "cronjob" and args.get("schedule"):
                             _context = f" `{args['schedule']}`"
                         elif name == "terminal" and args.get("command"):
@@ -2004,7 +2022,8 @@ class BaseConnector(ABC):
                         s = meta.get("step", "")
                         t = meta.get("total", "")
                         g = meta.get("goal", "")[:80]
-                        _status = f"📋 步驟 {s}/{t}"
+                        _step_label = "📋 步驟" if _lang == "zh" else "📋 Step"
+                        _status = f"{_step_label} {s}/{t}"
                         if g:
                             _status += f" · {g}"
                         if _progress_msg_id:
@@ -2018,7 +2037,7 @@ class BaseConnector(ABC):
                             logger.warning(f"[Loop] {_recalc_total} recalculations — forcing stop")
                             self._cancel_event.set()
                             return
-                        _status = "🔄 重新計算中..."
+                        _status = _labels.get("_recalc", "🔄 重新計算中...")
                         if _progress_msg_id:
                             self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
                         else:
