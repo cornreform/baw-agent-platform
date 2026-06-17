@@ -17,6 +17,9 @@ services:
     # No external paths. No host network. No privileged.
     network_mode: bridge
     # ── Resource limits (grok-4.1 A5) ──
+    environment:
+      - BAW_HOME=/app
+      - BAW_RUNTIME_HOME=/home/baw/.baw
     deploy:
       resources:
         limits:
