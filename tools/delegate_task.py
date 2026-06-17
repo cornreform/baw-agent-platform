@@ -474,9 +474,13 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: st
         # Success — return with model info
         _model_info = f"model={_fallback_model}"
         return (
-            f"[Sub-agent result]\n"
+            f"╔═══ 巳分工 (Sub-agent) ═══╗\n"
+            f"│ Goal: {goal[:80]}\n"
+            f"├─────────────────────────────┤\n"
             f"{result}\n"
-            f"_(iterations: {iteration + 1}, {_model_info})_"
+            f"├─────────────────────────────┤\n"
+            f"│ Iterations: {iteration + 1} | {_model_info} |\n"
+            f"╚═════════════════════════════╝"
         )
 
     # All models failed
