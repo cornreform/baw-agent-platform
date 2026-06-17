@@ -15,6 +15,7 @@ from pathlib import Path
 
 _BAW_HOME = Path(os.environ.get("BAW_HOME", "/app"))
 _BAW_DATA = Path(os.environ.get("BAW_RUNTIME_HOME", Path.home() / ".baw"))
+_BAW_CONTAINER = os.environ.get("BAW_CONTAINER", "baw-telegram")
 
 
 def _scan_logs_for_failures() -> list[dict]:
@@ -25,7 +26,7 @@ def _scan_logs_for_failures() -> list[dict]:
     # Check Docker logs
     try:
         r = subprocess.run(
-            ["docker", "logs", "baw-telegram", "--tail", "200", "--timestamps"],
+            ["docker", "logs", _BAW_CONTAINER, "--tail", "200", "--timestamps"],
             capture_output=True, text=True, timeout=10,
         )
         if r.stdout:
@@ -234,9 +235,9 @@ def _calc_health(inventory: dict, gaps: dict, failures: list) -> str:
 
     if tool_count >= 30 and gap_count == 0 and failure_count == 0:
         return "excellent"
-    elif tool_count >= 25 and gap_count <= 3:
+    elif tool_count >= 25 and gap_count <= 3 and failure_count <= 3:
         return "good"
-    elif tool_count >= 20:
+    elif tool_count >= 20 and gap_count <= 5 and failure_count <= 10:
         return "fair"
     else:
         return "needs_attention"
