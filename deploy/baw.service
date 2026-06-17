@@ -1,0 +1,36 @@
+[Unit]
+Description=BAW Agent Platform — Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%HOME%/baw
+Environment="BAW_HOME=%HOME%/baw"
+Environment="BAW_RUNTIME_HOME=%HOME%/.baw"
+Environment="BAW_SERVICE=baw"
+Environment="BAW_RUNTIME=bare"
+ExecStart=%HOME%/baw/.venv/bin/python3 -m baw
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=baw
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%HOME%/.baw
+ReadWritePaths=%HOME%/baw
+ReadOnlyPaths=/etc/passwd /etc/group /etc/nsswitch.conf
+
+# Resource limits
+LimitNOFILE=65536
+MemoryHigh=2G
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target

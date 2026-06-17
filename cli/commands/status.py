@@ -12,30 +12,65 @@ BAW_HOME = Path.home() / ".baw"
 
 
 def _uptime() -> str:
-    """Get container uptime via docker inspect."""
-    try:
-        result = subprocess.run(
-            ["docker", "inspect", "--format", "{{.State.StartedAt}}", "baw-telegram"],
-            capture_output=True, text=True, timeout=5,
-        )
-        started = result.stdout.strip()
-        if started:
-            import datetime
-            # Docker returns ISO 8601 format
-            started_dt = datetime.datetime.fromisoformat(started.replace("Z", "+00:00"))
-            now = datetime.datetime.now(datetime.timezone.utc)
-            delta = now - started_dt
-            total_sec = int(delta.total_seconds())
-            d, h = divmod(total_sec, 86400)
-            h, m = divmod(h, 3600)
-            m, s = divmod(m, 60)
-            if d:
-                return f"{d}d {h}h {m}m"
-            elif h:
-                return f"{h}h {m}m"
-            return f"{m}m {s}s"
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    """Get uptime — systemd first, Docker second, proc fallback."""
+    import shutil
+
+    _HAS_SYSTEMCTL = shutil.which("systemctl") is not None
+    _HAS_DOCKER = shutil.which("docker") is not None
+    _SERVICE = os.environ.get("BAW_SERVICE", "baw")
+
+    # 1. systemctl (bare-metal)
+    if _HAS_SYSTEMCTL:
+        try:
+            result = subprocess.run(
+                ["systemctl", "show", _SERVICE, "--property=ActiveEnterTimestamp"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for line in result.stdout.split("\n"):
+                if line.startswith("ActiveEnterTimestamp="):
+                    started_str = line.split("=", 1)[1].strip()
+                    if started_str:
+                        import datetime
+                        parts = started_str.split()
+                        if len(parts) >= 3:
+                            dt = datetime.datetime.fromisoformat(f"{parts[1]} {parts[2]}+08:00")
+                            delta = datetime.datetime.now(datetime.timezone.utc) - dt
+                            total_sec = int(delta.total_seconds())
+                            d, h = divmod(total_sec, 86400)
+                            h, m = divmod(h, 3600)
+                            m, s = divmod(m, 60)
+                            if d:
+                                return f"{d}d {h}h {m}m"
+                            elif h:
+                                return f"{h}h {m}m"
+                            return f"{m}m {s}s"
+        except Exception:
+            pass
+
+    # 2. Docker inspect
+    if _HAS_DOCKER:
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "--format", "{{.State.StartedAt}}", "baw-telegram"],
+                capture_output=True, text=True, timeout=5,
+            )
+            started = result.stdout.strip()
+            if started:
+                import datetime
+                started_dt = datetime.datetime.fromisoformat(started.replace("Z", "+00:00"))
+                now = datetime.datetime.now(datetime.timezone.utc)
+                delta = now - started_dt
+                total_sec = int(delta.total_seconds())
+                d, h = divmod(total_sec, 86400)
+                h, m = divmod(h, 3600)
+                m, s = divmod(m, 60)
+                if d:
+                    return f"{d}d {h}h {m}m"
+                elif h:
+                    return f"{h}h {m}m"
+                return f"{m}m {s}s"
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            pass
 
     # Fallback: try PID file
     try:

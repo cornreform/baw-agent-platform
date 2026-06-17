@@ -8,14 +8,16 @@ Analyzes:
 """
 import json
 import os
-import subprocess
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 
 _BAW_HOME = Path(os.environ.get("BAW_HOME", "/app"))
 _BAW_DATA = Path(os.environ.get("BAW_RUNTIME_HOME", Path.home() / ".baw"))
 _BAW_CONTAINER = os.environ.get("BAW_CONTAINER", "baw-telegram")
+_SERVICE = os.environ.get("BAW_SERVICE", "baw")
 
 
 def _scan_logs_for_failures() -> list[dict]:
@@ -23,14 +25,24 @@ def _scan_logs_for_failures() -> list[dict]:
     failures = []
     log_sources = []
 
-    # Check Docker logs
+    # Check Docker logs or journalctl
     try:
-        r = subprocess.run(
-            ["docker", "logs", _BAW_CONTAINER, "--tail", "200", "--timestamps"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if r.stdout:
-            log_sources.append(("docker", r.stdout))
+        if shutil.which("journalctl"):
+            # Bare-metal: journalctl
+            r = subprocess.run(
+                ["journalctl", "-u", _SERVICE, "-n", "200", "--no-pager", "-q"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.stdout:
+                log_sources.append(("journalctl", r.stdout))
+        elif shutil.which("docker"):
+            # Docker mode
+            r = subprocess.run(
+                ["docker", "logs", _BAW_CONTAINER, "--tail", "200", "--timestamps"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.stdout:
+                log_sources.append(("docker", r.stdout))
     except Exception:
         pass
 
