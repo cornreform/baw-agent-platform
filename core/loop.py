@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 from typing import Callable
@@ -502,11 +503,13 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
         default_model = config.get("model", {}).get("default", "unknown")
         config_path = data_dir / "config.yaml" if data_dir else Path.home() / ".baw" / "config.yaml"
         env_path = data_dir / ".env" if data_dir else Path.home() / ".baw" / ".env"
+        _code_path = os.environ.get("BAW_HOME") or str(Path(__file__).resolve().parent.parent)
 
         system_prompt += (
             f"\n\n## System config\n"
             f"- Config file: {config_path}\n"
             f"- Env file: {env_path}\n"
+            f"- Code path: {_code_path}\n"
             f"- WARNING: config.yaml stores ONLY: API keys, model definitions, provider endpoints, cost config.\n"
             f"  It does NOT store behavioral rules, safety policies, or execution instructions.\n"
             f"  Those live in the system prompt (you're reading it now).\n"
