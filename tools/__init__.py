@@ -18,7 +18,8 @@ from . import (bash, read_file, write_file, web_search, image_generate, tts, tod
                get_skill, remember, knowledge_graph, mcp, background, mmx, code_scan,
                config, execute_code, session_search, cronjob, git, docker,
                system, self_diagnose, resource_monitor, self_capabilities,
-               tool_generate, self_migrate)
+               tool_generate, self_migrate, scan_and_adopt, skill_import,
+               self_discover)
 
 
 def register_all():
@@ -53,3 +54,6 @@ def register_all():
     register(**self_capabilities.TOOL_DEF)
     register(**tool_generate.TOOL_DEF)
     register(**self_migrate.TOOL_DEF)
+    register(**scan_and_adopt.TOOL_DEF)
+    register(**skill_import.TOOL_DEF)
+    register(**self_discover.TOOL_DEF)
