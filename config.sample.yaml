@@ -258,9 +258,8 @@ telegram:
   allowed_users:
   - YOUR_TELEGRAM_ID
   chat_id: YOUR_TELEGRAM_ID
-  token: YOUR_TELEGRAM_TOKEN:AAFCSB5BGe6LOJraLhyqeCK06WjN1pS7npk
+  token: ""           # Set to your Telegram bot token from @BotFather
 tone:
-  default: casual
   profiles:
     business:
       description: 客戶文件 — 合作邀約 tone、唔出個人名、冇 deadline 壓力

@@ -1,30 +1,33 @@
 # BAW Bot — Docker Compose
 # Replaces systemd baw-telegram.service.
-# Fully isolated — own Python, own env, own network namespace.
+#
+# USAGE:
+#   1. Copy this file or edit paths below to match YOUR home directory
+#   2. Ensure ~/.baw/.env and ~/.baw/telegram.env exist (see SETUP.md)
+#   3. Run: docker compose up -d
+#
 services:
   baw-telegram:
     build: .
     container_name: baw-telegram
     restart: unless-stopped
-    # Mount BAW's persistent data (sessions, memory, vault, config)
+    # ── Volumes ──
+    # Replace /home/YOUR_USERNAME with your actual home directory
+    # Example: if your username is "pi", use /home/pi/.baw
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /usr/bin/docker:/usr/bin/docker:ro
       - /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro
-      - /home/user/.baw:/home/baw/.baw
-      - /home/user/.mmx:/home/baw/.mmx
+      - ~/.baw:/home/baw/.baw
+      - ~/.mmx:/home/baw/.mmx
     # Load Telegram token + API keys from BAW's own env files
     env_file:
-      - /home/user/.baw/telegram.env
-      - /home/user/.baw/.env
-    # No external paths. No host network. No privileged.
+      - ~/.baw/telegram.env
+      - ~/.baw/.env
     network_mode: bridge
-    # ── Resource limits (grok-4.1 A5) ──
     environment:
       - BAW_HOME=/app
       - BAW_RUNTIME_HOME=/home/baw/.baw
-    group_add:
-      - "988"
     deploy:
       resources:
         limits:
@@ -33,7 +36,7 @@ services:
         reservations:
           cpus: '0.5'
           memory: 256M
-    # ── Healthcheck: real BAW status probe, auto-restart on 3 failures ──
+    # ── Healthcheck ──
     healthcheck:
       test: ["CMD-SHELL", "cd /app && python3 -c 'from tools import register_all; register_all(); from core.tools import list_tools; t=list_tools(); exit(0 if len(t)>=10 else 1)'"]
       interval: 30s

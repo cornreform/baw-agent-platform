@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.21.0-blueviolet" alt="v0.21.0">
+  <img src="https://img.shields.io/badge/version-0.21.0-blueviolet" alt="v1.1.0">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -23,6 +23,75 @@
 </p>
 
 ---
+
+## 🔄 完全獨立 (Full Independence)
+
+BAW v1.1.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
+
+| Phase | 能力 | Tools |
+|-------|------|-------|
+| 1 — Code Management | Git commit → push → Docker build → restart | usage: git [-v | --version] [-h | --help] [-C <path>] [-c <name>=<value>]
+           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
+           [-p | --paginate | -P | --no-pager] [--no-replace-objects] [--bare]
+           [--git-dir=<path>] [--work-tree=<path>] [--namespace=<name>]
+           [--config-env=<name>=<envvar>] <command> [<args>]
+
+These are common Git commands used in various situations:
+
+start a working area (see also: git help tutorial)
+   clone     Clone a repository into a new directory
+   init      Create an empty Git repository or reinitialize an existing one
+
+work on the current change (see also: git help everyday)
+   add       Add file contents to the index
+   mv        Move or rename a file, a directory, or a symlink
+   restore   Restore working tree files
+   rm        Remove files from the working tree and from the index
+
+examine the history and state (see also: git help revisions)
+   bisect    Use binary search to find the commit that introduced a bug
+   diff      Show changes between commits, commit and working tree, etc
+   grep      Print lines matching a pattern
+   log       Show commit logs
+   show      Show various types of objects
+   status    Show the working tree status
+
+grow, mark and tweak your common history
+   branch    List, create, or delete branches
+   commit    Record changes to the repository
+   merge     Join two or more development histories together
+   rebase    Reapply commits on top of another base tip
+   reset     Reset current HEAD to the specified state
+   switch    Switch branches
+   tag       Create, list, delete or verify a tag object signed with GPG
+
+collaborate (see also: git help workflows)
+   fetch     Download objects and refs from another repository
+   pull      Fetch from and integrate with another repository or a local branch
+   push      Update remote refs along with associated objects
+
+'git help -a' and 'git help -g' list available subcommands and some
+concept guides. See 'git help <command>' or 'git help <concept>'
+to read about a specific subcommand or concept.
+See 'git help git' for an overview of the system.,  |
+| 2 — Self Operation | System health, diagnostics, resource auto-cleanup | , ,  |
+| 3 — Self Knowledge | 知道自己有咩能力、architecture | , SOUL.md architecture |
+| 4 — Self Extension | 用 LLM 生成新 tools → register → smoke test |  |
+| 5 — Self Hosting | 搬去任何 Linux 機、bootstrap script |  |
+
+### One-command install
+```bash
+curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
+```
+
+### Docker deployment
+```bash
+cd ~/baw && docker compose up -d
+```
+
+---
+
+
 
 <!-- ═══ English ═══ -->
 <h2>📖 English</h2>

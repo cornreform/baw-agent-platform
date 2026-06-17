@@ -7,6 +7,9 @@ import os, sys, json, subprocess, shutil
 from pathlib import Path
 from datetime import datetime
 
+# Dynamically resolve repo root (works on any machine)
+_REPO_ROOT = Path(os.environ.get("BAW_HOME", Path(__file__).resolve().parent.parent))
+
 
 class C:
     RESET = "\033[0m"
@@ -178,15 +181,15 @@ def cmd_doctor(data_dir: Path, fix: bool = False):
     _header("Git Repo")
     try:
         r = subprocess.run(
-            ["git", "-C", "/home/user/baw", "status", "--short"],
+            ["git", "-C", str(_REPO_ROOT), "status", "--short"],
             capture_output=True, text=True, timeout=5,
         )
         r2 = subprocess.run(
-            ["git", "-C", "/home/user/baw", "log", "--oneline", "-1"],
+            ["git", "-C", str(_REPO_ROOT), "log", "--oneline", "-1"],
             capture_output=True, text=True, timeout=5,
         )
         branch_r = subprocess.run(
-            ["git", "-C", "/home/user/baw", "branch", "--show-current"],
+            ["git", "-C", str(_REPO_ROOT), "branch", "--show-current"],
             capture_output=True, text=True, timeout=5,
         )
         commit = r2.stdout.strip()
