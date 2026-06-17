@@ -340,7 +340,18 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "- [CRITICAL] KEEP CALLING TOOLS until task is fully done. Text-only = finished.\n"
                 "  If more work remains, your response MUST include tool_calls.\n"
                 "  NEVER say 'I will' or write about what you'll do next. Call the tool NOW.\n"
-                "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary."
+                "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary.\n"
+                "\n## FINAL RESPONSE FORMAT\n"
+                "Your final message to the user MUST be a meaningful summary of what happened.\n"
+                "DO NOT just say 'OK', 'Done', '完成', or similar one-word responses.\n"
+                "\n"
+                "Use a clear status prefix:\n"
+                "  ✅ 任務完成 → when everything succeeded\n"
+                "  ❗ 任務執行有錯誤，需要跟進 → when some steps failed\n"
+                "  ⏳ 任務需要跟進 → when partial completion, user input needed\n"
+                "  ℹ️ 任務無需操作 → when user asked a question, no action needed\n"
+                "\n"
+                "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed."
             )
             system_prompt += (
                 "\n\n## CONFIG COMMAND RULES (quick mode)\n"
@@ -351,7 +362,19 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "- After setting, read back with config(action=get) to confirm.\n"
             )
         else:
-            system_prompt = evidence_rule + execution_protocol + soul_text
+            system_prompt = evidence_rule + execution_protocol + soul_text + (
+                "\n\n## FINAL RESPONSE FORMAT\n"
+                "Your final message to the user MUST be a meaningful summary of what happened.\n"
+                "DO NOT just say 'OK', 'Done', '完成', or similar one-word responses.\n"
+                "\n"
+                "Use a clear status prefix:\n"
+                "  ✅ 任務完成 → when everything succeeded\n"
+                "  ❗ 任務執行有錯誤，需要跟進 → when some steps failed\n"
+                "  ⏳ 任務需要跟進 → when partial completion, user input needed\n"
+                "  ℹ️ 任務無需操作 → when user asked a question, no action needed\n"
+                "\n"
+                "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed."
+            )
     else:
         system_prompt = (
             "You are BAW (Black And White), your agent platform.\n"
@@ -1185,8 +1208,9 @@ def run_agent(
                 )
                 _history_msg_count += 1
 
-        # ── Sequence validation: strip dangling tool_calls from any message ──
-        # (truncated history may cut tool messages mid-sequence)
+        # ── Sequence validation: fix truncated history mid-tool-sequence ──
+        # (P0: conversation_history[-60:] may cut between assistant(tool_calls) and tool(result))
+        # Fix 1: strip dangling tool_calls from assistant at end (no following tool result)
         for _i in range(len(ctx.messages) - 1):
             _msg = ctx.messages[_i]
             if _msg.role != "assistant" or not _msg.tool_calls:
@@ -1205,6 +1229,29 @@ def run_agent(
                 f"(history truncated / interrupted session)"
             )
             ctx.messages[-1].tool_calls = None
+
+        # Fix 2: strip orphaned tool results (tool role at start with no preceding assistant tool_calls)
+        # This happens when session[-60:] truncation cuts off the assistant message
+        # but keeps the following tool result messages.
+        _cleaned = []
+        _expecting_tool = False
+        for _m in ctx.messages:
+            if _m.role == "assistant" and _m.tool_calls:
+                _expecting_tool = True
+                _cleaned.append(_m)
+            elif _m.role == "tool":
+                if _expecting_tool:
+                    _cleaned.append(_m)
+                    _expecting_tool = False
+                else:
+                    logger.warning(
+                        f"[Loop] Stripped orphaned tool result (no preceding tool_calls) — "
+                        f"truncated history or state corruption"
+                    )
+            else:
+                _cleaned.append(_m)
+        if _cleaned != ctx.messages:
+            ctx.messages = _cleaned
 
     # ── Quick Mode marker for new-message extraction ──
     _pre_prompt_count = _history_msg_count
@@ -1321,7 +1368,14 @@ def run_agent(
                     if len(tool_summaries) >= 3:
                         break
             if tool_summaries:
-                final_content = "Done.\n\n" + "\n".join(
+                # Determine status from tool output
+                _has_errors = any("[FAILED" in s or "[SKIPPED" in s or "Traceback" in s
+                                  or "Error:" in s for s in tool_summaries)
+                if _has_errors:
+                    _prefix = "❗ 任務執行有錯誤，需要跟進："
+                else:
+                    _prefix = "✅ 任務完成："
+                final_content = _prefix + "\n\n" + "\n".join(
                     f"• {s.strip()}" for s in reversed(tool_summaries)
                 )
 
