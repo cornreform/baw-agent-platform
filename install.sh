@@ -12,6 +12,7 @@ BAW_REPO="https://github.com/cornreform/baw-agent-platform.git"
 BAW_DIR="$HOME/baw"
 BAW_BIN_DIR="$HOME/.local/bin"
 BAW_BIN="$BAW_BIN_DIR/baw"
+BAW_DATA_DIR="$HOME/.baw"
 PYTHON=""
 SHELL_CONFIG=""
 
@@ -34,7 +35,6 @@ echo -e "${NC}"
 if ! command -v uv &>/dev/null; then
     echo -e "${CYAN}⏳ uv not found — installing...${NC}"
     curl -LsSf https://astral.sh/uv/install.sh | bash
-    # Source the newly installed uv for this session
     export PATH="$HOME/.local/bin:$PATH"
     if ! command -v uv &>/dev/null; then
         echo -e "${RED}❌ uv installation failed. Please install manually: https://docs.astral.sh/uv/${NC}"
@@ -69,16 +69,21 @@ fi
 
 # ── Find Git ──
 if ! command -v git &>/dev/null; then
-    echo -e "${RED}❌ Git not found. Install it first.${NC}"
+    echo -e "${RED}❌ Git not found. Install it first: sudo apt install git${NC}"
     exit 1
 fi
 echo -e "${GREEN}✅${NC} Git: $(git --version 2>&1)"
 
-# ── Install dependencies with uv ──
-echo ""
-echo -e "${CYAN}📦 Installing Python dependencies...${NC}"
-cd "$BAW_DIR" && uv pip install -r requirements.txt --system 2>&1 | tail -3
-echo -e "${GREEN}✅${NC} Dependencies installed"
+# ── Check Docker ──
+DOCKER_AVAILABLE=false
+if command -v docker &>/dev/null; then
+    DOCKER_AVAILABLE=true
+    echo -e "${GREEN}✅${NC} Docker: $(docker --version 2>&1)"
+else
+    echo -e "${YELLOW}⚠️  Docker not found. Telegram bot requires Docker.${NC}"
+    echo -e "   Install Docker: https://docs.docker.com/engine/install/"
+    echo ""
+fi
 
 # ── Clone or update repo ──
 echo ""
@@ -90,6 +95,29 @@ else
     git clone "$BAW_REPO" "$BAW_DIR"
 fi
 echo -e "${GREEN}✅${NC} BAW repo ready at $BAW_DIR"
+
+# ── Install dependencies with uv (AFTER clone — ordering fix) ──
+echo ""
+echo -e "${CYAN}📦 Installing Python dependencies...${NC}"
+cd "$BAW_DIR"
+
+# PEP 668 safe: use uv venv if system Python is restricted
+if $PYTHON -c "import sysconfig; print(sysconfig.get_config_var('INCLUDEPY'))" &>/dev/null; then
+    uv pip install -r requirements.txt --system 2>&1 | tail -3 || {
+        echo -e "${YELLOW}⚠️  --system install failed, trying --break-system-packages...${NC}"
+        uv pip install -r requirements.txt --system --break-system-packages 2>&1 | tail -3
+    }
+else
+    uv venv && source .venv/bin/activate && uv pip install -r requirements.txt 2>&1 | tail -3
+fi
+echo -e "${GREEN}✅${NC} Dependencies installed"
+
+# ── Bootstrap SOUL.md ──
+mkdir -p "$BAW_DATA_DIR"
+if [ ! -f "$BAW_DATA_DIR/SOUL.md" ] && [ -f "$BAW_DIR/SOUL.default.md" ]; then
+    cp "$BAW_DIR/SOUL.default.md" "$BAW_DATA_DIR/SOUL.md"
+    echo -e "${GREEN}✅${NC} SOUL.md bootstrapped"
+fi
 
 # ── Create CLI wrapper ──
 mkdir -p "$BAW_BIN_DIR"
@@ -105,79 +133,48 @@ echo -e "${GREEN}✅${NC} CLI wrapper: $BAW_BIN"
 echo ""
 echo -e "${CYAN}🔧 Shell PATH setup...${NC}"
 
-# Find the user's actual shell
 SHELL_NAME="$(basename "$SHELL" 2>/dev/null || echo "bash")"
 case "$SHELL_NAME" in
-    zsh)
-        SHELL_CONFIG="$HOME/.zshrc"
-        PATH_CMD='export PATH="$HOME/.local/bin:$PATH"'
-        ;;
-    bash)
-        SHELL_CONFIG="$HOME/.bashrc"
-        PATH_CMD='export PATH="$HOME/.local/bin:$PATH"'
-        ;;
-    fish)
-        SHELL_CONFIG="$HOME/.config/fish/config.fish"
-        PATH_CMD='fish_add_path "$HOME/.local/bin"'
-        ;;
-    *)
-        SHELL_CONFIG="$HOME/.profile"
-        PATH_CMD='export PATH="$HOME/.local/bin:$PATH"'
-        ;;
+    zsh) SHELL_CONFIG="$HOME/.zshrc"; PATH_CMD='export PATH="$HOME/.local/bin:$PATH"' ;;
+    bash) SHELL_CONFIG="$HOME/.bashrc"; PATH_CMD='export PATH="$HOME/.local/bin:$PATH"' ;;
+    fish) SHELL_CONFIG="$HOME/.config/fish/config.fish"; PATH_CMD='fish_add_path "$HOME/.local/bin"' ;;
+    *) SHELL_CONFIG="$HOME/.profile"; PATH_CMD='export PATH="$HOME/.local/bin:$PATH"' ;;
 esac
 
 if [[ ":$PATH:" == *":$HOME/.local/bin:"* ]]; then
     echo -e "${GREEN}✅${NC} ~/.local/bin already in PATH"
 else
     echo -e "  ${YELLOW}⚠️  ~/.local/bin is NOT in your PATH${NC}"
+    echo -e "  Add it: echo '$PATH_CMD' >> $SHELL_CONFIG && source $SHELL_CONFIG"
+fi
+
+# ── Docker deployment hint ──
+if [ "$DOCKER_AVAILABLE" = true ]; then
     echo ""
-    if _confirm "Add ~/.local/bin to PATH automatically?"; then
-        echo "$PATH_CMD" >> "$SHELL_CONFIG"
-        echo -e "${GREEN}✅${NC} Added to $SHELL_CONFIG"
-        echo -e "  ${YELLOW}Run: source $SHELL_CONFIG${NC} (or open a new terminal)"
-        # Export for this session so verification works
-        export PATH="$HOME/.local/bin:$PATH"
-    else
-        echo ""
-        echo "   Add it manually by running:"
-        echo -e "     ${BOLD}echo '$PATH_CMD' >> $SHELL_CONFIG${NC}"
-        echo -e "     ${BOLD}source $SHELL_CONFIG${NC}"
-        echo ""
-    fi
+    echo -e "${CYAN}🐳 Setting up Docker deployment...${NC}"
+    echo -e "   Edit ${BOLD}$BAW_DIR/docker-compose.yml${NC}"
+    echo -e "   Replace ${YELLOW}\$USER_HOME${NC} with your home path (currently ${YELLOW}$HOME${NC})"
     echo ""
+    echo -e "   Then run: ${BOLD}cd $BAW_DIR && docker compose up -d${NC}"
 fi
 
 # ── Verify installation ──
 echo ""
 echo -e "${CYAN}🔍 Verifying installation...${NC}"
-if [ -f "$BAW_BIN" ] && [ -x "$BAW_BIN" ]; then
-    echo -e "${GREEN}✅${NC} CLI wrapper executable"
-fi
-if [ -d "$BAW_DIR/baw" ]; then
-    echo -e "${GREEN}✅${NC} BAW source files present"
-fi
-if [ -f "$BAW_DIR/requirements.txt" ]; then
-    echo -e "${GREEN}✅${NC} requirements.txt present"
-fi
-if [ -f "$BAW_DIR/config.sample.yaml" ]; then
-    echo -e "${GREEN}✅${NC} config.sample.yaml present"
-fi
+[ -f "$BAW_BIN" ] && [ -x "$BAW_BIN" ] && echo -e "${GREEN}✅${NC} CLI wrapper executable"
+[ -d "$BAW_DIR/baw" ] && echo -e "${GREEN}✅${NC} BAW source files present"
+[ -f "$BAW_DIR/requirements.txt" ] && echo -e "${GREEN}✅${NC} requirements.txt present"
+[ -f "$BAW_DIR/SOUL.default.md" ] && echo -e "${GREEN}✅${NC} SOUL template present"
 
-# Run baw --version to confirm everything works
 if command -v baw &>/dev/null; then
     echo ""
     baw --version
-    echo ""
-else
-    echo -e "${YELLOW}⚠️  'baw' command not yet available in this session.${NC}"
-    echo -e "   Run: ${BOLD}source $SHELL_CONFIG${NC} (or open a new terminal)"
-    echo ""
 fi
 
 # ── Done ──
 echo ""
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
-echo -e "${GREEN}${BOLD}  ✅  BAW v0.20.4 installed successfully!${NC}"
+echo -e "${GREEN}${BOLD}  ✅  BAW v1.1.0 installed successfully!${NC}"
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
 echo ""
 echo -e "  ${BOLD}Next steps:${NC}"
@@ -185,12 +182,9 @@ echo ""
 echo -e "  ${CYAN}1.${NC} Run the setup wizard:"
 echo -e "     ${BOLD}baw --setup${NC}"
 echo ""
-echo -e "  ${CYAN}2.${NC} After setup, verify everything works:"
-echo -e "     ${BOLD}baw --doctor${NC}"
+echo -e "  ${CYAN}2.${NC} Start Telegram bot (requires Docker):"
+echo -e "     ${BOLD}cd $BAW_DIR && docker compose up -d${NC}"
 echo ""
-echo -e "  ${CYAN}3.${NC} Test the agent:"
-echo -e "     ${BOLD}baw \"Hello BAW!\"${NC}"
-echo ""
-echo -e "  ${CYAN}4.${NC} Read the docs:"
+echo -e "  ${CYAN}3.${NC} Read the docs:"
 echo -e "     ${BOLD}https://cornreform.github.io/baw-agent-platform/${NC}"
 echo ""

@@ -2,6 +2,61 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v1.1.0 — 2026-06-17 (Full Independence 🚀)
+
+### Phase 1 — Self Code Management (Git + Docker)
+
+- **Git tool** — BAW can commit, push, pull, status, log its own repo
+- **Docker tool** — BAW can build, restart, logs, cleanup its own container
+- **Self-deploy pipeline**: code → commit → push → build → restart
+
+### Phase 2 — Self Operation (Runtime Management)
+
+- **`system` tool** — container health, systemd services, cron jobs, disk usage
+- **`self_diagnose` tool** — 7-point health check (container, providers, tools, memory, disk, config, cron) with score %
+- **`resource_monitor` tool** — disk/memory report, stale session cleanup, auto-cleanup
+- **Auto-cleanup cron** — daily 4am cleanup of stale sessions and logs
+
+### Phase 3 — Self Knowledge (Architecture Awareness)
+
+- **`self_capabilities` tool** — scan tools + providers + config, describe own capabilities
+- **SOUL.md architecture section** — complete system architecture, code structure, identity boundaries
+- **Identity boundaries** — BAW knows own code/data vs system files
+
+### Phase 4 — Self Extension (Tool Creation)
+
+- **`tool_generate` tool** — describe a tool → LLM generates code → syntax check → register → smoke test
+- **Code generation safety** — syntax validation before registration, auto-cleanup on failure
+
+### Phase 5 — Self Hosting (Migration)
+
+- **`self_migrate` tool** — analyze target machine, export data (config/memory/sessions/SOUL), generate bootstrap script
+- **Full migration pipeline**: analyze → export → bootstrap in one command
+
+### Standalone Install Readiness (6 P0 fixes)
+
+- **install.sh**: fixed ordering bug (dependency install before clone), Docker detection, SOUL.md bootstrap, PEP 668 support
+- **docker-compose.yml**: removed hardcoded `/home/radxa/` paths → use `~/` tilde expansion
+- **deploy/baw-docker.service**: parameterized user/path
+- **core/doctor.py**: replaced hardcoded `/home/radxa/baw` with dynamic `_REPO_ROOT`
+- **cli/commands/tools_cmd.py**: fixed hardcoded paths in tool generation templates
+- **config.sample.yaml**: removed real Telegram token, replaced with placeholder
+
+### Provider Fixes
+
+- **Default model**: MiniMax-M3 → `step-3.7-flash` (MiniMax-M3 was failing)
+- **Fallback**: added `deepseek-v4-flash` as proper fallback (was same as primary)
+- **Circuit breaker**: fast-skip when a provider fails ≥8 consecutive times
+- **`_delegation_results` bug**: fixed NameError (referenced but never initialized)
+
+### UX Improvements
+
+- **Progress reporting**: long tasks (>2min) auto-send periodic "Still working" updates
+- **Delegation vs Inline**: distinct ╔═══ 巳分工 ═══╗ box marker for sub-agent results
+- **System prompt rules**: both quick/regular modes have delegation vs inline presentation rules
+- **SOUL.md**: comprehensive architecture, delegation rules, long-task progress rules
+
+
 ## v1.0.0 — 2026-06-17 (Self-Evolution Milestone 🎯)
 
 ### Self-Evolution System — 5 Phases Complete
