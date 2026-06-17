@@ -16,7 +16,7 @@ from core.tools import register
 from . import (bash, read_file, write_file, web_search, image_generate, tts, todo,
                petrestaurants, http_fetch, restaurant, memory, install,
                get_skill, remember, knowledge_graph, mcp, background, mmx, code_scan,
-               config, execute_code, session_search, cronjob)
+               config, execute_code, session_search, cronjob, git, docker)
 
 
 def register_all():
@@ -43,3 +43,5 @@ def register_all():
     register(**execute_code.TOOL_DEF)
     register(**session_search.TOOL_DEF)
     register(**cronjob.TOOL_DEF)
+    register(**git.TOOL_DEF)
+    register(**docker.TOOL_DEF)
