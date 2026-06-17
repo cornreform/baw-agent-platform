@@ -16,7 +16,9 @@ from core.tools import register
 from . import (bash, read_file, write_file, web_search, image_generate, tts, todo,
                petrestaurants, http_fetch, restaurant, memory, install,
                get_skill, remember, knowledge_graph, mcp, background, mmx, code_scan,
-               config, execute_code, session_search, cronjob, git, docker)
+               config, execute_code, session_search, cronjob, git, docker,
+               system, self_diagnose, resource_monitor, self_capabilities,
+               tool_generate, self_migrate)
 
 
 def register_all():
@@ -45,3 +47,9 @@ def register_all():
     register(**cronjob.TOOL_DEF)
     register(**git.TOOL_DEF)
     register(**docker.TOOL_DEF)
+    register(**system.TOOL_DEF)
+    register(**self_diagnose.TOOL_DEF)
+    register(**resource_monitor.TOOL_DEF)
+    register(**self_capabilities.TOOL_DEF)
+    register(**tool_generate.TOOL_DEF)
+    register(**self_migrate.TOOL_DEF)
