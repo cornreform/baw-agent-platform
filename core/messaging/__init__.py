@@ -1096,95 +1096,99 @@ class BaseConnector(ABC):
     # ── Multi-task execution ─────────────────────────────────────
     def _execute_multi_task(self, text: str, chat_id: str | None = None,
                             _depth: int = 0) -> str:
-        """Detect numbered tasks, execute each via _dispatch_task (recursive)."""
+        """Detect numbered tasks, execute each via _dispatch_task (recursive).
+        
+        Each sub-task result is sent as its own permanent Telegram message.
+        Only a compact summary is returned (edited into the placeholder).
+        """
         if _depth >= 5:
             return f"[FAIL] Nesting too deep ({_depth}).\n{self._run_baw(text, chat_id=chat_id)}"
         import re as _re
+        import time as _time
         _sections = _re.split(
             _MULTITASK_SPLIT,
             text, flags=_re.MULTILINE
         )
         _tasks = [s.strip() for s in _sections if s.strip() and _re.match(_MULTITASK_PATTERN, s.strip())]
-        _results = []
         _total = len(_tasks)
         _prev = self._silent_mode
-        self._silent_mode = True
+        self._silent_mode = True  # suppress noisy step-by-step progress per sub-task
         # ── Build task context: inject original full list so sub-tasks know their siblings ──
         _task_list_summary = "\n".join(
             f"  {_re.match(_MULTITASK_PATTERN, t).group(0).strip() if _re.match(_MULTITASK_PATTERN, t) else t[:80]}"
             for t in _tasks
         )
+        _pass = 0
+        _fail = 0
+        _suspicious = []
         try:
             for _i, _task in enumerate(_tasks, 1):
+                _task_short = _task.strip()[:60]
                 logger.info(f"[MultiTask] [{_i}/{_total}] depth={_depth}")
+                # ── Send per-task header message (permanent, visible) ──
+                _header_msg_id = ""
+                if chat_id:
+                    _header_msg_id = self.send(chat_id, f"🔧 **Task {_i}/{_total}** — {_task_short}")
                 # Inject sibling task context so each sub-task knows the full picture
                 _task_with_context = (
                     f"[MULTI-TASK {_i}/{_total}]\n\n"
                     f"Full task list:\n{_task_list_summary}\n\n"
                     f"Your task (do ONLY this one):\n{_task}"
                 )
+                _is_fail = False
                 try:
                     _resp = self._dispatch_task(_task_with_context, chat_id, _depth + 1)
-                    _results.append(f"## Task {_i}/{_total}: {_resp[:500]}")
                 except Exception as _e:
-                    _results.append(f"## Task {_i}/{_total}: [FAIL] Error — {_e}")
-                # Small delay between tasks to prevent API rate-limit and give UI breathing room
+                    _resp = f"[FAIL] Error — {_e}"
+                # ── Analyse result ──
+                _body = _resp
+                _body_lower = _body.lower()
+                _has_success = any(s in _body for s in [
+                    "[OK]", "[DONE]", "[PASS]", "completed",
+                    "[CLEAN]", "empty", "removed",
+                ])
+                _has_explicit_fail = (
+                    "[FAIL]" in _resp or "was not executed" in _body_lower
+                    or "was not created" in _body_lower
+                )
+                _has_error_kw = (
+                    "error" in _body_lower
+                    or "fail" in _body_lower
+                    or "syntax error" in _body_lower
+                    or "syntaxerror" in _body_lower or "synatx" in _body_lower
+                    or "無法" in _body
+                    or "cannot access" in _body_lower
+                    or "not found" in _body_lower
+                    or "not created" in _body_lower
+                    or "冇建立" in _body
+                    or "沒有建立" in _body
+                    or "係 shell command 唔係 tool" in _body
+                    or "不是 memory tool" in _body
+                )
+                _is_fail = _has_explicit_fail or (_has_error_kw and not _has_success)
+                if _is_fail:
+                    _fail += 1
+                    _suspicious.append(f"Task {_i}: {_task_short}")
+                else:
+                    _pass += 1
+                # ── Send result as follow-up message ──
+                _result_preview = _resp.strip()[:800]
+                _status = "❌" if _is_fail else "✅"
+                _result_msg = f"{_status} **Task {_i}/{_total}**\n{_result_preview}"
+                if chat_id:
+                    self.send(chat_id, _result_msg)
+                # Small delay between tasks
                 if _i < _total:
-                    import time as _t2
-                    _t2.sleep(0.5)
+                    _time.sleep(0.5)
         finally:
             self._silent_mode = _prev
-        _pass = sum(1 for r in _results if "[FAIL] Error" not in r)
-        _fail = _total - _pass
-        # ── Truth-check: don't call it "Pass" if the reply contains failure
-        #    indicators beyond just "[FAIL] Error". The LLM often reports
-        #    "Done — 1/1 (100%)" after a real failure (syntax error, hallucination).
-        _real_pass = 0
-        _real_fail = 0
-        _suspicious = []
-        for _r in _results:
-            _body = _r.split(":", 1)[1] if ":" in _r else _r
-            _body_lower = _body.lower()
-            # Genuine success: tool output shows it worked
-            _has_success = any(s in _body for s in [
-                "[OK]", "[DONE]", "[PASS]", "completed",
-                "[CLEAN]", "empty", "removed",
-            ])
-            _has_explicit_fail = (
-                "[FAIL]" in _r or "was not executed" in _body_lower
-                or "was not created" in _body_lower
-            )
-            _has_error_kw = (
-                "error" in _body_lower
-                or "fail" in _body_lower
-                or "syntax error" in _body_lower
-                or "syntaxerror" in _body_lower or "synatx" in _body_lower
-                or "無法" in _body
-                or "cannot access" in _body_lower
-                or "not found" in _body_lower
-                or "not created" in _body_lower
-                or "冇建立" in _body
-                or "沒有建立" in _body
-                or "係 shell command 唔係 tool" in _body
-                or "不是 memory tool" in _body
-            )
-            # Only flag as fail: explicit failure OR errors WITHOUT success markers
-            _is_fail = _has_explicit_fail or (_has_error_kw and not _has_success)
-            if _is_fail:
-                _real_fail += 1
-                _suspicious.append(_r.split("\n")[0][:60])
-            else:
-                _real_pass += 1
+        # ── Compact summary (Telegram-optimized) ──
         _summary = (
-            f"\n\n---\n## Summary\n"
-            f"- Total: {_total}  |  Pass: {_real_pass}  |  Fail: {_real_fail}"
+            f"*📊 Summary*  |  Total: {_total}  |  ✅ Pass: {_pass}  |  ❌ Fail: {_fail}"
         )
         if _suspicious:
-            _summary += f"\n- [WARN] Possible failures detected: {len(_suspicious)}"
-            for _s in _suspicious:
-                _summary += f"\n  - `{_s}`"
-        _summary += f"\n- Nesting depth: {_depth}\n"
-        return "\n\n".join(_results) + _summary
+            _summary += f"\n⚠️ _Suspicious results:_ {', '.join(_suspicious)}"
+        return _summary
 
     # ── Session / Task command handler ───────────────────────────
     def _handle_task_command(self, chat_id: str, action: str, arg: str) -> str:
