@@ -42,7 +42,7 @@ def _shorten(desc: str, max_len: int = 80) -> str:
 def phase_step_done(group: str, step_in_group: int, group_total: int,
                     desc: str, result: str = "") -> str:
     short = _shorten(desc, 50)
-    line = f"  ✅ {short}"
+    line = f"  {short}"
     if result:
         line += f" — {result[:60]}"
     return line
@@ -51,13 +51,13 @@ def phase_step_done(group: str, step_in_group: int, group_total: int,
 def phase_step_running(group: str, step_in_group: int, group_total: int,
                        desc: str) -> str:
     short = _shorten(desc, 50)
-    return f"  ▶️  {short}"
+    return f"  🔧 {short}"
 
 
 def phase_step_skip(group: str, step_in_group: int, group_total: int,
                     desc: str, reason: str = "") -> str:
     short = _shorten(desc, 50)
-    line = f"  ⏭️  {short}"
+    line = f"  {short}"
     if reason:
         line += f" — {reason[:60]}"
     return line
@@ -76,7 +76,7 @@ def phase_step_error(group: str, step_in_group: int, group_total: int,
 
 def done(steps: int, total: int, elapsed: float, cost: float) -> str:
     pct = 100 if steps >= total else int(100 * steps / max(total, 1))
-    return f"  ✅ Done — {steps}/{total} ({pct}%), {elapsed:.1f}s"
+    return f"  Done — {steps}/{total} ({pct}%), {elapsed:.1f}s"
 
 
 # ── Court (keep brief) ──
@@ -89,16 +89,16 @@ def court_verdict(verdict: dict) -> str:
     ds = devil.get("score", "?")
     as_ = angel.get("score", "?")
     if verdict.get("should_stop"):
-        return f"  ⚖️  Court: Devil {ds}/{as_} ⛔"
+        return f"  Blocked by safety check"
     elif verdict.get("decision") == "warn":
-        return f"  ⚖️  Court: Devil {ds} / Angel {as_} ⚠️"
-    return f"  ⚖️  Court: Devil {ds} / Angel {as_} ✅"
+        return f"  ⚠️ Proceed with caution"
+    return ""
 
 
 # ── BTW ──
 
 def btw_header() -> str:
-    return "⚡ Quick Reply\n"
+    return ""
 
 
 # ── Front desk delegation ──

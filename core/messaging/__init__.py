@@ -948,7 +948,7 @@ class BaseConnector(ABC):
                 config = baw["config"]
                 _m = config.get("model", {}).get("default", "unknown")
                 _chat_m = config.get("capabilities", {}).get("chat", {}).get("model", _m)
-                _direct_result = f"⚡ 當前 model: `{_chat_m}` (chat) / `{_m}` (default)\n\n查更多: `/status`"
+                _direct_result = f"當前 model: `{_chat_m}` (chat) / `{_m}` (default)\n\n查更多: `/status`"
             except Exception as _e:
                 _direct_result = f"[FAIL] 無法讀取 model 設定：{_e}"
 
@@ -2262,7 +2262,7 @@ class BaseConnector(ABC):
                         "Completed. (No" not in output and \
                         "Task failed to reach goal" not in output
                     if _has_real_content:
-                        output += f"\n⚖️ {agreement} (gap {gap})"
+                        pass
                 except Exception:
                     pass
 

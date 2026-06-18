@@ -91,14 +91,14 @@ class Verdict(str, Enum):
 
 VERDICT_TEMPLATES = {
     Verdict.APPROVED: (
-        "✅ #{case_id} │ 判決:核准 ({score}/10)\n"
+        "#{case_id} │ 核准 ({score}/10)\n"
         "{summary}\n"
-        "📎 證物 {evidence_count} 件 · ⚡ {elapsed:.1f}s · /court {case_id} 查全卷"
+        "📎 證物 {evidence_count} 件 · {elapsed:.1f}s · /court {case_id} 查全卷"
     ),
     Verdict.RETRY: (
         "🔁 #{case_id} │ 第 {step} 步未達標 ({score}/10)\n"
-        "👨‍⚖️ 「{reason}」\n"
-        "▶️ 換策略重試 ({attempt}/{max_attempts})…"
+        "{reason}\n"
+        "換策略重試 ({attempt}/{max_attempts})…"
     ),
     Verdict.APPEAL: (
         "📤 #{case_id} │ 上訴受理\n"
@@ -106,7 +106,7 @@ VERDICT_TEMPLATES = {
         "移交上級法院 {appeal_model} 重審…"
     ),
     Verdict.DISMISSED: (
-        "🚫 #{case_id} │ 判決:駁回\n"
+        "🚫 #{case_id} │ 駁回\n"
         "原因:{reason}\n"
         "已做:{done}\n"
         "建議:{suggestion}"
@@ -127,9 +127,9 @@ VERDICT_TEMPLATES = {
 # Callback data is "court:{case_id}:{action}" so the bot can route it.
 
 STAY_INLINE_KEYBOARD = {
-    "approve":  ("✅ 批准執行",      "court:{case_id}:approve"),
-    "backup":   ("💾 先 backup 再做", "court:{case_id}:backup"),
-    "dismiss":  ("🚫 撤案",          "court:{case_id}:dismiss"),
+    "approve":  ("批准執行",      "court:{case_id}:approve"),
+    "backup":   ("先 backup 再做", "court:{case_id}:backup"),
+    "dismiss":  ("撤案",          "court:{case_id}:dismiss"),
 }
 
 
@@ -150,13 +150,13 @@ def build_stay_inline_keyboard(case_id: str) -> list[list[dict]]:
 
 # Emoji glossary (Fable 5 spec, single source of truth)
 COURT_EMOJI = {
-    "case_id": "⚖️",
-    "prosecutor": "🖤",
-    "defendant": "🤍",
-    "judge": "👨‍⚖️",
+    "case_id": "",
+    "prosecutor": "",
+    "defendant": "",
+    "judge": "",
     "evidence": "📎",
-    "step_done": "✅",
-    "step_running": "▶️",
+    "step_done": "",
+    "step_running": "🔧",
     "step_pending": "⬜",
     "step_failed": "❌",
     "verdict_retry": "🔁",
@@ -741,7 +741,7 @@ def render_verdict(case: CourtCase) -> str:
     Uses the 5 templates from Fable 5 spec.
     """
     if not case.verdict:
-        return f"{COURT_EMOJI['case_id']} #{case.case_id} │ 庭審中…"
+        return f"#{case.case_id} │ 處理中…"
 
     template = VERDICT_TEMPLATES[case.verdict]
     return template.format(
