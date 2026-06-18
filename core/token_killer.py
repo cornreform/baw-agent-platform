@@ -1,0 +1,358 @@
+"""
+BAW Token Killer — systemic tool output compression layer.
+
+Applies RTK's four strategies (Filter, Group, Truncate, Deduplicate)
+as a pre-context injection pipeline between tool execution and LLM context.
+
+Design philosophy:
+  LLMs don't need raw terminal output. They need information.
+  - Filter: strip noise (ANSI, progress bars, boilerplate)
+  - Group: aggregate similar items (lint by file, errors by type)
+  - Truncate: keep head + tail, drop redundant middle
+  - Deduplicate: collapse repeated lines with counts
+
+Token savings target: 60-80% reduction on tool outputs.
+"""
+import re
+import logging
+
+logger = logging.getLogger("baw.token_killer")
+
+# ─── Constants ───────────────────────────────────────────────────
+MAX_TOOL_OUTPUT_CHARS = 12000   # hard cap per tool result in context
+MAX_TERMINAL_CHARS = 8000       # tighter cap for terminal output
+MAX_SEARCH_PER_FILE = 3         # max matches per file in search
+MAX_WEB_EXTRACT_CHARS = 2000    # per web_extract result
+
+NOISE_PATTERNS = [
+    re.compile(r"\x1b\[[0-9;]*[a-zA-Z]"),  # ANSI escape codes
+    re.compile(r"^\s*(?:#+\s*)?=+\s*$", re.MULTILINE),  # separator lines
+    re.compile(r"\[\s*[\d.]+\s*/\s*[\d.]+\s*\]"),  # progress counters
+    re.compile(r"\b(?:ETA|elapsed):?\s*[\d:]+", re.IGNORECASE),
+    re.compile(r"^\s*(?:Building|Compiling|Downloading|Installing|Processing)\b.*$", re.MULTILINE),
+    re.compile(r"\[\s*[\d.]+\s*%\s*\].*$", re.MULTILINE),  # progress bars
+]
+
+BOILERPLATE_PATTERNS = [
+    re.compile(r"^\s*$", re.MULTILINE),  # empty lines (handled separately)
+]
+
+# Commands where we only care about failures
+TEST_COMMANDS = {
+    "pytest", "cargo test", "go test", "npm test", "yarn test",
+    "jest", "vitest", "rspec", "mocha", "unittest",
+}
+
+# Commands where success is just "ok"
+SHORT_CONFIRM_COMMANDS = {
+    "git add", "git commit", "git push", "git pull", "git fetch",
+    "docker compose build", "docker build", "pip install", "npm install",
+    "cargo build", "cargo install",
+}
+
+
+def _filter_ansi(text: str) -> str:
+    """Strip ANSI escape codes from text."""
+    for pat in NOISE_PATTERNS:
+        text = pat.sub("", text)
+    return text
+
+
+def _collapse_empty_lines(text: str) -> str:
+    """Replace 3+ consecutive blank lines with 2."""
+    return re.sub(r"\n{3,}", "\n\n", text)
+
+
+def _deduplicate_lines(text: str) -> str:
+    """Collapse 3+ consecutive identical lines into 'line [xN]'."""
+    lines = text.split("\n")
+    if len(lines) < 3:
+        return text
+
+    result = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if i < len(lines) - 2 and line == lines[i + 1] == lines[i + 2]:
+            count = 3
+            i += 3
+            while i < len(lines) and lines[i] == line:
+                count += 1
+                i += 1
+            # Keep first occurrence + count marker
+            result.append(f"{line}  [x{count}]")
+        else:
+            result.append(line)
+            i += 1
+
+    return "\n".join(result)
+
+
+def _truncate_smart(text: str, max_chars: int) -> str:
+    """Truncate text smartly: keep head (70%) + tail (30%) with skip marker."""
+    if len(text) <= max_chars:
+        return text
+    head_size = int(max_chars * 0.7)
+    tail_size = int(max_chars * 0.3)
+    skipped = len(text) - max_chars
+    head = text[:head_size]
+    tail = text[-tail_size:]
+    return f"{head}\n\n┈┈┈ [{skipped} chars skipped] ┈┈┈\n\n{tail}"
+
+
+def _extract_failures(text: str, command: str) -> str:
+    """For test commands, extract failure lines only."""
+    failure_keywords = ["FAIL", "FAILED", "ERROR", "FAILURE", "Traceback",
+                        "assert", "AssertionError", "panic", "✗", "✘", "❌"]
+    lines = text.split("\n")
+    failures = []
+    in_traceback = False
+
+    for line in lines:
+        stripped = line.strip()
+        if any(kw in stripped for kw in ["Traceback (most recent call last)", "thread '<"]):
+            in_traceback = True
+        if in_traceback:
+            failures.append(line)
+            if stripped == "" or "Error:" in stripped:
+                in_traceback = False
+            continue
+        if any(kw in stripped for kw in failure_keywords):
+            failures.append(line)
+
+    if failures:
+        return (
+            f"[{command} failures only — {len(failures)} lines]\n" +
+            "\n".join(failures)
+        )
+    # No failures found — compact summary
+    total_lines = len(lines)
+    return f"[{command}] All tests passed. ({total_lines} lines of output omitted)"
+
+
+def _compress_terminal(name: str, output: str, args: dict) -> str:
+    """Compress terminal/bash tool output."""
+    command = args.get("command", "")
+
+    # Filter ANSI + noise
+    output = _filter_ansi(output)
+
+    # Extract failures for test commands
+    for tc in TEST_COMMANDS:
+        if tc in command:
+            return _extract_failures(output, command)
+
+    # Short confirm for known commands
+    for sc in SHORT_CONFIRM_COMMANDS:
+        if command.strip().startswith(sc):
+            # Return compact success summary
+            lines = output.strip().split("\n")
+            key_lines = [l for l in lines if l.strip() and not l.strip().startswith("#")]
+            if not key_lines:
+                return f"[{sc}] ok"
+            return f"[{sc}] ok — " + key_lines[-1][:200]
+
+    # Git-specific compression
+    if command.strip().startswith("git diff"):
+        return _compress_git_diff(output)
+    if command.strip().startswith("git status"):
+        return _compress_git_status(output)
+    if command.strip().startswith("git log"):
+        return _compress_git_log(output)
+
+    # Generic: deduplicate + truncate
+    output = _collapse_empty_lines(output)
+    output = _deduplicate_lines(output)
+    if len(output) > MAX_TERMINAL_CHARS:
+        output = _truncate_smart(output, MAX_TERMINAL_CHARS)
+        logger.debug(f"[TokenKiller] terminal output compressed: {len(output)} → {MAX_TERMINAL_CHARS}")
+
+    return output.strip()
+
+
+def _compress_git_diff(output: str) -> str:
+    """Compress git diff: keep file headers + changed line counts."""
+    lines = output.split("\n")
+    result = []
+    for line in lines:
+        # Keep diff stats and file headers
+        if (line.startswith("diff --git") or
+            line.startswith("---") or
+            line.startswith("+++") or
+            line.startswith("@@") or
+            re.match(r"^\d+ files? changed", line) or
+            re.match(r"^\d+ insertion", line) or
+            re.match(r"^\d+ deletion", line)):
+            result.append(line)
+        # Skip actual code lines (+/- lines) — too much noise
+    return "\n".join(result)
+
+
+def _compress_git_status(output: str) -> str:
+    """Compress git status: group by status type."""
+    lines = output.strip().split("\n")
+    if not lines:
+        return output
+    # Keep branch header + per-status counts
+    staged = []
+    unstaged = []
+    untracked = []
+    for line in lines:
+        line = line.strip()
+        if line.startswith("On branch"):
+            pass  # skip
+        elif line.startswith("modified:") or "modified:" in line:
+            unstaged.append(line.strip())
+        elif line.startswith("new file:") or "new file:" in line:
+            staged.append(line.strip())
+        elif line.startswith("deleted:") or "deleted:" in line:
+            unstaged.append(line.strip())
+        elif line and not line.startswith("(") and not line.startswith("no changes"):
+            untracked.append(line.strip())
+
+    parts = []
+    if staged:
+        parts.append(f"Staged: {', '.join(staged[:10])}")
+    if unstaged:
+        parts.append(f"Modified: {', '.join(unstaged[:10])}")
+    if untracked:
+        parts.append(f"Untracked: {', '.join(untracked[:10])}")
+    return "\n".join(parts) if parts else "clean"
+
+
+def _compress_git_log(output: str) -> str:
+    """Compress git log: one line per commit."""
+    lines = output.strip().split("\n")
+    result = []
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("commit "):
+            result.append(line)
+    return "\n".join(result[:20])  # max 20 commits
+
+
+def _compress_search_files(output: str, args: dict) -> str:
+    """Compress search_files output: group by file, limit per-file matches."""
+    lines = output.strip().split("\n")
+    if len(lines) <= MAX_SEARCH_PER_FILE * 3:
+        return output  # small enough
+
+    # Group by file
+    from collections import defaultdict
+    file_groups = defaultdict(list)
+    for line in lines:
+        # Match "path:line:content" or "path:line:content" format
+        if ":" in line:
+            parts = line.split(":", 2)
+            if len(parts) >= 2:
+                fname = parts[0]
+                file_groups[fname].append(line)
+
+    result = []
+    total_shown = 0
+    for fname, matches in sorted(file_groups.items()):
+        shown = matches[:MAX_SEARCH_PER_FILE]
+        result.extend(shown)
+        total_shown += len(shown)
+        if len(matches) > MAX_SEARCH_PER_FILE:
+            result.append(f"  ... ({len(matches) - MAX_SEARCH_PER_FILE} more in {fname})")
+
+    if total_shown < len(lines):
+        result.append(f"\n[Total: {len(lines)} matches → shown {total_shown}]")
+
+    return "\n".join(result)
+
+
+def _compress_web_search(output: str, args: dict) -> str:
+    """Compress web search results: keep title + first 200 chars."""
+    # web_search output is often pre-formatted by the tool
+    # Just truncate if too long
+    if len(output) > MAX_TERMINAL_CHARS:
+        return _truncate_smart(output, MAX_TERMINAL_CHARS)
+    return output
+
+
+# ─── Public API ──────────────────────────────────────────────────
+
+def compress_tool_output(name: str, raw_output: str, args: dict | None = None) -> str:
+    """Compress tool output before it enters LLM context.
+    
+    Args:
+        name: Tool name (e.g., 'terminal', 'read_file', 'search_files')
+        raw_output: Raw tool output string
+        args: Tool arguments dict (for context-aware compression)
+        
+    Returns:
+        Compressed output string
+    """
+    if args is None:
+        args = {}
+
+    # Skip compression for empty/short outputs
+    if len(raw_output) < 500:
+        return raw_output
+
+    try:
+        if name in ("terminal", "bash"):
+            output = _compress_terminal(name, raw_output, args)
+        elif name in ("search_files", "grep", "rg"):
+            output = _compress_search_files(raw_output, args)
+        elif name in ("web_search", "web_extract"):
+            output = _compress_web_search(raw_output, args)
+        elif name == "read_file":
+            # Agent controls chunking via offset/limit — just cap if excessive
+            if len(raw_output) > MAX_TOOL_OUTPUT_CHARS:
+                output = _truncate_smart(raw_output, MAX_TOOL_OUTPUT_CHARS)
+            else:
+                output = raw_output
+        else:
+            # Generic: deduplicate + cap
+            output = _collapse_empty_lines(raw_output)
+            output = _deduplicate_lines(output)
+            if len(output) > MAX_TOOL_OUTPUT_CHARS:
+                output = _truncate_smart(output, MAX_TOOL_OUTPUT_CHARS)
+
+        # Track savings
+        saved = len(raw_output) - len(output)
+        if saved > 1000:
+            logger.debug(
+                f"[TokenKiller] {name}: {len(raw_output)} → {len(output)} chars "
+                f"({saved / len(raw_output) * 100:.0f}% saved)"
+            )
+
+        return output
+
+    except Exception as e:
+        logger.warning(f"[TokenKiller] compression error for {name}: {e}")
+        # On error, return raw but capped
+        if len(raw_output) > MAX_TOOL_OUTPUT_CHARS:
+            return _truncate_smart(raw_output, MAX_TOOL_OUTPUT_CHARS)
+        return raw_output
+
+
+# ─── Utility: task complexity detection ──────────────────────────
+
+def estimate_task_complexity(prompt: str) -> str:
+    """Estimate task complexity to skip unnecessary overhead.
+    
+    Returns: 'simple', 'moderate', or 'complex'
+    """
+    prompt_lower = prompt.lower()
+    prompt_len = len(prompt)
+
+    # Simple: short prompts, direct questions
+    simple_indicators = ["what is", "how do i", "explain", "show me",
+                         "列出", "顯示", "什麼是", "點樣", "幫我查"]
+    complex_indicators = ["build", "deploy", "refactor", "migrate",
+                          "implement", "架構", "重構", "部署", "設計"]
+
+    if prompt_len < 300:
+        return "simple"
+
+    if any(ind in prompt_lower for ind in complex_indicators):
+        return "complex"
+
+    if prompt_len < 800 and any(ind in prompt_lower for ind in simple_indicators):
+        return "simple"
+
+    return "moderate"

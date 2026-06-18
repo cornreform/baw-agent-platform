@@ -1496,8 +1496,15 @@ def run_agent(
 
     # ═══════════════════════════════════════════════════════════════
     # Phase 1: Court — Independent dual-voice analysis
+    # (Bypassed for simple tasks to save tokens)
     # ═══════════════════════════════════════════════════════════════
     from .adversarial import AdversarialCourt
+    from .token_killer import estimate_task_complexity
+    _complexity = estimate_task_complexity(prompt)
+    _skip_court = (_complexity == "simple" and mode not in ("deep", "full"))
+    if _skip_court:
+        logger.info(f"[loop] Court bypassed — task too simple ({_complexity})")
+        court_result = None
     # Load per-side model config (both fall back to default model if unset)
     adv_cfg = config.get("adversarial", {})
     angel_model_id = adv_cfg.get("angel_model")
@@ -1516,10 +1523,13 @@ def run_agent(
         logger.warning(f"[loop] court model not found ({_ve}), using default")
     except Exception as _ce:
         logger.warning(f"[loop] court model load failed: {_ce}")
-    court = AdversarialCourt(
-        model, system_prompt, config,
-        angel_model=angel_model, devil_model=devil_model,
-    )
+    if not _skip_court:
+        court = AdversarialCourt(
+            model, system_prompt, config,
+            angel_model=angel_model, devil_model=devil_model,
+        )
+    else:
+        court = None
     court_enabled = config.get("adversarial", {}).get("enabled", True) and _mode in ("tight", "quick", "hybrid")
 
     # M5-D7: opt-in court v2 path. When enabled in config, run the
@@ -1528,6 +1538,8 @@ def run_agent(
     # Falls through to the legacy AdversarialCourt path on any failure
     # (so existing behavior is preserved).
     use_court_v2 = config.get("court", {}).get("v2_enabled", False) and _mode == "tight"
+    if _skip_court:
+        use_court_v2 = False
     court_v2_briefing = None
     if use_court_v2 and not court_enabled:
         court_enabled = True  # v2 subsumes the inline path below
@@ -1580,7 +1592,7 @@ def run_agent(
             logger.warning(f"[loop] court v2 init failed ({_ce}); falling back to inline path")
             use_court_v2 = False
 
-    if court_enabled and not use_court_v2:
+    if court_enabled and not use_court_v2 and not _skip_court:
         if verbose:
             print("\n  [COURT] Court: Devil + Angel analyzing independently...")
         if progress_callback:
@@ -1706,6 +1718,9 @@ def run_agent(
             exe_result = _verify_after_write(name, args, exe_result, data_dir)
             if interactive:
                 print(f" \033[32m[OK]\033[0m", flush=True)
+            # ── Token Killer: compress tool output before entering LLM context ──
+            from .token_killer import compress_tool_output
+            exe_result = compress_tool_output(name, exe_result, args)
             ctx.add_tool_result(tc.get("id", ""), name, exe_result)
         # Next LLM call to synthesize results
         fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=get_openai_tools(), temperature=model_temperature)

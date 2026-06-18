@@ -2063,6 +2063,12 @@ class BaseConnector(ABC):
             _MAX_AUTO_ROUNDS = 5
             _MAX_RECALC_THRESHOLD = 5
             _MAX_TOTAL_SECONDS = 600
+            # ── Token Killer: cap rounds for simple tasks ──
+            from ..token_killer import estimate_task_complexity
+            if estimate_task_complexity(prompt) == "simple":
+                _MAX_AUTO_ROUNDS = 2  # simple tasks don't need 5 retries
+                _MAX_TOTAL_SECONDS = 180
+                logger.info(f"[_run_baw] Simple task detected — rounds capped at {_MAX_AUTO_ROUNDS}")
             output = ""
             info = {}
             all_plan_recaps = []
