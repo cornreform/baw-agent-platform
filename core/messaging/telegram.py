@@ -1466,7 +1466,13 @@ class TelegramConnector(BaseConnector):
                         break
             # Final message if we ever sent progress updates
             if _msg_sent and not self._cancel_event.is_set():
-                pass  # The actual response will follow
+                _elapsed_final = int(time.time() - _typing_start[0])
+                _min_final = _elapsed_final // 60
+                _sec_final = _elapsed_final % 60
+                if _min_final > 0:
+                    self.send(chat_id, f"✅ Done ({_min_final} min {_sec_final}s)")
+                else:
+                    self.send(chat_id, f"✅ Done ({_sec_final}s)")
         _pm = threading.Thread(
             target=_progress_monitor, daemon=True, name=f"progress-{chat_id}",
         )
