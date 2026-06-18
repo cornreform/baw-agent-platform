@@ -69,7 +69,7 @@ class TelegramConnector(BaseConnector):
                     # Register slash command menu
                     self._register_commands()
 
-                    # ── Provider health ping (startup check) ──
+                    # ── Provider health ping (startup check) + dead-provider notification ──
                     try:
                         import yaml as _yaml
                         from pathlib import Path as _Path
@@ -78,9 +78,50 @@ class TelegramConnector(BaseConnector):
                         if _cfg_path.exists():
                             _full_cfg = _yaml.safe_load(_cfg_path.read_text(encoding="utf-8"))
                             _health = ping_provider_health(_full_cfg)
-                            _dead = [k for k, v in _health.items() if v not in ("healthy", "no_key")]
+                            _dead = {k: v for k, v in _health.items() if v not in ("healthy", "no_key")}
                             if _dead:
-                                logger.warning(f"[Telegram] Dead providers at startup: {_dead}")
+                                logger.warning(f"[Telegram] Dead providers at startup: {list(_dead.keys())}")
+                                
+                                # Build user notification with fix suggestions
+                                _dead_list = "\n".join(f"  • {k}: {v}" for k, v in _dead.items())
+                                _fix_lines = []
+                                
+                                # Check if any dead provider is referenced in config
+                                _def_model = _full_cfg.get("model", {}).get("default", "")
+                                _fallback = _full_cfg.get("model", {}).get("fallback", "")
+                                _caps = _full_cfg.get("capabilities", {})
+                                
+                                for _pname in _dead:
+                                    # Check which models on this provider are in use
+                                    _models = [m.get("id","?") for m in _full_cfg.get("providers",{}).get(_pname,{}).get("models",[])]
+                                    
+                                    if _def_model in _models:
+                                        _fix_lines.append(f"  /set model.default deepseek-v4-flash  ← default 指向死 provider「{_pname}」")
+                                    if _fallback in _models:
+                                        _fix_lines.append(f"  /set model.fallback deepseek-v4-pro  ← fallback 指向死 provider「{_pname}」")
+                                    for _cap, _cc in _caps.items():
+                                        if isinstance(_cc, dict) and _cc.get("model") in _models:
+                                            _fix_lines.append(f"  /set capabilities.{_cap}.model deepseek-v4-flash  ← {_cap} 指向死 provider「{_pname}」")
+                                
+                                _fix_section = "\n".join(_fix_lines) if _fix_lines else "  冇 config reference — 毋須改動"
+                                
+                                _admin_id = os.environ.get("BAW_ADMIN_CHAT_ID", "")
+                                _notify_text = (
+                                    f"<b>⚠️  Provider Health Alert</b>\n\n"
+                                    f"以下 provider 無法連線：\n{_dead_list}\n\n"
+                                    f"<b>建議修改：</b>\n{_fix_section}\n\n"
+                                    f"系統已自動 blacklist 死 provider，"
+                                    f"BAW 會自動 fallback 到可用 provider。"
+                                )
+                                if _admin_id:
+                                    try:
+                                        self._client.post(
+                                            f"{self._api_base}/sendMessage",
+                                            json={"chat_id": _admin_id, "text": _notify_text, "parse_mode": "HTML"},
+                                            timeout=10,
+                                        )
+                                    except Exception:
+                                        pass
                     except Exception as _he:
                         logger.warning(f"[Telegram] Provider health ping failed: {_he}")
 
