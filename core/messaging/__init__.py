@@ -1856,6 +1856,10 @@ class BaseConnector(ABC):
             # mode from per-chat config > global config > default
             cc = self._chat_config.get(chat_id, {}) if chat_id else {}
             mode = cc.get("mode") or config.get("mode", "quick")
+            # ── Focus Mode: force full execution (tight), not quick ──
+            _is_focus_mode = prompt.startswith("[FOCUS MODE")
+            if _is_focus_mode:
+                mode = "tight"  # full debate + plan + execute — skip quick mode 5-tool cap
 
             # ── Session management ──
             session = None
@@ -2078,11 +2082,13 @@ class BaseConnector(ABC):
             _MAX_RECALC_THRESHOLD = 5
             _MAX_TOTAL_SECONDS = 600
             # ── Focus Mode: relentless execution — bump limits ──
-            _is_focus_mode = prompt.startswith("[FOCUS MODE")
             if _is_focus_mode:
                 _MAX_AUTO_ROUNDS = 8
                 _MAX_TOTAL_SECONDS = 1200
-                logger.info(f"[_run_baw] Focus Mode — rounds={_MAX_AUTO_ROUNDS}, timeout={_MAX_TOTAL_SECONDS}s")
+                _focus_max_tool_turns = 40  # override per-round tool cap
+                logger.info(f"[_run_baw] Focus Mode — rounds={_MAX_AUTO_ROUNDS}, timeout={_MAX_TOTAL_SECONDS}s, tool_turns={_focus_max_tool_turns}")
+            else:
+                _focus_max_tool_turns = 0  # use default (15)
             # ── Token Killer: cap rounds for simple tasks ──
             from ..token_killer import estimate_task_complexity
             if not _is_focus_mode and estimate_task_complexity(prompt) == "simple":
@@ -2154,6 +2160,7 @@ class BaseConnector(ABC):
                        verbose=False,
                        conversation_history=conv_history if _round == 1 else None,
                        progress_callback=_on_progress if _round == 1 else None,
+                       max_tool_turns=_focus_max_tool_turns if _focus_max_tool_turns else 15,
                     )
                     # Poll for result with cancel checking every 1s
                     import time as _time
@@ -2209,6 +2216,11 @@ class BaseConnector(ABC):
 
                 # ── Auto-continue if goal NOT achieved ──
                 goal_achieved = info.get("goal_achieved", True) if info else True
+                # Tool cap hit → task was truncated, treat as not achieved
+                if info and info.get("tool_cap_hit"):
+                    goal_achieved = False
+                    if not any("tool cap" in r for r in all_failure_reasons):
+                        all_failure_reasons.append(f"Hit tool cap ({info.get('max_tool_turns', '?')} turns) — task truncated")
                 if goal_achieved:
                     break
                 if self._cancel_event.is_set():

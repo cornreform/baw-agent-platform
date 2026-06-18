@@ -1122,6 +1122,7 @@ def run_agent(
     mode: Optional[str] = None,
     conversation_history: Optional[list[dict]] = None,
     progress_callback: Optional[Callable[..., None]] = None,
+    max_tool_turns: int = MAX_TOOL_TURNS,
 ) -> tuple[str, dict]:
     """Run BAW agent with debate-first, execute-second flow.
 
@@ -1710,12 +1711,16 @@ def run_agent(
     # then the result loop continues until the model produces text only.
     _resp = neutral_response
     _tool_turns = 0
+    _extra_info = {}  # carry extra metadata (e.g. tool_cap_hit) to return dict
     while _resp.tool_calls:
-        if _tool_turns >= MAX_TOOL_TURNS:
-            ctx.add_user("[SYSTEM] You have exceeded the maximum tool iterations (15). Synthesize results now. Do NOT call more tools.")
+        if _tool_turns >= max_tool_turns:
+            ctx.add_user(f"[SYSTEM] You have exceeded the maximum tool iterations ({max_tool_turns}). Synthesize results now. Do NOT call more tools.")
             # Force one final LLM call with no tools to get a text summary
             fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=None, temperature=model_temperature)
             _resp = fb.response
+            # ── Signal to caller that goal was NOT fully achieved ──
+            _extra_info["tool_cap_hit"] = True
+            _extra_info["max_tool_turns"] = max_tool_turns
             break
         _tool_turns += 1
         for tc in _resp.tool_calls:
@@ -1788,6 +1793,7 @@ def run_agent(
         "adversarial": court_result["agreement_level"] if court_result else None,
         "adversarial_raw": court_result,
         "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
+        **_extra_info,
     }
 
     
