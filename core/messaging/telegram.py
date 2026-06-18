@@ -303,6 +303,10 @@ class TelegramConnector(BaseConnector):
                 )
         if r.status_code == 200:
             return message_id
+        # Telegram returns 400 "message is not modified" when content is identical —
+        # this is not an error, the message already shows the right content.
+        if "message is not modified" in r.text:
+            return message_id
         logger.warning(f"[Telegram] editMessageText failed: {r.status_code} {r.text[:200]}")
         return ""
 

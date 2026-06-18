@@ -36,6 +36,60 @@ _CIRCUIT_LOCK = threading.Lock()
 CIRCUIT_THRESHOLD = 5        # consecutive failures to open
 CIRCUIT_COOLDOWN_SEC = 30    # pause before retry
 
+# ── Fatal error blacklist (401, 403 — permanent until config reload) ──
+_FATAL_BLACKLIST: set[str] = set()  # provider names that returned 401/403
+_FATAL_LOCK = threading.Lock()
+
+# Error classification
+FATAL_HTTP_CODES = {401, 403}        # auth errors — never retry
+QUOTA_HTTP_CODES = {402, 429}        # quota/rate-limit — cooldown longer
+TRANSIENT_HTTP_CODES = {500, 502, 503, 504}  # server-side transient
+
+
+def _is_fatal_error(error_signature: str) -> bool:
+    """Check if an error signature indicates a fatal (non-recoverable) error."""
+    for code in FATAL_HTTP_CODES:
+        if f"HTTP:{code}" in error_signature:
+            return True
+    return "auth" in error_signature.lower() or "unauthorized" in error_signature.lower()
+
+
+def _is_quota_error(error_signature: str) -> bool:
+    """Check if an error signature indicates a quota/rate-limit error."""
+    for code in QUOTA_HTTP_CODES:
+        if f"HTTP:{code}" in error_signature:
+            return True
+    return "quota" in error_signature.lower() or "rate" in error_signature.lower()
+
+
+def _is_provider_blacklisted(provider: str) -> bool:
+    """Check if a provider is permanently blacklisted due to fatal errors."""
+    with _FATAL_LOCK:
+        return provider in _FATAL_BLACKLIST
+
+
+def _blacklist_provider(provider: str) -> None:
+    """Permanently blacklist a provider for the current session."""
+    import logging as _log
+    with _FATAL_LOCK:
+        if provider not in _FATAL_BLACKLIST:
+            _FATAL_BLACKLIST.add(provider)
+            _log.warning(f"[LLM] PERMANENT blacklist: {provider} (fatal auth error — will never retry)")
+
+
+def _is_provider_healthy(provider: str) -> bool:
+    """Check if a provider is healthy enough to try.
+    
+    Returns False if: permanently blacklisted, or circuit open + high failure rate.
+    """
+    if _is_provider_blacklisted(provider):
+        return False
+    with _CIRCUIT_LOCK:
+        state = _CIRCUIT_STATE.get(provider, {})
+    failures = state.get("failures", 0)
+    # If 3+ failures, consider unhealthy (will still try once, but skip as fallback)
+    return failures < 3
+
 def _check_circuit(provider_or_model: str) -> None:
     """Raise RuntimeError ONLY if circuit just opened (give a grace period).
 
@@ -61,7 +115,25 @@ def _record_circuit_failure(provider_or_model: str, error_signature: str = "") -
     error_signature: short hash of the error class+code so we only
     count *persistent* failures. Transient 429/503 don't open the
     circuit — they retry via fallback.
+    
+    FATAL errors (401/403): immediately blacklist the provider — 
+    auth errors never fix themselves.
     """
+    # ── Fatal error → permanent blacklist ──
+    if error_signature and _is_fatal_error(error_signature):
+        _blacklist_provider(provider_or_model)
+        # Still record the failure for stats
+        with _CIRCUIT_LOCK:
+            state = _CIRCUIT_STATE.setdefault(
+                provider_or_model,
+                {"failures": 0, "last_fail": 0, "open_until": 0,
+                 "last_sig": "", "sig_count": 0}
+            )
+            state["failures"] += 1
+            state["last_fail"] = time.time()
+            state["last_sig"] = error_signature
+        return
+    
     with _CIRCUIT_LOCK:
         state = _CIRCUIT_STATE.setdefault(
             provider_or_model,
@@ -78,9 +150,10 @@ def _record_circuit_failure(provider_or_model: str, error_signature: str = "") -
         else:
             state["last_sig"] = error_signature
             state["sig_count"] = 1
-        # Only OPEN if threshold reached AND same signature repeats 3x
-        if (state["failures"] >= CIRCUIT_THRESHOLD
-                and state["sig_count"] >= 3):
+        # Open circuit faster for quota errors (3 fails vs 5)
+        _threshold = 3 if _is_quota_error(error_signature) else CIRCUIT_THRESHOLD
+        if (state["failures"] >= _threshold
+                and state["sig_count"] >= 2):
             state["open_until"] = time.time() + CIRCUIT_COOLDOWN_SEC
 
 def _record_circuit_success(provider: str) -> None:
@@ -538,20 +611,48 @@ def call_llm_with_fallback(
         _log.warning(f"[LLM] fallback '{fallback_id}' == primary — will be skipped")
         fallback_id = ""
 
-    # ── Fast skip: if primary model's provider has >= N circuit failures, skip primary → try fallback directly ──
+    # ── Fast skip: if primary model's provider is unhealthy (blacklisted or high failures),
+    #     skip directly to scanning all providers. Do NOT blindly try the configured fallback
+    #     — if primary is dead, its fallback is likely on an adjacent dead provider too.
     if fallback_id and primary_id != fallback_id:
         try:
             _pmodel = get_model(config, primary_id)
+            _pprovider = _pmodel.provider
+            
+            # Check if primary provider is permanently blacklisted (fatal auth error)
+            if _is_provider_blacklisted(_pprovider):
+                import logging as _log3
+                _log3.warning(
+                    f"[LLM] {_pprovider} is FATAL-blacklisted — "
+                    f"skipping primary {primary_id}, scanning all providers"
+                )
+                fallback_id = ""  # Clear fallback — go straight to scan-all
+                
+            # Check if primary provider has circuit open (high failures)
             with _CIRCUIT_LOCK:
-                _pstate = _CIRCUIT_STATE.get(_pmodel.provider, {})
+                _pstate = _CIRCUIT_STATE.get(_pprovider, {})
             if _pstate.get("failures", 0) >= 8:
                 import logging as _log2
                 _log2.warning(
-                    f"[LLM] {_pmodel.provider} has {_pstate['failures']} consecutive fails "
+                    f"[LLM] {_pprovider} has {_pstate['failures']} consecutive fails "
                     f"— skipping primary {primary_id} → trying fallback {fallback_id}"
                 )
-                primary_id = fallback_id
-                fallback_id = ""  # prevent infinite fallback loop
+                # Before trying fallback, check if fallback's provider is also unhealthy
+                try:
+                    _fmodel = get_model(config, fallback_id)
+                    _fprovider = _fmodel.provider
+                    if not _is_provider_healthy(_fprovider):
+                        _log2.warning(
+                            f"[LLM] Fallback provider {_fprovider} is also unhealthy — "
+                            f"skipping both {primary_id} + {fallback_id}, scanning all"
+                        )
+                        fallback_id = ""  # Go straight to scan-all
+                    else:
+                        primary_id = fallback_id
+                        fallback_id = ""  # prevent infinite fallback loop
+                except Exception:
+                    primary_id = fallback_id
+                    fallback_id = ""
         except Exception:
             pass
 
@@ -699,6 +800,9 @@ def call_llm_with_fallback(
     for _pname, _pcfg in _providers.items():
         if _pname in _tried_providers:
             continue
+        # Skip permanently blacklisted providers
+        if _is_provider_blacklisted(_pname):
+            continue
         for _m in _pcfg.get("models", []):
             _mid = _m.get("id", "")
             if not _mid or _mid in _tried:
@@ -720,8 +824,10 @@ def call_llm_with_fallback(
                 _record_circuit_failure(_mid, _sig)
                 continue
 
-    # ── Last resort: try ALL models in ALL providers regardless ──
+    # ── Last resort: try ALL models in ALL providers regardless (except blacklisted) ──
     for _pname, _pcfg in _providers.items():
+        if _is_provider_blacklisted(_pname):
+            continue
         for _m in _pcfg.get("models", []):
             _mid = _m.get("id", "")
             if not _mid or _mid in _tried:
@@ -748,7 +854,12 @@ def call_llm_with_fallback(
         _key_env = _pcfg.get("api_key_env", "")
         _has_key = bool(os.environ.get(_key_env, ""))
         _models = [m.get("id", "") for m in _pcfg.get("models", [])]
-        _status = "✅ key set" if _has_key else "❌ no key"
+        if _is_provider_blacklisted(_pname):
+            _status = "🚫 blacklisted (auth error)"
+        elif _has_key:
+            _status = "✅ key set"
+        else:
+            _status = "❌ no key"
         _provider_status.append(f"  {_pname}: {_status} (模型: {', '.join(_models[:2])})")
 
     _friendly = (
