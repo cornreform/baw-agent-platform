@@ -464,7 +464,11 @@ def estimate_task_complexity(prompt: str) -> str:
 
     complex_indicators = ["build", "deploy", "refactor", "migrate",
                           "implement", "架構", "重構", "部署", "設計",
-                          "multi-step", "pipeline", "workflow"]
+                          "multi-step", "pipeline", "workflow",
+                          "audit", "審計", "cleanup", "清理",
+                          "優化", "optimize", "診斷", "diagnose",
+                          "修復", "repair", "fix all", "全部",
+                          "系統審計", "system audit", "全面", "comprehensive"]
 
     # Complex: modification + multi-step
     if prompt_len > 500 and any(ind in prompt_lower for ind in complex_indicators):
