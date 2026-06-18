@@ -28,6 +28,7 @@ services:
     environment:
       - BAW_HOME=/app
       - BAW_RUNTIME_HOME=/home/baw/.baw
+      - BAW_ADMIN_CHAT_ID=YOUR_TELEGRAM_ID
     deploy:
       resources:
         limits:
