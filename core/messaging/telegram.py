@@ -394,9 +394,19 @@ class TelegramConnector(BaseConnector):
             timeout=10,
         )
         if r.status_code != 200:
-            raise RuntimeError(f"getFile failed: {r.text[:200]}")
+            err_text = r.text[:300]
+            if "file is too big" in err_text.lower():
+                raise RuntimeError(
+                    f"📁 檔案太大，Telegram Bot API 限制 20MB。請用其他方式傳送（如壓縮、分割、或改用雲端連結）"
+                )
+            raise RuntimeError(f"getFile failed: {err_text}")
         data = r.json()
         if not data.get("ok"):
+            err_desc = str(data.get("description", ""))
+            if "file is too big" in err_desc.lower():
+                raise RuntimeError(
+                    f"📁 檔案太大，Telegram Bot API 限制 20MB。請用其他方式傳送（如壓縮、分割、或改用雲端連結）"
+                )
             raise RuntimeError(f"getFile returned error: {data}")
         tg_path = data["result"]["file_path"]
 
@@ -633,6 +643,17 @@ class TelegramConnector(BaseConnector):
         try:
             file_id = doc["file_id"]
             file_name = doc.get("file_name", "document")
+
+            # Pre-check: Telegram Bot API can't download files >20MB
+            file_size = doc.get("file_size", 0)
+            MAX_BOT_DOWNLOAD = 20 * 1024 * 1024  # 20MB
+            if file_size > MAX_BOT_DOWNLOAD:
+                size_mb = file_size / (1024 * 1024)
+                self.send(chat_id,
+                    f"📁 **{file_name}** ({size_mb:.1f}MB) 超過 Telegram Bot API 20MB 限制。\n"
+                    f"請用其他方式傳送：壓縮、分割檔案、或改用雲端連結。"
+                )
+                return
 
             status_id = self.send(chat_id, f"📥 Downloading **{file_name}**...")
 
