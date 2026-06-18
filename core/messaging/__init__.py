@@ -2377,7 +2377,7 @@ class BaseConnector(ABC):
 
             return output.strip()
 
-        except Exception as e:
+        except BaseException as e:
             return f"[FAIL] BAW error: {e}"
 
     @staticmethod
