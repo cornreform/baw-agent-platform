@@ -332,6 +332,102 @@ def compress_tool_output(name: str, raw_output: str, args: dict | None = None) -
 
 # ─── Utility: task complexity detection ──────────────────────────
 
+# ─── Court Activation Logic ──────────────────────────────────────
+
+# Actions that SHOULD trigger the adversarial court (Devil+Angel review)
+COURT_ACTIVATE_PATTERNS = [
+    # ── System modification ──
+    "write_file", "patch", "delete", "remove", "rm ",
+    "install", "uninstall", "pip install", "apt ", "brew ",
+    "config", ".env", "systemd", "systemctl",
+    "docker compose", "docker build", "docker run",
+    "git push", "git commit", "git merge", "git rebase",
+    "deploy", "publish", "release",
+    "migrate", "upgrade", "downgrade",
+    # ── Irreversible / dangerous ──
+    "rm -rf", "drop table", "format", "truncate",
+    "purge", "reset --hard", "clean -df",
+    "chmod 777", "chown",
+    "overwrite", "force push",
+    # ── Architectural / design decisions ──
+    "refactor", "restructure", "redesign", "rearchitect",
+    "架構", "重構", "重新設計",
+    # ── Financial / cost decisions ──
+    "buy", "purchase", "subscribe",
+    "deploy to production", "production deploy",
+    "charge", "bill",
+]
+
+# Actions that are ALWAYS safe to bypass court
+COURT_BYPASS_PATTERNS = [
+    # ── Pure information gathering ──
+    "what is", "how do i", "explain", "show me",
+    "list", "check", "status", "query",
+    "search", "find", "lookup",
+    "read", "cat", "view",
+    "列出", "顯示", "查詢", "搵", "睇", "點樣",
+    "什麼是", "幫我查", "幫我搵",
+    # ── Simple descriptive tasks ──
+    "describe", "summarize", "translate",
+    "what does", "how does", "why is",
+    "分析", "解釋", "翻譯",
+    # ── User explicitly wants quick mode ──
+    "[quick]", "[btw]", "/btw", "/quick",
+]
+
+
+def should_activate_court(prompt: str) -> bool:
+    """Determine if the adversarial court (Devil + Angel) should run.
+    
+    Court is activated when:
+    1. System-modifying actions (write, delete, deploy, config change)
+    2. Irreversible or dangerous operations
+    3. Architectural / design decisions
+    
+    Court is bypassed when:
+    1. Pure information gathering (read, search, explain)
+    2. Simple single-step tasks
+    3. User explicitly requests quick mode (/btw, [quick])
+    
+    Returns True if court should activate, False to bypass.
+    """
+    prompt_lower = prompt.lower()
+    prompt_len = len(prompt)
+    
+    # ── Explicit bypass: user signals quick mode ──
+    for bp in ["[quick]", "[btw]", "/btw", "/quick", "[fast]", "/fast"]:
+        if bp in prompt_lower:
+            return False
+    
+    # ── Very short prompts (≤100 chars): too simple for court ──
+    if prompt_len < 100:
+        return False
+    
+    # ── Check for court-activating actions ──
+    activation_hits = []
+    for pat in COURT_ACTIVATE_PATTERNS:
+        if pat in prompt_lower:
+            activation_hits.append(pat)
+    
+    if activation_hits:
+        # At least one system-modifying action detected → activate
+        return True
+    
+    # ── Check for bypass patterns (pure information) ──
+    for pat in COURT_BYPASS_PATTERNS:
+        if pat in prompt_lower:
+            # Information-gathering task → bypass
+            return False
+    
+    # ── Default: moderate complexity with no clear signal ──
+    # Medium-length prompts (100-800 chars) with no modification signals
+    # → activate court for safety, unless clearly informational
+    if prompt_len < 400 and "?" in prompt:
+        return False  # short questions → bypass
+    
+    return True  # default: activate for safety
+
+
 def estimate_task_complexity(prompt: str) -> str:
     """Estimate task complexity to skip unnecessary overhead.
     
@@ -340,19 +436,17 @@ def estimate_task_complexity(prompt: str) -> str:
     prompt_lower = prompt.lower()
     prompt_len = len(prompt)
 
-    # Simple: short prompts, direct questions
-    simple_indicators = ["what is", "how do i", "explain", "show me",
-                         "列出", "顯示", "什麼是", "點樣", "幫我查"]
     complex_indicators = ["build", "deploy", "refactor", "migrate",
-                          "implement", "架構", "重構", "部署", "設計"]
+                          "implement", "架構", "重構", "部署", "設計",
+                          "multi-step", "pipeline", "workflow"]
 
-    if prompt_len < 300:
-        return "simple"
-
-    if any(ind in prompt_lower for ind in complex_indicators):
+    # Complex: modification + multi-step
+    if prompt_len > 500 and any(ind in prompt_lower for ind in complex_indicators):
         return "complex"
 
-    if prompt_len < 800 and any(ind in prompt_lower for ind in simple_indicators):
+    # Check court activation — if court not needed, task is simpler
+    if not should_activate_court(prompt):
         return "simple"
 
+    # Default to moderate
     return "moderate"
