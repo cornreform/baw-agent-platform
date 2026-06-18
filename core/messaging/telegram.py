@@ -662,9 +662,29 @@ class TelegramConnector(BaseConnector):
 
             content = self._extract_file_content(local_path)
 
+            # ── Safety: truncate massive content to prevent LLM prompt overflow ──
+            MAX_CONTENT_CHARS = 50000  # ~12.5K tokens, safe for any model
+            _truncated = False
+            if len(content) > MAX_CONTENT_CHARS:
+                _truncated = True
+                # Keep first 30% + last 20% to preserve structure + endings
+                _head = content[: int(MAX_CONTENT_CHARS * 0.7)]
+                _tail = content[-int(MAX_CONTENT_CHARS * 0.3):]
+                content = (
+                    f"{_head}\n\n"
+                    f"┈┈┈ [中間 {len(content) - MAX_CONTENT_CHARS} 字元已省略] ┈┈┈\n\n"
+                    f"{_tail}"
+                )
+                logger.warning(
+                    f"[Telegram] PDF content truncated: {len(content)} → {MAX_CONTENT_CHARS} chars "
+                    f"(file: {file_name})"
+                )
+
             prompt = (
                 f"[File: {file_name}]\n"
-                f"[Type: {doc.get('mime_type', 'unknown')}]\n\n"
+                f"[Type: {doc.get('mime_type', 'unknown')}]"
+                + (f" [內容已截短: 原始 {len(content)} 字元]" if _truncated else "")
+                + f"\n\n"
                 f"{content}\n\n"
                 f"---\n"
                 f"Analyze this file. "
@@ -685,9 +705,15 @@ class TelegramConnector(BaseConnector):
             self.send(chat_id, response)
             self._record_batch_result(chat_id, response[:200], "document")
 
-        except Exception as e:
-            logger.error(f"[Telegram] Document processing error: {e}")
-            self.send(chat_id, f"❌ Error processing document: {e}")
+        except BaseException as e:
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                logger.warning(f"[Telegram] Document processing interrupted: {type(e).__name__}")
+            else:
+                logger.error(f"[Telegram] Document processing error: {e}")
+            try:
+                self.send(chat_id, f"❌ 無法處理文件: {e}"[:500])
+            except Exception:
+                pass
         finally:
             self._release_slot(chat_id)
 
