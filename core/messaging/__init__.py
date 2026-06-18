@@ -816,7 +816,7 @@ class BaseConnector(ABC):
         import re as _re
 
         _task_headers = _re.findall(_MULTITASK_PATTERN, text, _re.MULTILINE)
-        if len(_task_headers) >= 2:
+        if _depth < 1 and len(_task_headers) >= 2:
             return self._execute_multi_task(text, chat_id, _depth)
 
         # ── Safety check per-task (after split, so multi-task items are isolated) ──
