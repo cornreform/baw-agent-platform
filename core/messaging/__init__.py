@@ -2089,12 +2089,19 @@ class BaseConnector(ABC):
                 logger.info(f"[_run_baw] Focus Mode — rounds={_MAX_AUTO_ROUNDS}, timeout={_MAX_TOTAL_SECONDS}s, tool_turns={_focus_max_tool_turns}")
             else:
                 _focus_max_tool_turns = 0  # use default (15)
-            # ── Token Killer: cap rounds for simple tasks ──
+            # ── Token Killer: adaptive tool cap based on task complexity ──
             from ..token_killer import estimate_task_complexity
-            if not _is_focus_mode and estimate_task_complexity(prompt) == "simple":
-                _MAX_AUTO_ROUNDS = 2  # simple tasks don't need 5 retries
+            _task_complexity = estimate_task_complexity(prompt) if not _is_focus_mode else "complex"
+            if _task_complexity == "simple":
+                _MAX_AUTO_ROUNDS = 2
                 _MAX_TOTAL_SECONDS = 180
-                logger.info(f"[_run_baw] Simple task detected — rounds capped at {_MAX_AUTO_ROUNDS}")
+                _focus_max_tool_turns = 10  # simple tasks don't need many tools
+                logger.info(f"[_run_baw] Simple task — rounds={_MAX_AUTO_ROUNDS}, tool_turns={_focus_max_tool_turns}")
+            elif _task_complexity == "complex":
+                _MAX_AUTO_ROUNDS = 5
+                if not _focus_max_tool_turns:
+                    _focus_max_tool_turns = 25  # complex tasks need more tools per round
+                logger.info(f"[_run_baw] Complex task — tool_turns={_focus_max_tool_turns}")
             output = ""
             info = {}
             all_plan_recaps = []
