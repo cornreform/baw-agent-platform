@@ -22,6 +22,7 @@ import re
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Optional
 from typing import Callable
@@ -50,6 +51,11 @@ def _human_tokens(n: int) -> str:
     if n >= 1_000:
         return f"{n/1_000:.1f}K"
     return str(n)
+
+
+# ── Constants ──────────────────────────────────────────────────
+MAX_TOOL_TURNS = 15      # hard cap on tool-calling loop iterations
+MAX_QUICK_TOOL_TURNS = 5  # stricter cap for quick mode
 
 
 # ── Task Classification Layer ──────────────────────────────────
@@ -190,7 +196,7 @@ class CostTracker:
                     "cumulative_in": self.total_tokens_in,
                     "cumulative_out": self.total_tokens_out,
                 }) + "\n")
-        except Exception:
+        except OSError:
             pass
 
     def summary(self) -> str:
@@ -1349,8 +1355,13 @@ def run_agent(
         ctx.add_assistant(quick_resp.content, quick_resp.tool_calls,
                           getattr(quick_resp, 'reasoning_content', None))
 
-        # Execute any tool calls
+        # Execute any tool calls (with hard iteration cap for quick mode)
+        _quick_turns = 0
         while quick_resp.tool_calls:
+            if _quick_turns >= MAX_QUICK_TOOL_TURNS:
+                ctx.add_user("[SYSTEM] You have exceeded the maximum tool iterations for quick mode. Synthesize results now. Do NOT call more tools.")
+                break
+            _quick_turns += 1
             for tc in quick_resp.tool_calls:
                 func = tc.get("function", {})
                 name = func.get("name", "")
@@ -1686,7 +1697,15 @@ def run_agent(
     # Tool calls from neutral response are executed immediately,
     # then the result loop continues until the model produces text only.
     _resp = neutral_response
+    _tool_turns = 0
     while _resp.tool_calls:
+        if _tool_turns >= MAX_TOOL_TURNS:
+            ctx.add_user("[SYSTEM] You have exceeded the maximum tool iterations (15). Synthesize results now. Do NOT call more tools.")
+            # Force one final LLM call with no tools to get a text summary
+            fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=None, temperature=model_temperature)
+            _resp = fb.response
+            break
+        _tool_turns += 1
         for tc in _resp.tool_calls:
             func = tc.get("function", {})
             name = func.get("name", "")
@@ -1723,6 +1742,10 @@ def run_agent(
             from .token_killer import compress_tool_output
             exe_result = compress_tool_output(name, exe_result, args)
             ctx.add_tool_result(tc.get("id", ""), name, exe_result)
+        # ── Session trimming: prevent unbounded context growth ──
+        _trimmed = ctx.trim(max_messages=60)
+        if _trimmed > 0:
+            logger.debug(f"[Loop] Session trimmed: {_trimmed} old messages removed")
         # Next LLM call to synthesize results
         fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=get_openai_tools(), temperature=model_temperature)
         _resp = fb.response

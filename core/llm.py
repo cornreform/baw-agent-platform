@@ -972,3 +972,69 @@ def validate_config(config: dict) -> list[str]:
                 issues.append(f"WARNING: Devil model '{devil}' not found in providers")
 
     return issues
+
+
+# ── Startup provider health ping ──────────────────────────────────
+
+def ping_provider_health(config: dict) -> dict:
+    """Ping all configured providers at startup to detect dead providers.
+    
+    Returns a dict mapping provider_name -> health_status.
+    Auto-blacklists providers that return 401/403.
+    If default model's provider is dead, logs CRITICAL warning.
+    """
+    import logging as _log
+    import httpx as _httpx
+    
+    providers = config.get("providers", {})
+    default_model = config.get("model", {}).get("default", "")
+    health = {}
+    
+    for pname, pcfg in providers.items():
+        base_url = pcfg.get("base_url", "")
+        api_key_env = pcfg.get("api_key_env", "")
+        api_key = os.environ.get(api_key_env, "")
+        
+        if not api_key or not base_url:
+            health[pname] = "no_key"
+            continue
+        
+        try:
+            client = _httpx.Client(timeout=10)
+            r = client.get(
+                f"{base_url.rstrip('/')}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            client.close()
+            
+            if r.status_code == 200:
+                health[pname] = "healthy"
+                _log.info(f"[Health] {pname}: OK ({r.status_code})")
+            elif r.status_code in (401, 403):
+                health[pname] = "auth_error"
+                _blacklist_provider(pname)
+                _log.warning(f"[Health] {pname}: AUTH ERROR ({r.status_code}) — blacklisted")
+            elif r.status_code in (402, 429):
+                health[pname] = "quota_issue"
+                _log.warning(f"[Health] {pname}: QUOTA/RATE ({r.status_code})")
+            else:
+                health[pname] = f"http_{r.status_code}"
+                _log.warning(f"[Health] {pname}: {r.status_code}")
+        except Exception as e:
+            health[pname] = "unreachable"
+            _log.warning(f"[Health] {pname}: unreachable ({type(e).__name__})")
+    
+    # Check if default model's provider is dead
+    try:
+        _def_model = get_model(config, default_model)
+        _def_provider = _def_model.provider
+        if health.get(_def_provider) in ("auth_error", "unreachable", "no_key"):
+            _log.critical(
+                f"[Health] DEFAULT MODEL '{default_model}' on provider '{_def_provider}' "
+                f"is DEAD (status={health.get(_def_provider)}). "
+                f"BAW will fallback to other providers."
+            )
+    except Exception:
+        pass
+    
+    return health

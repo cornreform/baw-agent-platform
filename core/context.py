@@ -84,3 +84,36 @@ class Context:
         for msg in self.messages:
             total += len(msg.content) + 50  # 50 overhead per message
         return total // 4
+
+    def trim(self, max_messages: int = 60) -> int:
+        """Trim message history to prevent unbounded session growth.
+        
+        Keeps system prompt + most recent messages. Strips oldest tool results
+        first (tool messages), then oldest user+assistant pairs if still needed.
+        
+        Returns number of messages trimmed.
+        """
+        if len(self.messages) <= max_messages:
+            return 0
+        
+        _trimmed = 0
+        # Phase 1: remove oldest tool messages (they're largest)
+        _keep = []
+        _tool_indices = [i for i, m in enumerate(self.messages) if m.role == "tool"]
+        _to_remove = set(_tool_indices[:len(_tool_indices) // 2])  # remove oldest 50%
+        
+        for i, msg in enumerate(self.messages):
+            if i in _to_remove:
+                _trimmed += 1
+                continue
+            _keep.append(msg)
+        
+        self.messages = _keep
+        
+        # Phase 2: if still over limit, trim oldest messages (keep last max_messages)
+        if len(self.messages) > max_messages:
+            _cut = len(self.messages) - max_messages
+            self.messages = self.messages[_cut:]
+            _trimmed += _cut
+        
+        return _trimmed
