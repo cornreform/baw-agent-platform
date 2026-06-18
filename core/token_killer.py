@@ -425,6 +425,16 @@ def should_activate_court(prompt: str) -> bool:
         if bp in prompt_lower:
             return False
     
+    # ── Direct instruction bypass: user gave explicit numbered list ──
+    _numbered_items = re.findall(r'(?:^|\n)\s*(\d+)[\.\)、]\s', prompt)
+    _has_direct_signal = any(s in prompt_lower for s in [
+        "直接做", "直接執行", "唔好審計", "skip audit",
+        "逐個做", "一個一個做", "唔好 plan", "唔洗審計",
+        "p0", "p1",  # priority markers imply direct action
+    ])
+    if (len(_numbered_items) >= 3) or (len(_numbered_items) >= 1 and _has_direct_signal):
+        return False  # user gave explicit numbered actions → no debate needed
+    
     # ── Very short prompts (≤100 chars): too simple for court ──
     if prompt_len < 100:
         return False
@@ -469,6 +479,11 @@ def estimate_task_complexity(prompt: str) -> str:
                           "優化", "optimize", "診斷", "diagnose",
                           "修復", "repair", "fix all", "全部",
                           "系統審計", "system audit", "全面", "comprehensive"]
+
+    # Complex: multi-step explicit instructions
+    _numbered = re.findall(r'(?:^|\n)\s*\d+[\.\)、]\s', prompt)
+    if len(_numbered) >= 3:
+        return "complex"  # 3+ numbered items = multi-step task
 
     # Complex: modification + multi-step
     if prompt_len > 500 and any(ind in prompt_lower for ind in complex_indicators):
