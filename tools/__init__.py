@@ -21,7 +21,7 @@ _TOOL_MODULES = [
     "config", "execute_code", "session_search", "cronjob", "git", "docker",
     "system", "self_diagnose", "resource_monitor", "self_capabilities",
     "tool_generate", "self_migrate", "scan_and_adopt", "skill_import",
-    "self_discover",
+    "self_discover", "list_files",
 ]
 
 _tool_modules = []
