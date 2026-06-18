@@ -124,7 +124,7 @@ class TelegramConnector(BaseConnector):
             if chat_id:
                 self._client.post(
                     f"{self._api_base}/sendMessage",
-                    json={"chat_id": chat_id, "text": "✅ **BAW Back Online**"},
+                    json={"chat_id": chat_id, "text": "**BAW Back Online**"},
                     timeout=10,
                 )
                 logger.info(f"[Telegram] Restart notification sent to {chat_id}")
@@ -1456,7 +1456,7 @@ class TelegramConnector(BaseConnector):
         if not text.lstrip().startswith("/"):  # don't placeholder slash commands
             _placeholder_msg_id = self.send(
                 chat_id,
-                f"⚡ 處理中: {text[:50]}{'…' if len(text) > 50 else ''}",
+                f"🔧 {text[:50]}{'…' if len(text) > 50 else ''}",
             )
 
         # ── Typing indicator heartbeat ──
@@ -1510,9 +1510,9 @@ class TelegramConnector(BaseConnector):
                 _min_final = _elapsed_final // 60
                 _sec_final = _elapsed_final % 60
                 if _min_final > 0:
-                    self.send(chat_id, f"✅ Done ({_min_final} min {_sec_final}s)")
+                    self.send(chat_id, f"Done ({_min_final} min {_sec_final}s)")
                 else:
-                    self.send(chat_id, f"✅ Done ({_sec_final}s)")
+                    self.send(chat_id, f"Done ({_sec_final}s)")
         _pm = threading.Thread(
             target=_progress_monitor, daemon=True, name=f"progress-{chat_id}",
         )
@@ -1553,7 +1553,7 @@ class TelegramConnector(BaseConnector):
                 return
             if not response or not response.strip():
                 logger.warning(f"[Telegram] Empty response from BAW for: {text[:80]}")
-                response = "✅ 已完成。如果你看不到預期結果，可能是因為：\n(1) 該操作沒有輸出 (如寫檔、設定配置)\n(2) 系統發生錯誤但未回傳\n\n請嘗試 `/status` 或 `/doctor` 檢查狀態。"
+                response = "已完成。如果你看不到預期結果，可能是因為：\n(1) 該操作沒有輸出 (如寫檔、設定配置)\n(2) 系統發生錯誤但未回傳\n\n請嘗試 `/status` 或 `/doctor` 檢查狀態。"
             if response:
                 logger.info(f"[Telegram] Sending response (len={len(response)}, placeholder={bool(_placeholder_msg_id)})")
                 # M2: edit the placeholder in-place if we sent one, else send fresh.

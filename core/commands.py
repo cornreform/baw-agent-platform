@@ -180,7 +180,7 @@ def _cmd_help() -> str:
     for entry in _HELP_COMMANDS:
         grouped[entry["cat"]].append(entry)
 
-    lines = ["⚡ **BAW Commands**", ""]
+    lines = ["**BAW Commands**", ""]
     for cat in ["💬 Core", "📋 Sessions", "⚙️ Config", "🧠 Memory", "🛠 Tools", "🔧 System"]:
         cmds = grouped.get(cat, [])
         if not cmds:
@@ -222,7 +222,7 @@ def _cmd_status(config: dict, data_dir: Path) -> str:
     fact_mode = config.get("fact_check", {}).get("mode", "normal")
 
     lines = [
-        "⚡ BAW Status",
+        "**BAW Status**",
         f"  Model: {model_cfg.get('default', '?')} (fallback: {model_cfg.get('fallback', 'none')})",
         f"  Tone: {tone}",
         f"  Fact check: {fact_mode}",
