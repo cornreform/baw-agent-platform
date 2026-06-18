@@ -1496,14 +1496,15 @@ def run_agent(
 
     # ═══════════════════════════════════════════════════════════════
     # Phase 1: Court — Independent dual-voice analysis
-    # (Bypassed for simple tasks to save tokens)
+    # (Bypassed for pure information tasks; activated for system-modifying,
+    #  irreversible, or architectural decisions)
     # ═══════════════════════════════════════════════════════════════
     from .adversarial import AdversarialCourt
-    from .token_killer import estimate_task_complexity
+    from .token_killer import should_activate_court, estimate_task_complexity
+    _skip_court = (not should_activate_court(prompt) and mode not in ("deep", "full"))
     _complexity = estimate_task_complexity(prompt)
-    _skip_court = (_complexity == "simple" and mode not in ("deep", "full"))
     if _skip_court:
-        logger.info(f"[loop] Court bypassed — task too simple ({_complexity})")
+        logger.info(f"[loop] Court bypassed — safe task ({_complexity})")
         court_result = None
     # Load per-side model config (both fall back to default model if unset)
     adv_cfg = config.get("adversarial", {})
