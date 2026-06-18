@@ -389,7 +389,13 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "  ⏳ 任務需要跟進 → when partial completion, user input needed\n"
                 "  ℹ️ 任務無需操作 → when user asked a question, no action needed\n"
                 "\n"
-                "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed."
+                "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed.\\n"
+                "\\n"
+                "## ANTI-DUPLICATION RULE\\n"
+                "DO NOT add a \"總結\" / \"summary\" / \"以下係\" section at the end of your response.\\n"
+                "Your entire response IS the summary. No meta-summary needed.\\n"
+                "If you find yourself writing \"以下係總結內容\", DELETE it — you are repeating yourself.\\n"
+                "The user already read your output. Don't summarize what they just read.\\n"
             )
             system_prompt += (
                 "\\n\\n## DELEGATION vs INLINE\\n"
@@ -420,7 +426,13 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "  ⏳ 任務需要跟進 → when partial completion, user input needed\n"
                 "  ℹ️ 任務無需操作 → when user asked a question, no action needed\n"
                 "\n"
-                "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed."
+                "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed.\\n"
+                "\\n"
+                "## ANTI-DUPLICATION RULE\\n"
+                "DO NOT add a \"總結\" / \"summary\" / \"以下係\" section at the end of your response.\\n"
+                "Your entire response IS the summary. No meta-summary needed.\\n"
+                "If you find yourself writing \"以下係總結內容\", DELETE it — you are repeating yourself.\\n"
+                "The user already read your output. Don't summarize what they just read.\\n"
             )
             system_prompt += (
                 "\\n\\n## DELEGATION vs INLINE\\n"

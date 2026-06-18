@@ -2023,6 +2023,17 @@ class BaseConnector(ABC):
                             _context = f" `{_cmd}`"
                         elif name == "memory" and args.get("action"):
                             _context = f" ({args['action']})"
+                        # ── Sub-agent permanent status message ──
+                        if name == "delegate_task" and chat_id:
+                            _sa_goal = (args or {}).get("goal", "")[:150]
+                            _sa_model = (args or {}).get("model_id", "") or ""
+                            _sa_info = f"🔄 **子任務**"
+                            if _sa_model:
+                                _sa_info += f" · `{_sa_model}`"
+                            _sa_info += f"\n{_sa_goal}"
+                            _sa_id = self.send(chat_id, _sa_info)
+                            if _sa_id:
+                                _subagent_msgs.append(_sa_id)
                         _status = f"{_emoji}{_context}"
                         if _progress_msg_id:
                             self.send(chat_id, _status, edit_msg_id=_progress_msg_id)
@@ -2076,6 +2087,7 @@ class BaseConnector(ABC):
             all_checkpoint_results = []
             all_uncertain_claims = []
             _recalc_total = 0
+            _subagent_msgs: list[str] = []  # track sub-agent status message IDs for permanent display
 
             # Send typing indicator
             if chat_id:
@@ -2239,6 +2251,43 @@ class BaseConnector(ABC):
 
                 # Feed into next round with clear context
                 conv_history = None  # Clear context for auto-continuation
+
+            # ── Update sub-agent status messages with results ──
+            if chat_id and _subagent_msgs:
+                import re as _sa_re
+                _sa_boxes = _sa_re.findall(
+                    r'╔═══ 巳分工.*?╚═════════════════════════════╝',
+                    output, _sa_re.DOTALL
+                )
+                for _i, (_sa_id, _box) in enumerate(zip(_subagent_msgs, _sa_boxes)):
+                    _lines = _box.split('\n')
+                    # Extract footer: Iterations + model info
+                    _footer = ""
+                    for _l in _lines:
+                        if 'Iterations:' in _l:
+                            _footer = _l.strip().lstrip('│').strip()
+                            break
+                    # Extract result summary (skip header + footer lines)
+                    _result_parts = []
+                    _in_body = False
+                    for _l in _lines:
+                        _stripped = _l.strip()
+                        if '├───' in _stripped and not _in_body:
+                            _in_body = True
+                            continue
+                        if '├───' in _stripped and _in_body:
+                            break
+                        if _in_body and _stripped.startswith('│'):
+                            _content = _stripped[1:].strip()
+                            if _content and 'Goal:' not in _content:
+                                _result_parts.append(_content)
+                    _result_text = '\n'.join(_result_parts[:5])[:300]
+                    if _result_text:
+                        _update = f"✅ **子任務完成**"
+                        if _footer:
+                            _update += f" · {_footer}"
+                        _update += f"\n{_result_text}"
+                        self.send(chat_id, _update, edit_msg_id=_sa_id)
 
             # ── Append failure report if any (proactive, not waiting for next request) ──
             if all_failure_reasons:
