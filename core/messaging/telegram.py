@@ -662,37 +662,30 @@ class TelegramConnector(BaseConnector):
 
             content = self._extract_file_content(local_path)
 
-            # ── Safety: truncate massive content to prevent LLM prompt overflow ──
-            MAX_CONTENT_CHARS = 50000  # ~12.5K tokens, safe for any model
-            _truncated = False
-            if len(content) > MAX_CONTENT_CHARS:
-                _truncated = True
-                # Keep first 30% + last 20% to preserve structure + endings
-                _head = content[: int(MAX_CONTENT_CHARS * 0.7)]
-                _tail = content[-int(MAX_CONTENT_CHARS * 0.3):]
-                content = (
-                    f"{_head}\n\n"
-                    f"┈┈┈ [中間 {len(content) - MAX_CONTENT_CHARS} 字元已省略] ┈┈┈\n\n"
-                    f"{_tail}"
-                )
-                logger.warning(
-                    f"[Telegram] PDF content truncated: {len(content)} → {MAX_CONTENT_CHARS} chars "
-                    f"(file: {file_name})"
-                )
+            # ── Save extracted text to temp file so BAW's agent can use read_file/search_files ──
+            # Instead of stuffing all text into the LLM prompt (which crashes on large PDFs),
+            # we save the text and let the agent analyze it chunk-by-chunk using its tools.
+            import tempfile as _tempfile
+            _extracted_path = Path(_tempfile.gettempdir()) / f"baw_extracted_{file_name}.txt"
+            _extracted_path.write_text(content, encoding="utf-8")
+            _content_size = len(content)
+            _content_pages = content.count("--- Page")  # rough page count
 
             prompt = (
                 f"[File: {file_name}]\n"
-                f"[Type: {doc.get('mime_type', 'unknown')}]"
-                + (f" [內容已截短: 原始 {len(content)} 字元]" if _truncated else "")
-                + f"\n\n"
-                f"{content}\n\n"
-                f"---\n"
-                f"Analyze this file. "
-                f"Summarize its key content in Traditional Chinese. "
-                f"If it's a technical document, identify the main topics."
+                f"[Type: {doc.get('mime_type', 'unknown')}]\n\n"
+                f"The full text of this document has been extracted and saved to:\n"
+                f"  {_extracted_path}\n"
+                f"  Size: {_content_size} chars, ~{_content_pages} pages\n\n"
+                f"Use `read_file` with offset/limit to read it in chunks (500 lines at a time).\n"
+                f"Use `search_files` with regex to find keywords across the document.\n"
+                f"Do NOT try to read the entire file at once — read and analyze section by section.\n\n"
+                f"Task: Analyze this file. Summarize its key content in Traditional Chinese. "
+                f"If it's a technical document, identify the main topics. "
+                f"Annotate key findings with page numbers from the extracted text."
             )
 
-            self.send(chat_id, f"🤔 Analyzing with BAW...", edit_msg_id=status_id)
+            self.send(chat_id, f"🤔 Analyzing **{file_name}** (~{_content_pages} pages)...", edit_msg_id=status_id)
             response = self._run_baw(prompt, chat_id=chat_id)
             try:
                 self._client.post(
