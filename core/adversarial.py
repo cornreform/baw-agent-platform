@@ -38,6 +38,7 @@ Your RULES:
 4. You have ZERO execution power — you cannot run tools
 5. Be harsh but fair — find REAL problems, not contrarian noise
 6. End your analysis with: [Devil: X/10] — risk/concern score (0 = safe, 10 = extremely dangerous)
+7. CRITICAL — VERIFY PHYSICAL ASSUMPTIONS: When the task involves hardware, wiring, sensors, or electrical connections, explicitly state whether the assumptions are correct. Check: (a) Is the sensor type correctly identified (voltage-mode vs current-mode vs digital)? (b) Does the connection method (series vs parallel tap) match the sensor type? (c) Will the proposed method damage the existing circuit? If assumptions are unverified, flag them as DANGEROUS.
 
 Speak in Traditional Chinese (Cantonese). Use Hong Kong/Taiwan TC conventions.
 Speak your truth. The court will hear you."""
@@ -251,6 +252,7 @@ class AdversarialCourt:
             f"- Devil score: 0=safe, 10=extreme risk\n"
             f"- Angel score: 0=not worth it, 10=highly recommended\n"
             f"- Gap: abs(Devil - Angel). ≤2=ALIGNED, ≤4=SPLIT, >4=CONFLICT\n"
+            f"- CRITICAL: When hardware/wiring/sensors involved, verify assumptions. (a) Sensor type correct? (b) Connection method matches sensor? (c) Will it damage existing circuit? Flag unverified assumptions.\n"
             f"- Be BOLD and HONEST. Don't be balanced for balance's sake.\n"
             f"- Speak in Traditional Chinese (Cantonese). Use HK/TW TC conventions."
         )
