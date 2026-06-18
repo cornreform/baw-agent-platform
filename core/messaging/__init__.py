@@ -482,6 +482,9 @@ class BaseConnector(ABC):
             if cmd == "btw" and arg:
                 return self._run_baw(f'--btw "{arg}"')
 
+            if cmd == "focus" and arg:
+                return self._handle_focus(arg, chat_id=msg.chat_id)
+
             if cmd in ("court", "ct"):
                 # M2 (Fable 5 spec): 4 sub-commands:
                 #   /court              → recent 5
@@ -2074,9 +2077,15 @@ class BaseConnector(ABC):
             _MAX_AUTO_ROUNDS = 5
             _MAX_RECALC_THRESHOLD = 5
             _MAX_TOTAL_SECONDS = 600
+            # ── Focus Mode: relentless execution — bump limits ──
+            _is_focus_mode = prompt.startswith("[FOCUS MODE")
+            if _is_focus_mode:
+                _MAX_AUTO_ROUNDS = 8
+                _MAX_TOTAL_SECONDS = 1200
+                logger.info(f"[_run_baw] Focus Mode — rounds={_MAX_AUTO_ROUNDS}, timeout={_MAX_TOTAL_SECONDS}s")
             # ── Token Killer: cap rounds for simple tasks ──
             from ..token_killer import estimate_task_complexity
-            if estimate_task_complexity(prompt) == "simple":
+            if not _is_focus_mode and estimate_task_complexity(prompt) == "simple":
                 _MAX_AUTO_ROUNDS = 2  # simple tasks don't need 5 retries
                 _MAX_TOTAL_SECONDS = 180
                 logger.info(f"[_run_baw] Simple task detected — rounds capped at {_MAX_AUTO_ROUNDS}")
@@ -2127,6 +2136,7 @@ class BaseConnector(ABC):
                         f"- Auto-install missing packages before attempting\n"
                         f"- Research root cause from error message and fix it\n\n"
                         f"Do NOT repeat the same approach that just failed.\n"
+                        + (f"FOCUS MODE: NO human questions. NO stopping. Try ANYTHING.\n" if _is_focus_mode else "") +
                         f"Execute the full plan silently. Report only the final result."
                     )
 
@@ -2435,6 +2445,175 @@ class BaseConnector(ABC):
         except BaseException as e:
             return f"[FAIL] BAW error: {e}"
 
+    # ── Focus Mode: Model Council + Relentless Execution ─────────────────
+
+    def _run_model_council(self, goal: str) -> str:
+        """Query ALL available providers in parallel for strategic advice.
+
+        Each provider's first chat-capable model is queried with the goal.
+        Returns a formatted council report.
+        """
+        import os as _os
+        import json as _json
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from urllib.request import Request, urlopen
+        from urllib.error import URLError, HTTPError
+
+        baw = self._baw_ensure()
+        config = baw["config"]
+        providers_cfg = config.get("providers", {})
+
+        # Build list of (provider_name, model_id, base_url, api_key)
+        council_members = []
+        for pname, pcfg in providers_cfg.items():
+            api_key_env = pcfg.get("api_key_env", "")
+            api_key = _os.environ.get(api_key_env, "") if api_key_env else ""
+            if not api_key:
+                # Try .env file
+                try:
+                    env_path = Path.home() / ".baw" / ".env"
+                    if env_path.exists():
+                        for _line in env_path.read_text().split("\n"):
+                            _line = _line.strip()
+                            if _line.startswith(f"{api_key_env}=") or _line.startswith(f"{api_key_env} ="):
+                                api_key = _line.split("=", 1)[1].strip().strip('"').strip("'")
+                                break
+                except Exception:
+                    pass
+            if not api_key:
+                continue
+
+            base_url = (pcfg.get("base_url", "") or "").rstrip("/")
+            if not base_url:
+                continue
+
+            # Pick first chat-capable model, or first model
+            models = pcfg.get("models", [])
+            chosen_model = ""
+            for m in models:
+                caps = m.get("capabilities", "")
+                if isinstance(caps, str) and "chat" in caps:
+                    chosen_model = m.get("id", "")
+                    break
+            if not chosen_model and models:
+                chosen_model = models[0].get("id", "")
+            if not chosen_model:
+                continue
+
+            council_members.append((pname, chosen_model, base_url, api_key))
+
+        if not council_members:
+            return "[COUNCIL] No providers with API keys found."
+
+        # Council prompt: strategy-focused, concise
+        council_prompt = (
+            f"你係一個策略專家。以下係目標：\n\n{goal}\n\n"
+            "請用 3-5 bullet point 講出你嘅建議方向。\n"
+            "Focus on：第一步做咩、潛在風險、關鍵決策。\n"
+            "簡潔，每個 bullet 一句話。廣東話。"
+        )
+
+        def _query_one(pname, model, base_url, api_key):
+            t0 = __import__('time').time()
+            try:
+                url = f"{base_url}/chat/completions"
+                payload = _json.dumps({
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "你係一個策略顧問。直接畀建議，唔好打招呼。"},
+                        {"role": "user", "content": council_prompt},
+                    ],
+                    "temperature": 0.4,
+                    "max_tokens": 500,
+                }).encode()
+                req = Request(url, data=payload,
+                              headers={"Authorization": f"Bearer {api_key}",
+                                       "Content-Type": "application/json"})
+                with urlopen(req, timeout=45) as resp:
+                    data = _json.loads(resp.read())
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    latency = (__import__('time').time() - t0) * 1000
+                    return (pname, model, content.strip() or "(empty)", latency)
+            except Exception as e:
+                latency = (__import__('time').time() - t0) * 1000
+                return (pname, model, f"ERROR: {str(e)[:100]}", latency)
+
+        results = []
+        with ThreadPoolExecutor(max_workers=len(council_members)) as pool:
+            futures = {
+                pool.submit(_query_one, pname, model, base_url, api_key): (pname, model)
+                for pname, model, base_url, api_key in council_members
+            }
+            for fut in as_completed(futures):
+                try:
+                    results.append(fut.result(timeout=50))
+                except Exception as e:
+                    pname, model = futures[fut]
+                    results.append((pname, model, f"TIMEOUT: {e}", 50000))
+
+        # Format council report
+        report_lines = [
+            "╔═══════════════════════════╗",
+            "║  🏛️  MODEL COUNCIL       ║",
+            "╠═══════════════════════════╣",
+        ]
+        success_count = 0
+        for pname, model, content, latency in results:
+            is_error = content.startswith("ERROR:") or content.startswith("TIMEOUT:")
+            tag = "⚠️" if is_error else "✅"
+            report_lines.append(f"║ {tag} **{pname}** (`{model}`) · {latency:.0f}ms")
+            if not is_error:
+                success_count += 1
+                # Truncate content for display
+                for line in content.split("\n")[:6]:
+                    line = line.strip()
+                    if line:
+                        report_lines.append(f"║   {line[:90]}")
+        report_lines.append("╚═══════════════════════════╝")
+
+        council_report = "\n".join(report_lines)
+
+        # Full council text for synthesis
+        council_full = []
+        for pname, model, content, latency in results:
+            if not content.startswith("ERROR:") and not content.startswith("TIMEOUT:"):
+                council_full.append(f"## {pname} ({model})\n{content}")
+        full_text = "\n\n".join(council_full)
+
+        return f"{council_report}\n\n[COUNCIL] {success_count}/{len(results)} models responded."
+
+    def _handle_focus(self, goal: str, chat_id: str | None = None) -> str:
+        """Focus Mode: Model Council → Synthesis → Relentless Execution.
+
+        1. Query ALL available providers for strategic advice (parallel)
+        2. Synthesize the best approach
+        3. Execute relentlessly until goal achieved — no human questions
+        """
+        # ── Phase 1: Model Council ──
+        self.send(chat_id, "🏛️ **Model Council** · 集結中...")
+        council_result = self._run_model_council(goal)
+        self.send(chat_id, council_result)
+
+        # ── Phase 2 & 3: Synthesis + Relentless Execution ──
+        focus_prompt = (
+            f"[FOCUS MODE — RELENTLESS EXECUTION]\n\n"
+            f"GOAL: {goal}\n\n"
+            f"MODEL COUNCIL ADVICE:\n{council_result}\n\n"
+            f"RULES:\n"
+            f"- NO human questions. NO clarifications. NO confirmations.\n"
+            f"- You have ALL tools. Use them aggressively.\n"
+            f"- If one approach fails, try another immediately.\n"
+            f"- Auto-install missing packages. Auto-fix config.\n"
+            f"- Try ALL available providers before giving up.\n"
+            f"- Multi-round auto-retry until DONE.\n"
+            f"- Report progress but NEVER stop to ask.\n"
+            f"- Execute until the goal is VERIFIABLY achieved.\n"
+            f"- 8 rounds max. After round 5, try completely different approaches.\n"
+            f"- DO NOT add 總結/summary section.\n"
+        )
+
+        return self._run_baw(focus_prompt, chat_id=chat_id)
+
     @staticmethod
     def _help_text() -> str:
         return (
@@ -2444,6 +2623,7 @@ class BaseConnector(ABC):
             "/help — This message\n"
             "/status — BAW system status + sessions\n"
             "/btw `<text>` — Quick answer (no court, no plan)\n"
+            "/focus `<goal>` — Model Council + relentless execution\n"
             "/fresh `<prompt>` — Raw model — no soul, no memories\n"
             "/court — 最近 5 單案件 (id+verdict+score+elapsed)\n"
             "/court `<id>` — 查全卷 (起訴/答辯/證物/判決)\n"
