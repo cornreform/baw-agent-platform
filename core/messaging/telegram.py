@@ -71,11 +71,16 @@ class TelegramConnector(BaseConnector):
 
                     # ── Provider health ping (startup check) ──
                     try:
+                        import yaml as _yaml
+                        from pathlib import Path as _Path
                         from ..llm import ping_provider_health
-                        _health = ping_provider_health(self.config)
-                        _dead = [k for k, v in _health.items() if v not in ("healthy", "no_key")]
-                        if _dead:
-                            logger.warning(f"[Telegram] Dead providers at startup: {_dead}")
+                        _cfg_path = _Path.home() / ".baw" / "config.yaml"
+                        if _cfg_path.exists():
+                            _full_cfg = _yaml.safe_load(_cfg_path.read_text(encoding="utf-8"))
+                            _health = ping_provider_health(_full_cfg)
+                            _dead = [k for k, v in _health.items() if v not in ("healthy", "no_key")]
+                            if _dead:
+                                logger.warning(f"[Telegram] Dead providers at startup: {_dead}")
                     except Exception as _he:
                         logger.warning(f"[Telegram] Provider health ping failed: {_he}")
 
