@@ -1109,11 +1109,22 @@ class BaseConnector(ABC):
         _total = len(_tasks)
         _prev = self._silent_mode
         self._silent_mode = True
+        # ── Build task context: inject original full list so sub-tasks know their siblings ──
+        _task_list_summary = "\n".join(
+            f"  {_re.match(_MULTITASK_PATTERN, t).group(0).strip() if _re.match(_MULTITASK_PATTERN, t) else t[:80]}"
+            for t in _tasks
+        )
         try:
             for _i, _task in enumerate(_tasks, 1):
                 logger.info(f"[MultiTask] [{_i}/{_total}] depth={_depth}")
+                # Inject sibling task context so each sub-task knows the full picture
+                _task_with_context = (
+                    f"[MULTI-TASK {_i}/{_total}]\n\n"
+                    f"Full task list:\n{_task_list_summary}\n\n"
+                    f"Your task (do ONLY this one):\n{_task}"
+                )
                 try:
-                    _resp = self._dispatch_task(_task, chat_id, _depth + 1)
+                    _resp = self._dispatch_task(_task_with_context, chat_id, _depth + 1)
                     _results.append(f"## Task {_i}/{_total}: {_resp[:500]}")
                 except Exception as _e:
                     _results.append(f"## Task {_i}/{_total}: [FAIL] Error — {_e}")
