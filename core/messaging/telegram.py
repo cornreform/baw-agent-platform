@@ -69,6 +69,16 @@ class TelegramConnector(BaseConnector):
                     # Register slash command menu
                     self._register_commands()
 
+                    # ── Provider health ping (startup check) ──
+                    try:
+                        from ..llm import ping_provider_health
+                        _health = ping_provider_health(self.config)
+                        _dead = [k for k, v in _health.items() if v not in ("healthy", "no_key")]
+                        if _dead:
+                            logger.warning(f"[Telegram] Dead providers at startup: {_dead}")
+                    except Exception as _he:
+                        logger.warning(f"[Telegram] Provider health ping failed: {_he}")
+
                     # ── Back-online notification after restart ──
                     self._notify_restart()
 
