@@ -1135,9 +1135,16 @@ class BaseConnector(ABC):
             _body = _r.split(":", 1)[1] if ":" in _r else _r
             _body_lower = _body.lower()
             # Genuine success: tool output shows it worked
-            _is_fail = (
-                "[FAIL]" in _r
-                or "error" in _body_lower
+            _has_success = any(s in _body for s in [
+                "[OK]", "[DONE]", "[PASS]", "completed",
+                "[CLEAN]", "empty", "removed",
+            ])
+            _has_explicit_fail = (
+                "[FAIL]" in _r or "was not executed" in _body_lower
+                or "was not created" in _body_lower
+            )
+            _has_error_kw = (
+                "error" in _body_lower
                 or "fail" in _body_lower
                 or "syntax error" in _body_lower
                 or "syntaxerror" in _body_lower or "synatx" in _body_lower
@@ -1149,9 +1156,9 @@ class BaseConnector(ABC):
                 or "沒有建立" in _body
                 or "係 shell command 唔係 tool" in _body
                 or "不是 memory tool" in _body
-                or "was not executed" in _body_lower
-                or "was not created" in _body_lower
             )
+            # Only flag as fail: explicit failure OR errors WITHOUT success markers
+            _is_fail = _has_explicit_fail or (_has_error_kw and not _has_success)
             if _is_fail:
                 _real_fail += 1
                 _suspicious.append(_r.split("\n")[0][:60])
@@ -1162,7 +1169,7 @@ class BaseConnector(ABC):
             f"- Total: {_total}  |  Pass: {_real_pass}  |  Fail: {_real_fail}"
         )
         if _suspicious:
-            _summary += f"\n- [WARN] Possibly fabricated tasks: {len(_suspicious)}"
+            _summary += f"\n- [WARN] Possible failures detected: {len(_suspicious)}"
             for _s in _suspicious:
                 _summary += f"\n  - `{_s}`"
         _summary += f"\n- Nesting depth: {_depth}\n"
