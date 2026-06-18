@@ -20,9 +20,19 @@ logger = logging.getLogger("baw.token_killer")
 
 # ─── Constants ───────────────────────────────────────────────────
 MAX_TOOL_OUTPUT_CHARS = 12000   # hard cap per tool result in context
+MAX_SCHEMATIC_CHARS = 24000     # higher cap for circuit/schematic content
 MAX_TERMINAL_CHARS = 8000       # tighter cap for terminal output
 MAX_SEARCH_PER_FILE = 3         # max matches per file in search
 MAX_WEB_EXTRACT_CHARS = 2000    # per web_extract result
+
+# Patterns that indicate schematic/circuit content — needs higher fidelity
+SCHEMATIC_PATTERNS = [
+    re.compile(r"(?:電路|電氣|線路|schematic|circuit|wiring|pinout|connector)", re.IGNORECASE),
+    re.compile(r"(?:sensor|hall|transducer|analog|digital)\s+(?:input|output|signal|interface)", re.IGNORECASE),
+    re.compile(r"(?:Vcc|GND|pull.up|current.sense|ADC|PWM|GPIO)", re.IGNORECASE),
+    re.compile(r"(?:2-wire|3-wire|current.mode|voltage.mode|active.sensor)", re.IGNORECASE),
+    re.compile(r"pin\s*(?:\d+|assignment|configuration|mapping)", re.IGNORECASE),
+]
 
 NOISE_PATTERNS = [
     re.compile(r"\x1b\[[0-9;]*[a-zA-Z]"),  # ANSI escape codes
@@ -272,6 +282,12 @@ def _compress_web_search(output: str, args: dict) -> str:
     return output
 
 
+def _is_schematic_content(text: str) -> bool:
+    """Check if text contains circuit/schematic content that needs higher fidelity."""
+    sample = text[:3000]  # check first 3K chars
+    return any(pat.search(sample) for pat in SCHEMATIC_PATTERNS)
+
+
 # ─── Public API ──────────────────────────────────────────────────
 
 def compress_tool_output(name: str, raw_output: str, args: dict | None = None) -> str:
@@ -300,9 +316,10 @@ def compress_tool_output(name: str, raw_output: str, args: dict | None = None) -
         elif name in ("web_search", "web_extract"):
             output = _compress_web_search(raw_output, args)
         elif name == "read_file":
-            # Agent controls chunking via offset/limit — just cap if excessive
-            if len(raw_output) > MAX_TOOL_OUTPUT_CHARS:
-                output = _truncate_smart(raw_output, MAX_TOOL_OUTPUT_CHARS)
+            # Determine if this is schematic/circuit content — needs higher fidelity
+            _cap = MAX_SCHEMATIC_CHARS if _is_schematic_content(raw_output) else MAX_TOOL_OUTPUT_CHARS
+            if len(raw_output) > _cap:
+                output = _truncate_smart(raw_output, _cap)
             else:
                 output = raw_output
         else:
@@ -356,6 +373,15 @@ COURT_ACTIVATE_PATTERNS = [
     "buy", "purchase", "subscribe",
     "deploy to production", "production deploy",
     "charge", "bill",
+    # ── Physical/electrical safety (sensor tap, wiring modification) ──
+    # Any recommendation that touches vehicle/hardware wiring MUST go through court
+    "接線", "並聯", "串聯", "直插", "T-tap", "tap", "parallel tap",
+    "駁線", "駁電", "駁 sensor", "飛線", "跳線",
+    "剝皮", "剪斷", "剪線", "cut wire", "splice",
+    "高壓", "電源線", "接地線", "signal wire",
+    "sensor pin", "sensor 腳", "pin assignment",
+    "直接串", "直接並", "直接接", "直駁",
+    "chassis ground", "firewall grommet",
 ]
 
 # Actions that are ALWAYS safe to bypass court
