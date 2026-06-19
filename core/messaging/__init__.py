@@ -519,7 +519,7 @@ class BaseConnector(ABC):
             if cmd in ("restart",):
                 self._restart_requested = True
                 self._save_restart_chat_id(msg.chat_id)
-                return "[>] Restarting BAW engine..."
+                return "Restarting BAW engine..."
 
             if cmd in ("reload",):
                 return self._baw_reload()
@@ -591,7 +591,7 @@ class BaseConnector(ABC):
                     elif subcmd == "restore":
                         from core.backup import restore_backup
                         r = restore_backup("latest")
-                        return f"[>] 還原: {r['status']}\n{r.get('detail', '')}\n檔案數: {r.get('files_restored', 0)}"
+                        return f"還原: {r['status']}\\n{r.get('detail', '')}\\n檔案數: {r.get('files_restored', 0)}"
                     else:  # default: create
                         from core.backup import create_backup
                         r = create_backup()
@@ -723,7 +723,7 @@ class BaseConnector(ABC):
                     "id": new_sid, "name": "fresh",
                     "messages": [], "created": time.time(), "updated": time.time(),
                 }
-                return "[>] Session reset — starting fresh."
+                return "Session reset — starting fresh."
             if cmd == "list":
                 return self._handle_task_command(msg.chat_id, "list", "")
             if cmd == "resume" and arg:
@@ -1685,7 +1685,7 @@ class BaseConnector(ABC):
         def _step(label: str):
             nonlocal step
             step += 1
-            self.send(chat_id, f"[>] **BAW Update** — Step {step}/{total_steps}\n{label}")
+            self.send(chat_id, f"BAW Update — Step {step}/{total_steps}\n{label}")
 
         def _done(label: str):
             self.send(chat_id, f"  [OK] Step {step}/{total_steps} — {label}")

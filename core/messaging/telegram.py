@@ -180,7 +180,7 @@ class TelegramConnector(BaseConnector):
             if chat_id:
                 self._client.post(
                     f"{self._api_base}/sendMessage",
-                    json={"chat_id": chat_id, "text": "**BAW Back Online**"},
+                    json={"chat_id": chat_id, "text": "<b>BAW Back Online</b>", "parse_mode": "HTML"},
                     timeout=10,
                 )
                 logger.info(f"[Telegram] Restart notification sent to {chat_id}")
