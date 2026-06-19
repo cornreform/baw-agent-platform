@@ -2144,12 +2144,9 @@ class BaseConnector(ABC):
                 if chat_id and not _is_focus_mode:
                     try:
                         _bg_msg = (
-                            "⏳ **Detected complex task** — running in background.
-"
-                            "Estimated: multiple rounds, multiple tools.
-"
-                            "I will send the full result when ready.
-"
+                            "⏳ **Detected complex task** — running in background.\n"
+                            "Estimated: multiple rounds, multiple tools.\n"
+                            "I will send the full result when ready.\n"
                             "You can send new messages — they will queue."
                         )
                         self.send(chat_id, _bg_msg)
@@ -2419,75 +2416,14 @@ class BaseConnector(ABC):
                 session["updated"] = time.time()
                 self._save_session_to_disk(session)
 
-            # Strip HTML tags for Telegram display
-            output = re.sub(r'<[^>]+>', '', output)
-            # ── Compress excessive blank lines: 3+ consecutive newlines → 2 (keep 1 blank line max)
-            output = re.sub(r'\n{3,}', '\n\n', output)
-            output = output.strip()
-            # ── Hard anti-duplication: strip trailing 總結/summary sections ──
-            # LLM system prompt has ANTI-DUPLICATION RULE but LLMs often ignore it.
-            # This is a HARD post-processing filter — strip summary-section headers
-            # that appear at the END of output and either repeat content or are empty.
-            _dedup_patterns = [
-                (r'\n*#{1,3}\s*總結\s*\n', '總結'),
-                (r'\n*#{1,3}\s*Summary\s*\n', 'Summary'),
-                (r'\n*#{1,3}\s*总结\s*\n', '总结'),
-                (r'\n*以下係總結內容[：:]\s*\n', '以下係總結內容'),
-                (r'\n*以下係總結[：:]\s*\n', '以下係總結'),
-                (r'\n*以上係總結[：:]\s*\n', '以上係總結'),
-                (r'\n*\*\*總結\*\*[：:]?\s*\n', '**總結**'),
-                (r'\n*\*\*Summary\*\*[：:]?\s*\n', '**Summary**'),
-                (r'\n*總結[：:]\s*\n', '總結：'),
-            ]
-            _stripped = False
-            for _pat, _label in _dedup_patterns:
-                _match = re.search(_pat, output)
-                if not _match:
-                    continue
-                _before = output[:_match.start()]
-                _after = output[_match.end():]
-                # Only strip if (a) section is near end (last 40% of output), OR
-                # (b) after-content is empty or just repeats before-content
-                _pos_ratio = _match.start() / max(len(output), 1)
-                _after_clean = _after.strip()
-                _is_near_end = _pos_ratio > 0.6
-                _is_empty_after = len(_after_clean) < 20
-                _is_repeat = _after_clean and len(_after_clean) < len(_before) * 0.3 and _after_clean[:50] in _before[-200:]
-                if _is_near_end or _is_empty_after or _is_repeat:
-                    output = _before.strip()
-                    _stripped = True
-                    break
-            if _stripped:
-                output = output.strip()
-            # ── Credential guard: redact API keys that may have leaked into output ──
-            # BAW's bash tool strips API keys from subprocess env, but LLM output may
-            # still contain keys from config dumps, .env reads, or hallucinated fabrications.
-            _cred_patterns = [
-                # OpenAI/DeepSeek-style keys: sk-... (at least 20 chars after prefix)
-                (r'(sk-[A-Za-z0-9]{20,})', 'sk-***REDACTED***'),
-                # Generic API key patterns: long alphanumeric with KEY/SECRET/TOKEN prefix
-                (r'([A-Z_]{3,30}_(?:API_)?(?:KEY|SECRET|TOKEN)\s*=\s*)([\S]{20,})',
-                 r'\1***REDACTED***'),
-                # Bearer tokens in curl or HTTP headers
-                (r'(Bearer\s+)([A-Za-z0-9_\-\.]{20,})', r'\1***REDACTED***'),
-                # JSON config: "api_key": "long-string"
-                (r'("api_key"\s*:\s*")([^"]{20,})(")', r'\1***REDACTED***\3'),
-                # Hex-style keys: 32+ hex chars that look like API keys
-                (r'\b([A-Za-z0-9+/]{40,}={0,2})\b', None),  # base64-like
-            ]
-            _redacted_count = 0
-            for _cp, _replacement in _cred_patterns:
-                if _replacement:
-                    _new_output, _n = re.subn(_cp, _replacement, output)
-                    if _n > 0:
-                        output = _new_output
-                        _redacted_count += _n
-            if _redacted_count > 0:
-                output = f"[SECURITY] {_redacted_count} credential(s) redacted\n\n{output}"
-            # Limit to 4000 chars
-            if len(output) > 4000:
-                output = output[:3997] + "..."
-            # ── Guarantee non-empty output — user must always see a result ──
+            # ── Unified output validation ──
+            # All post-processing (HTML strip, blank line compression,
+            # credential redaction, anti-duplication, hallucination guard,
+            # length enforcement) is now centralised in output_validator.
+            from ..output_validator import validate_output
+            output = validate_output(output, prompt=prompt)
+
+            # ── Context-aware empty output fallback ──
             if not output.strip():
                 if all_failure_reasons:
                     lines = ["[FAIL] Task failed:"]
@@ -2497,54 +2433,7 @@ class BaseConnector(ABC):
                 elif info and info.get("goal_achieved") is False:
                     output = "❗ 任務未能完成目標，需要跟進。"
                 else:
-                    output = "✅ 任務已完成。 (無額外輸出 — 以上進度訊息已包含步驟結果)"
-            # ── Hallucination guard: LLM sometimes claims it "cannot access local files"
-            #    even though it has read_file/write_file/terminal tools. Override it.
-            _hallucination_phrases = [
-                "無法直接讀取", "無法直接讀取你電腦上的檔案",
-                "cannot access local files", "i cannot access", "我無法直接",
-                "我無法讀取", "無法讀取你電腦",
-                "唔支援直接 attach", "唔支援直接傳送", "唔支援直接",
-                "唔支援上傳", "不能直接 attach", "cannot attach files",
-                "cannot directly attach", "does not support attaching",
-                "don't support sending files", "can't send files directly",
-                "cannot send files", "can't attach files",
-                "呢個 chat interface 唔支援", "chat interface 唔支援",
-            ]
-            if any(_hp in output.lower() for _hp in _hallucination_phrases):
-                # Try to extract file path from original prompt
-                _file_match = re.search(
-                    r'((?:/tmp/|/home/|/app/|~/.baw/|/etc/|/var/)[^\s"\'\`\u3002\uff0c？]+)',
-                    prompt
-                )
-                if _file_match:
-                    _fpath = _file_match.group(1)
-                    try:
-                        from pathlib import Path as _Path
-                        _pp = _Path(_fpath).expanduser().resolve()
-                        if not _pp.exists():
-                            _fcontent = f"Error: file not found: {_fpath}"
-                        elif _pp.is_dir():
-                            _items = [p.name + ('/' if p.is_dir() else '') for p in _pp.iterdir()]
-                            _fcontent = f"Directory listing ({len(_items)} items):\n" + "\n".join(sorted(_items))
-                        elif not _pp.is_file():
-                            _fcontent = f"Error: not a file: {_fpath}"
-                        else:
-                            _fcontent = _pp.read_text(encoding="utf-8")
-                        if _fcontent.startswith("Error:"):
-                            output = f"[FAIL] 無法讀取 `{_fpath}`：{_fcontent}"
-                        else:
-                            output = (
-                                f"[FILE] **檔案內容** (`{_fpath}`):\n"
-                                f"```\n{_fcontent[:2000]}\n```"
-                            )
-                    except Exception as _e2:
-                        output = f"[FAIL] 讀檔錯誤: {_e2}"
-                else:
-                    output = (
-                        "[FAIL] 讀檔失敗: 請求包含讀取檔案，"
-                        "但 LLM 誤報無法讀取。未能自動提取檔案路徑。"
-                    )
+                    output = "✅ 任務已完成。（無額外輸出）"
 
             # ── Auto-deliver files: detect file paths in output, send as MEDIA ──
             _pending_media = []  # collect MEDIA paths here so trim doesn't lose them
