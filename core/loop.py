@@ -1781,8 +1781,8 @@ def run_agent(
 
     try:
         mem.remember(f"User: {prompt[:150]} → BAW: {(_resp.content or '')[:150]}")
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.warning(f"Memory remember failed: {_e}")
 
     output = _verify_post_turn_claims(output, data_dir)
     return output, {

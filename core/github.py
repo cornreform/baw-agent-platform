@@ -250,8 +250,9 @@ def setup_guide() -> str:
                        capture_output=True, text=True, timeout=10)
             if r.returncode == 0:
                 lines.append(f"   Logged in as: {r.stdout.strip()}")
-        except Exception:
-            pass
+        except Exception as _e:
+            import logging
+            logging.getLogger("baw.github").debug(f"gh auth check failed: {_e}")
     else:
         lines.append("   ❌ gh not authenticated")
         token = _get_token()
