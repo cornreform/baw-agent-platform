@@ -942,11 +942,22 @@ class TelegramConnector(BaseConnector):
                             self.send(chat_id, f"❌ OpenAI Whisper API 失敗: {e}。嘗試其他方法...")
                     else:
                         status_lines.append(f"   ⚠️ {api_key_env} 未設定")
-                elif stt_method in ("auto-asr", "model"):
+                elif stt_method in ("auto-asr", "model", "hybrid"):
                     # Auto-detect ASR protocol: try multiple endpoint patterns
-                    api_key_env = stt_config.get("api_key_env", stt_config.get("api_key_env", ""))
-                    stt_model_id = stt_config.get("model", "").strip()
-                    base_url = stt_config.get("base_url", "")
+                    # ── hybrid: resolve primary/fallback tiers before probing ──
+                    if stt_method == "hybrid":
+                        primary = stt_config.get("primary", {})
+                        _active = primary if (primary.get("base_url") and os.environ.get(primary.get("api_key_env", ""))) else stt_config
+                        api_key_env = _active.get("api_key_env", "")
+                        stt_model_id = (_active.get("model") or stt_config.get("model", "")).strip()
+                        base_url = _active.get("base_url", "")
+                        if not base_url:
+                            base_url = stt_config.get("base_url", "")
+                        logger.info(f"[Telegram] hybrid STT: primary={'→'.join([primary.get(k,'') for k in ['model','base_url']]) if primary else 'none'}, resolved={stt_model_id} @ {base_url}")
+                    else:
+                        api_key_env = stt_config.get("api_key_env", stt_config.get("api_key_env", ""))
+                        stt_model_id = stt_config.get("model", "").strip()
+                        base_url = stt_config.get("base_url", "")
                     api_key = os.environ.get(api_key_env, "")
                     if api_key and base_url:
                         self.send(chat_id, f"🔍 ASR auto-detect（{base_url}）...")
@@ -1164,9 +1175,21 @@ class TelegramConnector(BaseConnector):
             else:
                 # ── No STT method available — present diagnostics + options ──
                 stt_method = stt_config.get("method", "")
-                stt_model = stt_config.get("model", "")
-                stt_base = stt_config.get("base_url", "")
-                stt_key_env = stt_config.get("api_key_env", "")
+                # hybrid: resolve primary config for accurate diagnostics
+                if stt_method == "hybrid":
+                    primary = stt_config.get("primary", {})
+                    if primary.get("base_url") and os.environ.get(primary.get("api_key_env", "")):
+                        stt_model = primary.get("model", stt_config.get("model", ""))
+                        stt_base = primary.get("base_url", "")
+                        stt_key_env = primary.get("api_key_env", "")
+                    else:
+                        stt_model = stt_config.get("model", "")
+                        stt_base = stt_config.get("base_url", "")
+                        stt_key_env = stt_config.get("api_key_env", "")
+                else:
+                    stt_model = stt_config.get("model", "")
+                    stt_base = stt_config.get("base_url", "")
+                    stt_key_env = stt_config.get("api_key_env", "")
                 key_set = bool(os.environ.get(stt_key_env)) if stt_key_env else False
 
                 if stt_method and stt_model:
