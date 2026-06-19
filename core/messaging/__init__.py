@@ -2126,7 +2126,7 @@ class BaseConnector(ABC):
                 _focus_max_tool_turns = 40  # override per-round tool cap
                 logger.info(f"[_run_baw] Focus Mode — rounds={_MAX_AUTO_ROUNDS}, timeout={_MAX_TOTAL_SECONDS}s, tool_turns={_focus_max_tool_turns}")
             else:
-                _focus_max_tool_turns = 0  # use default (15)
+                _focus_max_tool_turns = 0  # will be set by complexity below
             # ── Token Killer: adaptive tool cap based on task complexity ──
             from ..token_killer import estimate_task_complexity
             _task_complexity = estimate_task_complexity(prompt) if not _is_focus_mode else "complex"
@@ -2135,6 +2135,11 @@ class BaseConnector(ABC):
                 _MAX_TOTAL_SECONDS = 180
                 _focus_max_tool_turns = 10  # simple tasks don't need many tools
                 logger.info(f"[_run_baw] Simple task — rounds={_MAX_AUTO_ROUNDS}, tool_turns={_focus_max_tool_turns}")
+            elif _task_complexity == "moderate":
+                _MAX_AUTO_ROUNDS = 3
+                _MAX_TOTAL_SECONDS = 360
+                _focus_max_tool_turns = 50
+                logger.info(f"[_run_baw] Moderate task — rounds={_MAX_AUTO_ROUNDS}, tool_turns={_focus_max_tool_turns}")
             elif _task_complexity == "complex":
                 _MAX_AUTO_ROUNDS = 5
                 if not _focus_max_tool_turns:
@@ -2218,7 +2223,7 @@ class BaseConnector(ABC):
                        verbose=False,
                        conversation_history=conv_history if _round == 1 else None,
                        progress_callback=_on_progress if _round == 1 else None,
-                       max_tool_turns=_focus_max_tool_turns if _focus_max_tool_turns else 15,
+                       max_tool_turns=_focus_max_tool_turns if _focus_max_tool_turns else 50,
                     )
                     # Poll for result with cancel checking every 1s
                     import time as _time
