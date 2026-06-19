@@ -478,7 +478,9 @@ def estimate_task_complexity(prompt: str) -> str:
                           "audit", "審計", "cleanup", "清理",
                           "優化", "optimize", "診斷", "diagnose",
                           "修復", "repair", "fix all", "全部",
-                          "系統審計", "system audit", "全面", "comprehensive"]
+                          "系統審計", "system audit", "全面", "comprehensive",
+                          "逐個", "檢查所有", "check all", "each",
+                          "everything", "所有", "全部provider"]
 
     # Complex: multi-step explicit instructions
     _numbered = re.findall(r'(?:^|\n)\s*\d+[\.\)、]\s', prompt)
