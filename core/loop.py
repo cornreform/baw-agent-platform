@@ -1513,6 +1513,7 @@ def run_agent(
 
         output += final_content
         output += f"\n\n{format_cost_summary()}"
+        output = output.strip()
         
         # ── Context compaction: summarize old turns before returning ──
         _q_total = ctx.total_chars()
@@ -1910,6 +1911,7 @@ def run_agent(
     output += (_resp.content or "")
     # Append cost summary BEFORE length trim so it's counted
     output += f"\\n\\n{format_cost_summary()}"
+    output = output.strip()
     # ── Output token budget: post-generation length enforcement ──
     if _was_truncated:
         output += "\n\n*(Response truncated to ~800 words for readability)*"
