@@ -44,6 +44,6 @@
 
 - name: daily-self-report
   cron: "0 10 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.scheduler import Scheduler; from pathlib import Path; s=Scheduler(Path.home() / '.baw'); print(s.status_report())\""
-  description: "10:00 HKT — Morning report: collect nightly results → compact summary (DISABLED — enable via /cron enable daily-self-report)"
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.scheduler import Scheduler; from pathlib import Path; s=Scheduler(Path.home() / '.baw'); print(s.status_report()); print(); print(s.cron_status_report())\""
+  description: "10:00 HKT — Morning report: scheduled tasks + recent failures (DISABLED — enable via /cron enable daily-self-report)"
   enabled: false
