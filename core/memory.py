@@ -318,6 +318,10 @@ class MemoryStore:
             if query_lower in content_lower:
                 is_match = True
                 match_score = 1.0
+            # 2. ID match — search by memory ID
+            elif query_lower in entry_id or entry_id.endswith(query_lower):
+                is_match = True
+                match_score = 1.0
             else:
                 # 2. Keyword Jaccard similarity
                 content_kw = self._keywords(content)
