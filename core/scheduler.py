@@ -14,9 +14,12 @@ import uuid
 import yaml
 import shlex
 import threading
+import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from croniter import croniter
+
+logger = logging.getLogger("baw.scheduler")
 
 from .display import front_desk_task_id, front_desk_status
 
@@ -205,14 +208,31 @@ class Scheduler:
                     prompt = job.get("prompt", job.get("name", ""))
                     (task_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
                     (task_dir / "status.txt").write_text("queued", encoding="utf-8")
-                    # Execute via BAW agent
+                    # Execute via BAW agent in daemon thread with status tracking
                     import subprocess as sp
-                    sp.Popen(
-                        ["baw", "--mode", "hybrid", "--task-id", task_id, prompt],
-                        stdout=(task_dir / "stdout.txt").open("w"),
-                        stderr=(task_dir / "stderr.txt").open("w"),
-                        cwd=str(self.data_dir.parent),
-                    )
+                    def _run_cron_agent():
+                        try:
+                            _r = sp.run(
+                                ["baw", "--mode", "hybrid", "--task-id", task_id, prompt],
+                                capture_output=True, text=True, timeout=600,
+                                cwd=str(self.data_dir.parent),
+                            )
+                            (task_dir / "stdout.txt").write_text(_r.stdout or "", encoding="utf-8")
+                            (task_dir / "stderr.txt").write_text(_r.stderr or "", encoding="utf-8")
+                            if _r.returncode == 0:
+                                (task_dir / "status.txt").write_text("completed", encoding="utf-8")
+                            else:
+                                (task_dir / "status.txt").write_text(f"failed({_r.returncode})", encoding="utf-8")
+                                logger.warning(f"[Scheduler] cron job {job.get('name','?')} failed (rc={_r.returncode})")
+                        except sp.TimeoutExpired:
+                            (task_dir / "status.txt").write_text("timeout", encoding="utf-8")
+                            logger.warning(f"[Scheduler] cron job {job.get('name','?')} timed out")
+                        except Exception as _ce:
+                            (task_dir / "stderr.txt").write_text(str(_ce), encoding="utf-8")
+                            (task_dir / "status.txt").write_text(f"error: {str(_ce)[:100]}", encoding="utf-8")
+                            logger.warning(f"[Scheduler] cron job {job.get('name','?')} error: {_ce}")
+                    _th = threading.Thread(target=_run_cron_agent, daemon=True)
+                    _th.start()
                     # Update job timing
                     sched = job.get("schedule", "")
                     job["last_run"] = now.timestamp()
@@ -241,8 +261,8 @@ class Scheduler:
                 cron_path.write_text(
                     json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
                 )
-        except Exception:
-            pass
+        except Exception as _cje:
+            logger.warning(f"[Scheduler] _check_cron_jobs error: {_cje}")
         # ── Firing ──
 
     def _cron_tz(self) -> str:
@@ -430,15 +450,105 @@ class Scheduler:
             _th.start()
             return task_id
 
-        # BAW agent mode
+        # BAW agent mode — run in daemon thread with status tracking
         import subprocess as sp
-        sp.Popen(
-            ["baw", "--mode", "hybrid", "--task-id", task_id, prompt or task.name],
-            stdout=(task_dir / "stdout.txt").open("w"),
-            stderr=(task_dir / "stderr.txt").open("w"),
-            cwd=str(self.data_dir.parent),
-        )
+        def _run_agent():
+            try:
+                _result = sp.run(
+                    ["baw", "--mode", "hybrid", "--task-id", task_id, prompt or task.name],
+                    capture_output=True, text=True, timeout=600,
+                    cwd=str(self.data_dir.parent),
+                )
+                (task_dir / "stdout.txt").write_text(_result.stdout or "", encoding="utf-8")
+                (task_dir / "stderr.txt").write_text(_result.stderr or "", encoding="utf-8")
+                if _result.returncode == 0:
+                    (task_dir / "status.txt").write_text("completed", encoding="utf-8")
+                else:
+                    (task_dir / "status.txt").write_text(f"failed({_result.returncode})", encoding="utf-8")
+                    err_preview = (_result.stderr or "")[:200]
+                    logger.warning(f"[Scheduler] {task.name} failed (rc={_result.returncode}): {err_preview}")
+            except sp.TimeoutExpired:
+                (task_dir / "status.txt").write_text("timeout", encoding="utf-8")
+                logger.warning(f"[Scheduler] {task.name} timed out after 600s")
+            except Exception as _e:
+                (task_dir / "stderr.txt").write_text(str(_e), encoding="utf-8")
+                (task_dir / "status.txt").write_text(f"error: {str(_e)[:100]}", encoding="utf-8")
+                logger.warning(f"[Scheduler] {task.name} error: {_e}")
+        _th = threading.Thread(target=_run_agent, daemon=True)
+        _th.start()
         return task_id
+
+    # ── Status reporting ──
+
+    def cron_status_report(self) -> str:
+        """Scan recent task directories and report failures.
+
+        Returns a compact summary of cron task health.
+        """
+        tasks_dir = self.data_dir / TASKS_DIR
+        if not tasks_dir.exists():
+            return "No cron task history yet."
+
+        now = datetime.now(timezone.utc)
+        lines = []
+        failed_count = 0
+        timeout_count = 0
+        error_count = 0
+        completed_count = 0
+
+        for task_dir in sorted(tasks_dir.iterdir(), reverse=True):
+            if not task_dir.is_dir():
+                continue
+            status_file = task_dir / "status.txt"
+            if not status_file.exists():
+                continue
+            status = status_file.read_text(encoding="utf-8").strip()
+            task_name = task_dir.name
+
+            if status == "completed":
+                completed_count += 1
+                continue
+            elif status.startswith("failed"):
+                failed_count += 1
+            elif status == "timeout":
+                timeout_count += 1
+            elif status.startswith("error"):
+                error_count += 1
+            else:
+                continue  # "running", "queued" — skip
+
+            # Read error details
+            stderr_file = task_dir / "stderr.txt"
+            err_preview = ""
+            if stderr_file.exists():
+                err_text = stderr_file.read_text(encoding="utf-8").strip()
+                err_preview = err_text[:150]
+
+            prompt_file = task_dir / "prompt.txt"
+            task_desc = task_name
+            if prompt_file.exists():
+                task_desc = prompt_file.read_text(encoding="utf-8").strip()[:80]
+
+            lines.append(f"  [{status}] {task_desc}")
+            if err_preview:
+                lines.append(f"         {err_preview}")
+
+            if len(lines) >= 20:
+                break
+
+        total = failed_count + timeout_count + error_count
+        if total == 0:
+            return f"All {completed_count} recent cron tasks completed successfully."
+
+        summary = f"Cron status: {completed_count} ok"
+        if failed_count:
+            summary += f", {failed_count} failed"
+        if timeout_count:
+            summary += f", {timeout_count} timeout"
+        if error_count:
+            summary += f", {error_count} error"
+        summary += "\n\nRecent failures:\n" + "\n".join(lines)
+        return summary
 
     # ── Daemon ──
 
