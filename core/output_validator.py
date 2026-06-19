@@ -255,6 +255,7 @@ def _compress_verbose(text: str) -> str:
     - >3 bold/markdown section headers → collapse to compact format
     - [PLAN] Diagnosis sections at end → strip
     - Token footer per-call breakdown → strip (keep summary line)
+    - Response > 5 paragraphs with section headers → collapse to lead-only
     """
     # Strip diagnosis sections — they're noise after a failure report
     text = _DIAGNOSIS_HEADER.sub('', text).strip()
@@ -272,38 +273,60 @@ def _compress_verbose(text: str) -> str:
     lines = text.split('\n')
     result_lines = []
     first_result_written = False
+    kept_headers = 0
+    MAX_SECTIONS = 2
+    # Track if we've entered "details" territory past the lead
+    _in_detail = False
 
     for line in lines:
         stripped = line.strip()
         if not stripped:
-            result_lines.append(line)
+            # Keep blank lines for readability, but collapse runs
+            if result_lines and result_lines[-1].strip():
+                result_lines.append(line)
             continue
 
-        # Keep the first non-header, non-empty line as the lead result
+        # ── Extract lead result: first non-header non-metadata line ──
         if not first_result_written and not _SECTION_HEADER.match(stripped):
-            if not stripped.startswith(('[', '📊', '╔')):
-                result_lines.insert(0, stripped)
-                result_lines.insert(1, '')
-                first_result_written = True
+            if not stripped.startswith(('[', '📊', '╔', '```')):
+                # Check if this looks like a result line (not a section header)
+                if len(stripped) > 5:
+                    result_lines.insert(0, stripped)
+                    result_lines.insert(1, '')
+                    first_result_written = True
+                    _in_detail = True
                 continue
 
-        # Keep only essential headers (max 2), skip the rest
+        # ── Section header handling ──
         header_match = _SECTION_HEADER.match(stripped)
         if header_match:
-            # Only keep if we haven't exceeded max sections
-            current_headers = sum(1 for l in result_lines if _SECTION_HEADER.match(l.strip()))
-            if current_headers >= 2:
-                continue  # Skip this section header
+            if kept_headers >= MAX_SECTIONS:
+                continue  # Skip surplus section headers
+            result_lines.append(line)
+            kept_headers += 1
+            _in_detail = False
+            continue
+
+        # ── Detail content under kept headers ──
+        # Keep bullet points under section headers
+        if stripped.startswith(('- ', '• ', '* ', '  -')):
             result_lines.append(line)
             continue
 
-        # Keep bullet points under kept headers only
-        if stripped.startswith(('- ', '• ', '* ')):
-            # Check if previous kept line was a header
+        # Keep key-value lines (e.g. "Provider | Status")
+        if '|' in stripped and '--' not in stripped:
             result_lines.append(line)
             continue
 
-        # Skip everything else
+        # After we have a lead result, skip non-essential prose
+        # Only keep lines that look like important data
+        if _in_detail:
+            # Keep lines with specific content (not just explanatory text)
+            result_lines.append(line)
+            _in_detail = False
+            continue
+
+        # Skip low-value prose between sections
         pass
 
     if len(result_lines) < 3:

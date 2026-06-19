@@ -22,6 +22,14 @@ _TOOL_MODULES = [
     "system", "self_diagnose", "resource_monitor", "self_capabilities",
     "tool_generate", "self_migrate", "scan_and_adopt", "skill_import",
     "self_discover", "list_files",
+    # ── Previously missing tools (6 files existed but not registered) ──
+    "search_files",
+    "patch",
+    "web_extract",
+    "vision",
+    "browser",
+    "selftest",
+    "delegate_task",
 ]
 
 _tool_modules = []
