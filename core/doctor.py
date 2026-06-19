@@ -36,9 +36,9 @@ def _fail(msg: str):
 
 def _header(title: str):
     w, _ = shutil.get_terminal_size()
-    print(f"\n{C.MAGENTA}{'─' * w}{C.RESET}")
+    print(f"\n{C.CYAN}{'─' * w}{C.RESET}")
     print(f"{C.BOLD}{C.WHITE}  {title}{C.RESET}")
-    print(f"{C.MAGENTA}{'─' * w}{C.RESET}")
+    print(f"{C.CYAN}{'─' * w}{C.RESET}")
 
 
 def cmd_doctor(data_dir: Path, fix: bool = False):
