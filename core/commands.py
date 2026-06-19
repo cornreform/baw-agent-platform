@@ -82,8 +82,11 @@ def handle_slash(command: str, args: list[str],
     if cmd in ("m", "model"):
         model_id = " ".join(args)
         if not model_id:
-            return "Usage: /model <id>  (see config.yaml for available models)"
+            return "Usage: /model <id> (see config.yaml for available models)"
         return _cmd_model(model_id, config)
+
+    if cmd in ("models", "aux", "aux-models"):
+        return _cmd_aux_models(config)
 
     if cmd in ("t", "tone"):
         tone = " ".join(args)
@@ -784,3 +787,51 @@ def _cmd_update(data_dir: Path) -> str:
         lines.append("   Run: `sudo systemctl restart baw-telegram`")
 
     return "\n".join(lines)
+
+
+def _cmd_aux_models(config: dict) -> str:
+    """Show all auxiliary models (STT, TTS, vision, image_gen, etc.)"""
+    caps = config.get("capabilities", {})
+    exec_cfg = config.get("executor", {})
+
+    parts = ["**Auxiliary Models**", ""]
+    parts.append(f"Executor: `{exec_cfg.get('model', '?')}`")
+
+    def _fmt(name: str, cfg: dict) -> str:
+        if not isinstance(cfg, dict):
+            return f"  {name}: `{cfg}`"
+        items = []
+        m = cfg.get("model", "")
+        fb = cfg.get("fallback", "")
+        method = cfg.get("method", "")
+        voice = cfg.get("voice", "")
+        if method:
+            items.append(method)
+        if m:
+            items.append(f"`{m}`")
+        if fb:
+            if isinstance(fb, dict):
+                fb_m = fb.get("model", "")
+                if fb_m:
+                    items.append(f"fallback: `{fb_m}`")
+            else:
+                items.append(f"fallback: `{fb}`")
+        if voice:
+            items.append(f"voice: `{voice}`")
+        if cfg.get("local"):
+            items.append("local")
+        first = items[0] if items else "(not configured)"
+        rest = " · ".join(items[1:])
+        return f"  {name}: {first}" + (f" · {rest}" if rest else "")
+
+    for cap in ["stt", "tts", "vision", "image_generation", "browser", "web_browser", "web_extract"]:
+        if cap in caps:
+            parts.append(_fmt(cap, caps[cap]))
+
+    cap_exec = caps.get("executor", {}).get("model", "")
+    top_exec = exec_cfg.get("model", "")
+    if cap_exec and top_exec and cap_exec != top_exec:
+        parts.append("")
+        parts.append(f"❓ Two executors: capabilities.executor=`{cap_exec}` != executor.model=`{top_exec}`")
+
+    return "\n".join(parts)
