@@ -148,7 +148,17 @@ def config_set(path: str, value: str) -> str:
                 try:
                     parsed = float(value)
                 except ValueError:
-                    parsed = value  # keep as string
+                    # ── JSON detection: if value looks like a JSON object/array, parse it ──
+                    _stripped = value.strip()
+                    if (_stripped.startswith('{') and _stripped.endswith('}')) or \
+                       (_stripped.startswith('[') and _stripped.endswith(']')):
+                        try:
+                            import json as _json
+                            parsed = _json.loads(value)
+                        except Exception:
+                            parsed = value  # keep as string if JSON parse fails
+                    else:
+                        parsed = value  # keep as string
     elif isinstance(value, (dict, list)):
         parsed = value  # Pass through structured values as-is
 

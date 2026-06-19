@@ -1079,7 +1079,36 @@ class TelegramConnector(BaseConnector):
                             if text:
                                 used_method = used_method or "auto-asr"
                             else:
-                                self.send(chat_id, "❌ 所有 ASR 協議都失敗（OpenAI + SSE），check API key/endpoint。")
+                                # ── Hybrid fallback: primary failed, try fallback tier ──
+                                if stt_method == "hybrid":
+                                    fb = stt_config.get("fallback", {})
+                                    if isinstance(fb, dict) and fb.get("base_url"):
+                                        fb_api_env = fb.get("api_key_env", "")
+                                        fb_key = os.environ.get(fb_api_env, "")
+                                        fb_url = fb.get("base_url", "").rstrip("/")
+                                        fb_model = fb.get("model", "")
+                                        if fb_key and fb_url:
+                                            logger.info(f"[Telegram] hybrid fallback: {fb_model} @ {fb_url}")
+                                            # Strategy 1b retry with fallback endpoint
+                                            try:
+                                                stt_url = f"{fb_url}/stt"
+                                                with httpx.Client(timeout=15, verify=True) as cli:
+                                                    files = {"file": (f"voice.{audio_type}", audio_bytes, f"audio/{audio_type}")}
+                                                    data = {"model": fb_model or "grok-stt", "language": "zh"}
+                                                    resp = cli.post(
+                                                        stt_url, files=files, data=data,
+                                                        headers={"Authorization": f"Bearer {fb_key}"},
+                                                    )
+                                                if resp.status_code == 200:
+                                                    result = resp.json()
+                                                    text = result.get("text", "") or result.get("content", "")
+                                                    if text:
+                                                        used_method = "openai-whisper"
+                                                        logger.info(f"[Telegram] hybrid fallback OK via {fb_url}/stt")
+                                            except Exception as fe:
+                                                logger.info(f"[Telegram] hybrid fallback failed: {fe}")
+                                if not text:
+                                    self.send(chat_id, "❌ 所有 ASR 協議都失敗（OpenAI + SSE），check API key/endpoint。")
                         except Exception as e:
                             logger.error(f"[Telegram] auto-asr error: {e}")
                             self.send(chat_id, f"❌ ASR auto-detect 失敗: {e}")
