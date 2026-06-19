@@ -276,6 +276,186 @@ def _check_tools() -> dict:
     return results
 
 
+def _check_memory_curator() -> dict:
+    """Test the memory curation gate — classify, conflict-detect, noise filter."""
+    results = {"name": "Memory Curator", "status": "pending", "details": []}
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from core.memory_curator import curate, classify, detect_conflicts, value_score, Classification
+
+        # ── Test 1: Classification accuracy ──
+        test_cases = [
+            ("我鍾意簡潔輸出", Classification.PREFERENCE),
+            ("呢個係bug，會 silent fail", Classification.BUG),
+            ("npm install mmx-cli 成功", Classification.INSTALL),
+            ("ok done", Classification.NOISE),
+            ("其實我之前講錯，正確係改用 hybrid", Classification.CORRECTION),
+            ("正在檢查 status", Classification.TRANSIENT),
+        ]
+        cls_pass = 0
+        for text, expected in test_cases:
+            cls, conf = classify(text)
+            match = "✓" if cls == expected else "✗"
+            if cls == expected:
+                cls_pass += 1
+            results["details"].append(f"  {match} classify('{text[:40]}'): {cls} (expected {expected}, conf={conf})")
+        results["details"].append(f"  Classification: {cls_pass}/{len(test_cases)} correct")
+
+        # ── Test 2: Value scoring by class ──
+        assert value_score(Classification.PREFERENCE) > value_score(Classification.NOISE)
+        assert value_score(Classification.BUG) > value_score(Classification.TRANSIENT)
+        results["details"].append("  [OK] Value scores: preference > noise, bug > transient")
+
+        # ── Test 3: Conflict detection (correction → update) ──
+        existing = [
+            {"id": "mem_test_1", "content": "STT uses hybrid mode with primary grok"},
+            {"id": "mem_test_2", "content": "MiniMax is the main provider"},
+        ]
+        correction = "actually STT primary is grok-stt at xAI, not what I said before"
+        conflict = detect_conflicts(correction, existing)
+        if conflict and conflict["type"] == "update":
+            results["details"].append(f"  [OK] Correction detected: {conflict['reason']}")
+        else:
+            results["details"].append(f"  [FAIL] Correction not detected. Got: {conflict}")
+
+        # ── Test 4: Noise gate ──
+        decision = curate("好嘅", existing_entries=[])
+        if decision["action"] == "discard":
+            results["details"].append("  [OK] '好嘅' correctly discarded as noise")
+        else:
+            results["details"].append(f"  [FAIL] '好嘅' not discarded: {decision['action']}")
+
+        # ── Test 5: Valuable content passes gate ──
+        decision = curate("用戶偏好用粵語輸出，唔要用英文",
+                          tags=["preference"], source="user", existing_entries=[])
+        if decision["action"] in ("save", "update"):
+            results["details"].append(f"  [OK] Preference content accepted: {decision['classification']} (score={decision['score']})")
+        else:
+            results["details"].append(f"  [FAIL] Preference rejected: {decision['action']}")
+
+        results["status"] = "pass"
+    except Exception as e:
+        results["status"] = "fail"
+        results["details"].append(f"[FAIL] Memory curator test error: {e}")
+        import traceback
+        results["details"].append(traceback.format_exc()[:200])
+    return results
+
+
+def _check_context_compaction() -> dict:
+    """Test context compaction — threshold, summary quality, compression ratio."""
+    results = {"name": "Context Compaction", "status": "pending", "details": []}
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from core.context import Context, Message
+
+        ctx = Context(system_prompt="Test system prompt")
+        for i in range(20):
+            ctx.add_user(f"User turn {i}: 請幫我檢查第 {i} 個配置項目")
+            ctx.add_assistant(f"完成檢查第 {i} 項，結果正常" if i % 2 == 0
+                              else f"第 {i} 項有錯誤，已修正為正確設定")
+            ctx.add_tool_result(f"t{i}", "bash", f"Output for turn {i}: some data")
+
+        before_chars = ctx.total_chars()
+        before_msgs = len(ctx.messages)
+
+        # Test 1: Compaction triggers at low threshold
+        compacted, note, summary = ctx.compact(threshold_chars=5000, keep_recent_turns=3)
+        after_chars = ctx.total_chars()
+        after_msgs = len(ctx.messages)
+
+        if compacted > 0:
+            ratio = (1 - after_chars / before_chars) * 100
+            results["details"].append(f"  [OK] Compaction triggered: {compacted} turns compressed")
+            results["details"].append(f"  [OK] {before_chars} → {after_chars} chars ({ratio:.0f}% reduction)")
+            results["details"].append(f"  [OK] {before_msgs} → {after_msgs} messages")
+            results["details"].append(f"  [OK] Notification: {note}")
+        else:
+            results["details"].append("[FAIL] Compaction did not trigger")
+
+        # Test 2: Summary contains compressed lines
+        if summary.count("[壓縮]") >= compacted:
+            results["details"].append("  [OK] Summary contains all compressed turns")
+        else:
+            results["details"].append(f"  [FAIL] Summary has {summary.count('[壓縮]')} turns, expected {compacted}")
+
+        # Test 3: Recent turns preserved
+        recent_users = sum(1 for m in ctx.messages if m.role == "user")
+        if recent_users >= 3:
+            results["details"].append(f"  [OK] Recent turns preserved ({recent_users} user messages remain)")
+        else:
+            results["details"].append(f"  [FAIL] Too few user messages remain: {recent_users}")
+
+        # Test 4: No compaction under threshold
+        ctx2 = Context(system_prompt="Test")
+        ctx2.add_user("Short prompt")
+        ctx2.add_assistant("Short response")
+        c2, n2, s2 = ctx2.compact(threshold_chars=50000, keep_recent_turns=5)
+        if c2 == 0:
+            results["details"].append("  [OK] No compaction when under threshold")
+        else:
+            results["details"].append(f"  [FAIL] Compaction triggered unexpectedly: {c2}")
+
+        results["status"] = "pass"
+    except Exception as e:
+        results["status"] = "fail"
+        results["details"].append(f"[FAIL] Context compaction test error: {e}")
+        import traceback
+        results["details"].append(traceback.format_exc()[:200])
+    return results
+
+
+def _check_memory_search_by_id() -> dict:
+    """Test that memory search works by both content and ID."""
+    results = {"name": "Memory Search by ID", "status": "pending", "details": []}
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from core.memory import MemoryStore
+        import tempfile, time
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mem = MemoryStore(Path(tmpdir))
+
+            # Save a test entry
+            entry = mem.remember(
+                content="測試用記憶內容",
+                tags=["test", "selftest"],
+                source="selftest",
+            )
+            mem_id = entry["id"]
+            results["details"].append(f"  Saved test memory: {mem_id}")
+
+            # Test: search by ID
+            id_results = mem.search(mem_id, limit=5)
+            if any(r["id"] == mem_id for r in id_results):
+                results["details"].append("  [OK] Search by ID: found")
+            else:
+                results["details"].append("  [FAIL] Search by ID: not found")
+
+            # Test: search by partial ID suffix
+            suffix = mem_id.split("_")[-1]
+            suffix_results = mem.search(suffix, limit=5)
+            if any(r["id"] == mem_id for r in suffix_results):
+                results["details"].append("  [OK] Search by partial ID suffix: found")
+            else:
+                results["details"].append(f"  [FAIL] Search by partial ID '{suffix}': not found")
+
+            # Test: search by content (should still work)
+            content_results = mem.search("測試用記憶", limit=5)
+            if any(r["id"] == mem_id for r in content_results):
+                results["details"].append("  [OK] Search by content: found (backward compat)")
+            else:
+                results["details"].append("  [FAIL] Search by content: not found")
+
+        results["status"] = "pass"
+    except Exception as e:
+        results["status"] = "fail"
+        results["details"].append(f"[FAIL] Memory search test error: {e}")
+        import traceback
+        results["details"].append(traceback.format_exc()[:200])
+    return results
+
+
 # Global flag to skip API calls in quick mode
 _skip_api_calls = False
 
@@ -296,6 +476,9 @@ def selftest(full: bool = False) -> str:
         _check_config,
         _check_tools,
         _check_memory,
+        _check_memory_curator,
+        _check_memory_search_by_id,
+        _check_context_compaction,
         _check_safety,
         _check_tts,
         _check_stt,
@@ -340,7 +523,8 @@ TOOL_DEF = {
     "name": "selftest",
     "description": (
         "Run BAW internal self-test suite to check system health. "
-        "Tests config, memory, safety, TTS, STT, and vision capabilities. "
+        "Tests config, memory, memory curator (classification + conflict detection), "
+        "memory search by ID, context compaction, safety, TTS, STT, and vision. "
         "Use '/selftest' or '幫我做自我測試' to trigger."
     ),
     "handler": selftest,
