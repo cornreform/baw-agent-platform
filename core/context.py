@@ -110,9 +110,9 @@ class Context:
         # Group messages into turns (user+assistant cycles)
         # A turn = 1 user msg + possibly multiple assistant+tool cycles
         # We identify turns by user messages
-        turn_boundaries: list[int] = []  # indices where user messages start
+        turn_boundaries: list[int] = []  # indices where REAL user messages start
         for i, msg in enumerate(self.messages):
-            if msg.role == "user":
+            if msg.role == "user" and not msg.content.startswith("[SYSTEM]"):
                 turn_boundaries.append(i)
 
         if len(turn_boundaries) <= keep_recent_turns:

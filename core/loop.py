@@ -1819,9 +1819,9 @@ def run_agent(
             logger.debug(f"[Loop] Session trimmed: {_trimmed} old messages removed")
         # ── Context compaction: summarize old turns, don't just drop ──
         _total = ctx.total_chars()
-        if _total > 30000:
+        if _total > 15000:
             logger.info(f"[Loop] Context over threshold ({_total} chars), compacting...")
-        _compacted, _notify, _summary = ctx.compact(threshold_chars=30000, keep_recent_turns=5)
+        _compacted, _notify, _summary = ctx.compact(threshold_chars=15000, keep_recent_turns=2)
         if _compacted > 0:
             logger.info(f"[Loop] Context compacted: {_compacted} old turns summarized ({_total} → {ctx.total_chars()} chars)")
             # Auto-save useful summaries to memory (via curator gate)
