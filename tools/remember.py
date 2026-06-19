@@ -6,6 +6,8 @@ Stored in ~/.baw/notes.jsonl
 """
 
 import json
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -20,14 +22,14 @@ def _ensure_file():
 
 
 def remember_fact(fact: str, category: str = "general") -> str:
-    """Save a quick fact/note.
+    """Save a quick fact/note. Routes through curation gate.
 
     Args:
         fact: What to remember (keep concise — max 500 chars).
         category: Category for grouping (e.g., 'install', 'config', 'bug', 'discovery').
 
     Returns:
-        Confirmation message.
+        Confirmation message with curation decision.
     """
     fact = fact.strip()[:500]
     if not fact:
@@ -35,7 +37,59 @@ def remember_fact(fact: str, category: str = "general") -> str:
 
     _ensure_file()
 
+    # Use memory curator for judgment
+    _BAW_ROOT = str(Path(__file__).resolve().parent.parent)
+    if _BAW_ROOT not in sys.path:
+        sys.path.insert(0, _BAW_ROOT)
+    try:
+        from core.memory_curator import curate
+        # Load recent notes for conflict detection
+        existing = []
+        try:
+            with open(_NOTES_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            existing.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+        except FileNotFoundError:
+            pass
+
+        decision = curate(
+            content=fact,
+            tags=[category],
+            source="agent",
+            existing_entries=existing[-100:],
+        )
+
+        if decision["action"] == "discard":
+            return f"[>] 消噪: {decision['reason']}"
+
+        if decision["action"] == "update":
+            # Find and update the existing note
+            target_id = decision["target_id"]
+            target_idx = None
+            for i, e in enumerate(existing):
+                if e.get("id", "") == target_id:
+                    target_idx = i
+                    break
+            if target_idx is not None:
+                existing[target_idx]["fact"] = decision["content"]
+                existing[target_idx]["category"] = category
+                # Rewrite file
+                with open(_NOTES_FILE, "w", encoding="utf-8") as f:
+                    for e in existing:
+                        f.write(json.dumps(e, ensure_ascii=False) + "\n")
+                return f"[OK] 筆記已修正 — {decision['reason']}"
+
+        # Save normally if not discarded/updated
+    except Exception:
+        pass  # Fall through to normal save
+
     entry = {
+        "id": f"note_{int(time.time() * 1000)}",
         "timestamp": datetime.now().isoformat(),
         "category": category.strip() or "general",
         "fact": fact,
@@ -147,11 +201,13 @@ TOOL_DEF = {
     "name": "remember",
     "description": (
         "Lightweight fact storage — quickly save and recall short facts. "
+        "Each write is filtered through a curation gate that classifies value "
+        "and detects conflicts with existing notes. "
         "Use 'action=remember' with a 'fact' string to save (e.g., "
         "'mmx-cli package name is correct, mmx — not @minimax/mcp'). "
         "Use 'action=recall' to retrieve recent facts. "
         "Use 'action=forget' to remove. "
-        "Each fact is just a string — no scoring, no embedding, instant save."
+        "Each fact is stored with category and timestamp."
     ),
     "handler": _dispatcher,
     "parameters": {

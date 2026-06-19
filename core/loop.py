@@ -54,7 +54,8 @@ def _human_tokens(n: int) -> str:
 
 
 # ── Constants ──────────────────────────────────────────────────
-MAX_TOOL_TURNS = 15      # hard cap on tool-calling loop iterations
+MAX_TOOL_TURNS = 25      # increased from 15 — give BAW room for complex tasks
+                         # but system prompt warns at turn 20 to self-terminate
 MAX_QUICK_TOOL_TURNS = 5  # stricter cap for quick mode
 
 
@@ -379,15 +380,27 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "  If more work remains, your response MUST include tool_calls.\n"
                 "  NEVER say 'I will' or write about what you'll do next. Call the tool NOW.\n"
                 "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary.\n"
-                "\n## FINAL RESPONSE FORMAT\n"
-                "Your final message to the user MUST be a meaningful summary of what happened.\n"
-                "DO NOT just say 'OK', 'Done', '完成', or similar one-word responses.\n"
+                "\n## OUTPUT STRUCTURE — Three Layers\n"
+                "Your response follows **three layers**.\n"
                 "\n"
-                "Use a clear status prefix:\n"
-                "  ✅ 任務完成 → when everything succeeded\n"
-                "  ❗ 任務執行有錯誤，需要跟進 → when some steps failed\n"
-                "  ⏳ 任務需要跟進 → when partial completion, user input needed\n"
-                "  ℹ️ 任務無需操作 → when user asked a question, no action needed\n"
+                "### Layer 1 — 結果 (1-3行, 必填)\n"
+                "開首第一句就係最重要嘅結果:\n"
+                "  ✅ / ❗ / ⏳ / ℹ️  <一句講晒做咗乜>\n"
+                "  <關鍵數據或結論>\n"
+                "\n"
+                "### Layer 2 — 細節 (optional, 有必要先用)\n"
+                "精簡 bullet points:\n"
+                "  - <相關詳情>\n"
+                "  如果結果已經夠清楚就成個 layer skip 咗佢\n"
+                "\n"
+                "### Layer 3 — 原始資料 (唔顯示,除非用家問)\n"
+                "DO NOT dump raw tool output / config / traceback.\n"
+                "如果用戶需要原始資料, 話「詳細可以睇 <path>」\n"
+                "\n"
+                "### 規則\n"
+                "- 只用一個 status emoji prefix 喺最開頭\n"
+                "- 唔准加「總結」/「Summary」/「以下係」結尾\n"
+                "- 你成段回覆就係結果, 唔好重覆自己\n"
                 "\n"
                 "## LANGUAGE RULE\n"
                 "CRITICAL: Always respond in Traditional Chinese (Cantonese/粵語) unless the user writes in English.\n"
@@ -419,18 +432,28 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             )
         else:
             system_prompt = evidence_rule + execution_protocol + soul_text + (
-                "\n\n## FINAL RESPONSE FORMAT\n"
-                "Your final message to the user MUST be a meaningful summary of what happened.\n"
-                "DO NOT just say 'OK', 'Done', '完成', or similar one-word responses.\n"
+                "\n\n## OUTPUT STRUCTURE — Three Layers\n"
+                "Your response follows **three layers**.\n"
                 "\n"
-                "Use a clear status prefix:\n"
-                "  ✅ 任務完成 → when everything succeeded\n"
-                "  ❗ 任務執行有錯誤，需要跟進 → when some steps failed\n"
-                "  ⏳ 任務需要跟進 → when partial completion, user input needed\n"
-                "  ℹ️ 任務無需操作 → when user asked a question, no action needed\n"
+                "### Layer 1 — 結果 (1-3行, 必填)\n"
+                "開首第一句就係最重要嘅結果:\n"
+                "  ✅ / ❗ / ⏳ / ℹ️  <一句講晒做咗乜>\n"
+                "  <關鍵數據或結論>\n"
                 "\n"
-                "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed.\\n"
-                "\\n"
+                "### Layer 2 — 細節 (optional, 有必要先用)\n"
+                "精簡 bullet points:\n"
+                "  - <相關詳情>\n"
+                "  如果結果已經夠清楚就成個 layer skip 咗佢\n"
+                "\n"
+                "### Layer 3 — 原始資料 (唔顯示,除非用家問)\n"
+                "DO NOT dump raw tool output / config / traceback.\n"
+                "如果用戶需要原始資料, 話「詳細可以睇 <path>」\n"
+                "\n"
+                "### 規則\n"
+                "- 只用一個 status emoji prefix 喺最開頭\n"
+                "- 唔准加「總結」/「Summary」/「以下係」結尾\n"
+                "- 你成段回覆就係結果, 唔好重覆自己\n"
+                "\n"
                 "## ANTI-DUPLICATION RULE\\n"
                 "DO NOT add a \"總結\" / \"summary\" / \"以下係\" section at the end of your response.\\n"
                 "Your entire response IS the summary. No meta-summary needed.\\n"
@@ -657,6 +680,15 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"- Fact check mode: {fact_mode}\n"
             f"- Available tools: {tools_list}\n"
             f"- Cost transparency: per-call cost shown after each response\n"
+            f"\n## ⏱ Tool Turns Budget\n"
+            f"You have a maximum of **25** tool calls per turn before the system forces you to stop.\n"
+            f"- After ~15 calls, start asking: do I have enough data to answer?\n"
+            f"- If yes: synthesize results and STOP calling tools.\n"
+            f"- If no: prioritise remaining calls — skip nice-to-haves, focus on must-haves.\n"
+            f"- At **20** calls: you MUST start wrapping up.\n"
+            f"- If you hit the cap (25), the system STARTS A NEW TURN without tools —\n"
+            f"  you lose the ability to do more work. Self-terminate proactively.\n"
+            f"\n"
             f"- [CRITICAL] AUTO-CONTINUATION: Keep producing tool_calls until the task is fully done.\n"
             f"  If you need more steps, call the next tool IMMEDIATELY — do NOT write text about what you'll do next.\n"
             f"  YOUR RESPONSE MUST CONTAIN TOOL_CALLS if more work remains. Text-only = you are finished.\n"
@@ -955,6 +987,9 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
         claim_clean = claim.strip('"\'",.）)').lower()
         # Skip very short or Chinese-only tokens (false positives)
         if len(claim_clean) < 3 or _vre.match(r'^[\u4e00-\u9fff]+$', claim_clean):
+            continue
+        # Skip natural language: enumeration commas, full-width punct, >40 chars
+        if '\u3001' in claim_clean or '\uff0c' in claim_clean or '\u3002' in claim_clean or len(claim_clean) > 40:
             continue
         if claim_clean and cfg_text and claim_clean not in cfg_text:
             corrections.append(
@@ -1766,6 +1801,38 @@ def run_agent(
         _trimmed = ctx.trim(max_messages=60)
         if _trimmed > 0:
             logger.debug(f"[Loop] Session trimmed: {_trimmed} old messages removed")
+        # ── Context compaction: summarize old turns, don't just drop ──
+        _total = ctx.total_chars()
+        if _total > 30000:
+            logger.info(f"[Loop] Context over threshold ({_total} chars), compacting...")
+        _compacted, _notify, _summary = ctx.compact(threshold_chars=30000, keep_recent_turns=5)
+        if _compacted > 0:
+            logger.info(f"[Loop] Context compacted: {_compacted} old turns summarized ({_total} → {ctx.total_chars()} chars)")
+            # Signal to the LLM that context was compressed (so it knows old turns are gone)
+            ctx.add_user(f"[SYSTEM] {_notify}")
+            # Auto-save useful summaries to memory
+            _saved = 0
+            for _line in _summary.split("\n"):
+                _line = _line.strip()
+                if not _line or not _line.startswith("[壓縮]"):
+                    continue
+                # Score line for importance (keywords = valuable knowledge)
+                _import_kw = ["config", "bug", "fix", "prefer", "根因", "配置",
+                              "設定", "修復", "錯誤", "修正", "改咗", "改用",
+                              "workaround", "cancel", "skip", "block"]
+                _score = sum(1 for kw in _import_kw if kw in _line.lower())
+                if _score >= 1:
+                    try:
+                        mem.remember(
+                            content=f"[壓縮記憶] {_line}",
+                            tags=["compaction", "auto"],
+                            source="system",
+                        )
+                        _saved += 1
+                    except Exception:
+                        pass
+            if _saved > 0:
+                logger.info(f"[Loop] Auto-saved {_saved} compacted summaries to memory")
         # Next LLM call to synthesize results
         fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=get_openai_tools(), temperature=model_temperature)
         _resp = fb.response

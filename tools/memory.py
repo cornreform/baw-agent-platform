@@ -6,8 +6,22 @@ import sys
 from pathlib import Path
 
 
+def _load_store():
+    """Lazy-load MemoryStore (avoid circular import)."""
+    _BAW_ROOT = str(Path(__file__).resolve().parent.parent)
+    if _BAW_ROOT not in sys.path:
+        sys.path.insert(0, _BAW_ROOT)
+    from core.memory import MemoryStore
+    data_dir = Path.home() / ".baw"
+    return MemoryStore(data_dir)
+
+
 def memory_remember(content: str, tags: str = "", source: str = "agent") -> str:
-    """Save a memory entry. Deduplicates against recent entries (last 100).
+    """Save a memory entry. Routes through curation gate for judgment.
+
+    The curator decides: save new, update existing, merge, or discard.
+    This prevents noise, ensures corrections update old entries, and
+    assigns priority scores based on content value.
 
     Args:
         content: The text content to remember.
@@ -15,29 +29,81 @@ def memory_remember(content: str, tags: str = "", source: str = "agent") -> str:
         source: Who created this memory ('user', 'agent', 'system').
 
     Returns:
-        Confirmation with memory ID (new or existing).
+        Confirmation with memory ID and curation decision.
     """
     _BAW_ROOT = str(Path(__file__).resolve().parent.parent)
     if _BAW_ROOT not in sys.path:
         sys.path.insert(0, _BAW_ROOT)
 
     from core.memory import MemoryStore
+    from core.memory_curator import curate
 
     data_dir = Path.home() / ".baw"
     mem = MemoryStore(data_dir)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
-    # ── Deduplication: check last 100 entries for similarity ──
+    # ── Load recent entries for conflict detection ──
     _recent = list(reversed(mem._cache))[:100]
-    _content_norm = content.strip().replace("　", " ").replace("，", ",").replace("。", ".")
-    for _existing in _recent:
-        _ec = _existing.get("content", "").strip().replace("　", " ").replace("，", ",").replace("。", ".")
-        # Exact match or >80% substring overlap
-        if _ec == _content_norm or (_ec in _content_norm and len(_ec) > len(_content_norm) * 0.5) or (_content_norm in _ec and len(_content_norm) > len(_ec) * 0.5):
-            return f"[>] Memory already exists (id: {_existing['id']}) — no change needed."
 
+    # ── Run curation gate ──
+    decision = curate(
+        content=content,
+        tags=tag_list,
+        source=source,
+        existing_entries=_recent,
+    )
+
+    # ── Act on curator decision ──
+    if decision["action"] == "discard":
+        return f"[>] 消噪: {decision['reason']}"
+
+    if decision["action"] == "update":
+        # Update existing entry in cache
+        target_id = decision["target_id"]
+        new_score = decision["score"]
+        for entry in mem._cache:
+            if entry["id"] == target_id:
+                entry["content"] = decision["content"]
+                entry["score"] = min(1.0, max(new_score, entry.get("score", 0.5)))
+                entry["tags"] = list(set(entry.get("tags", []) + decision.get("tags", [])))
+                entry["access_count"] += 1
+                from datetime import datetime, timezone
+                entry["last_accessed"] = datetime.now(timezone.utc).isoformat()
+                mem._save_all()
+                return (
+                    f"[OK] 記憶已修正 (id: {target_id}) — {decision['reason']}"
+                )
+        # Fallback: if target not found, save as new
+        entry = mem.remember(content=content, tags=tag_list, source=source)
+        return f"[OK] 記憶已保存 (id: {entry.get('id', '?')}) — {decision['reason']} (target not found, saved as new)"
+
+    if decision["action"] == "flag":
+        # Save flagged entry with note — system can review later
+        flagged = f"[FLAGGED] {content}"
+        entry = mem.remember(content=flagged, tags=tag_list + ["flagged"], source=source)
+        return (
+            f"[!] 記憶已標記 (id: {entry.get('id', '?')}) — {decision['reason']}\n"
+            f"    系統將在下次 curation 週期複查此條目。"
+        )
+
+    # ── save (default): save with curator-assigned score ──
     entry = mem.remember(content=content, tags=tag_list, source=source)
-    return f"[OK] Memory saved (id: {entry.get('id', '?')}, tags: {entry.get('tags', [])})"
+
+    # Override initial score with curator's value judgment
+    # Keep score higher if curator thinks it's more valuable
+    if entry.get("id") != "rejected":
+        curator_score = decision.get("score", 0.5)
+        for e in mem._cache:
+            if e["id"] == entry["id"]:
+                # Only boost — never lower initial score
+                if curator_score > e.get("score", 0.5):
+                    e["score"] = min(1.0, curator_score)
+                    mem._save_all()
+                break
+
+    if entry.get("id") == "rejected":
+        return f"[>] 已過濾: {decision['reason']}"
+    return f"[OK] 記憶已保存 (id: {entry.get('id', '?')}) — {decision['reason']}"
 
 
 def memory_search(query: str, limit: int = 10) -> str:
@@ -125,6 +191,9 @@ TOOL_DEF = {
     "name": "memory",
     "description": (
         "Manage persistent memories — save facts, preferences, and lessons learned. "
+        "Each write is filtered through an intelligent curation gate that: "
+        "(a) classifies content value, (b) checks for conflicts with existing memories, "
+        "(c) updates old entries when new info corrects them, (d) discards noise. "
         "Use 'action=remember' to save a new memory. "
         "Use 'action=search' to find memories by query. "
         "Use 'action=recall' to list recent memories."
