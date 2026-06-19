@@ -294,9 +294,9 @@ def _compress_verbose(text: str) -> str:
     sections = _SECTION_HEADER.findall(text)
     lines = text.split('\n')
     # Also trigger on long prose without section headers
-    if len(sections) <= 3 and len(lines) <= 30:
-        return text  # Reasonable length
-    if len(sections) <= 3 and len(lines) > 30:
+    if len(sections) <= 20 and len(lines) <= 300:
+        return text  # Effectively unlimited — user prefers complete answers
+    if len(sections) <= 20 and len(lines) > 300:
         # Prose-heavy long output — take first 15 meaningful lines as compression
         result = []
         kept = 0
@@ -313,7 +313,7 @@ def _compress_verbose(text: str) -> str:
     result_lines = []
     first_result_written = False
     kept_headers = 0
-    MAX_SECTIONS = 2
+    MAX_SECTIONS = 20  # Effectively unlimited — user prefers complete answers
     # Track if we've entered "details" territory past the lead
     _in_detail = False
 
