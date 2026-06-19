@@ -254,13 +254,13 @@ class Scheduler:
             if cfg_path.exists():
                 import yaml as _yaml
                 cfg = _yaml.safe_load(cfg_path.read_text())
-                tz_str = cfg.get("cron", {}).get("timezone", "UTC") or "UTC"
+                tz_str = cfg.get("cron", {}).get("timezone", "Asia/Hong_Kong") or "Asia/Hong_Kong"
                 self._cron_tz_name = tz_str
                 return tz_str
         except Exception:
             pass
-        self._cron_tz_name = "UTC"
-        return "UTC"
+        self._cron_tz_name = "Asia/Hong_Kong"
+        return "Asia/Hong_Kong"
 
     def _cron_next(self, sched: str, after: float) -> float:
         """Calculate next run timestamp from cronjob schedule format."""

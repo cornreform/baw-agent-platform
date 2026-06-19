@@ -211,7 +211,16 @@ Examples:
     # ── Start background scheduler (cron tasks) ──
     try:
         from core.scheduler import Scheduler
-        _sched = Scheduler(Path.home() / ".baw")
+        _data_dir = Path.home() / ".baw"
+        # Bootstrap: seed default schedule.yaml on fresh installs
+        _schedule_path = _data_dir / "schedule.yaml"
+        if not _schedule_path.exists():
+            _default_schedule = Path("/app/schedule.yaml")
+            if _default_schedule.exists():
+                import shutil
+                shutil.copy2(_default_schedule, _schedule_path)
+                logger.info("[Scheduler] Seeded default schedule.yaml (fresh install)")
+        _sched = Scheduler(_data_dir)
         _sched.start()
         logger.info("[Scheduler] Background daemon started")
     except Exception as e:
