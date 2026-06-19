@@ -496,7 +496,11 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     system_prompt += self_correction
 
     # ── Static core ends here — everything below is dynamic context ──
-    # DeepSeek prefix cache: first N tokens (SOUL.md) are cacheable across turns.
+    # DeepSeek prefix cache: first ~2,600 tokens (evidence_rule + execution_protocol
+    # + SOUL.md + output_structure + delegation_block + safety_protocol +
+    # self_correction) are STATIC across turns → cacheable.
+    # Dynamic context below (models, config, todo, etc.) changes per turn.
+    # Cache is automatic at provider level — no special headers needed.
 
     if not quick_mode:
         orch_path = base_path / "ORCHESTRATOR.md"
@@ -1187,13 +1191,23 @@ def run_agent(
         system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
         tone_change = True
 
-    # Memory search
-    memories = mem.search(prompt, limit=3)
+    # ── Selective memory search: skip for trivial prompts ──
+    _search_prompt = (prompt or "").strip()
+    _greetings = {"hi", "hello", "hey", "thanks", "thank", "ok", "okay", "bye",
+                  "good", "done", "搞掂", "好", "ok", "hi", "hello", "早安", "晚安"}
+    _should_search = (
+        len(_search_prompt) > 15
+        and _search_prompt.lower().strip() not in _greetings
+        and not all(c in _search_prompt for c in _search_prompt if c in ".,!? \n\t")
+    )
+    memories = []
     mem_text = ""
-    if memories:
-        mem_text = "\n".join(
-            f"- [{m['score']:.2f}] {m['content']}" for m in memories
-        )
+    if _should_search:
+        memories = mem.search(_search_prompt, limit=3)
+        if memories:
+            mem_text = "\n".join(
+                f"- [{m['score']:.2f}] {m['content']}" for m in memories
+            )
 
     reset_cost()
     session_cost = 0.0
