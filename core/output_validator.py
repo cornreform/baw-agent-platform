@@ -200,6 +200,10 @@ def _empty_fallback() -> str:
 # ── Verbosity patterns: section headers that signal bloated output ──
 _SECTION_HEADER = re.compile(r'^(?:#{1,3}\s+|\*\*)([^*#\n]{3,60})(?:\*\*)?\s*$', re.MULTILINE)
 _DIAGNOSIS_HEADER = re.compile(r'\n*\[PLAN\] Diagnosis.*$', re.DOTALL)
+# ── Token footer: LLM per-call token breakdown ──
+_TOKEN_FOOTER = re.compile(r'\n*📊\s*\*\*\d+\s+LLM calls?\*\*\s*[—\-]\s*total:\s*[\d.,]+\s*tokens\s*', re.DOTALL)
+# ── Model attribution footer ──
+_MODEL_FOOTER = re.compile(r'\n*📊\s*模型[：:]\s*`[^`]+`\s*(?:·\s*`[^`]+`\s*)*\n*')
 
 def _compress_verbose(text: str) -> str:
     """Aggressively compress output that has too many sections or is too long.
@@ -211,6 +215,10 @@ def _compress_verbose(text: str) -> str:
     """
     # Strip diagnosis sections — they're noise after a failure report
     text = _DIAGNOSIS_HEADER.sub('', text).strip()
+    # Strip token footers — per-call breakdown is useless for users
+    text = _TOKEN_FOOTER.sub('', text).strip()
+    # Strip model attribution footers
+    text = _MODEL_FOOTER.sub('', text).strip()
 
     # Count section headers
     sections = _SECTION_HEADER.findall(text)
