@@ -909,7 +909,8 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
         ]:
             if not actual:
                 continue
-            m = _vre.search(rf'{key}[:\s]*["\']?(\S+?)(?:["\'\)]|\s|$)', output)
+            # Only match key=value or key:value patterns (NOT natural language)
+            m = _vre.search(rf'{key}[:=][\s]*["\']?(\S+?)(?:["\'\)]|\s|$)', output)
             if m:
                 claimed = m.group(1).rstrip('"\'",.)')
                 if claimed and claimed != actual:
@@ -963,7 +964,7 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
     
     # Pattern 4: Model name verification — check claimed model IDs exist in providers
     _MODEL_CLAIMS = _vre.findall(
-        r'(?:model[:\s=]+)([\w.-]+?)(?:[\s,\)]|$)', output
+        r'(?:model[:=])([\w.-]+?)(?:[\s,\)]|$)', output
     )
     if _MODEL_CLAIMS:
         valid_models = set()
