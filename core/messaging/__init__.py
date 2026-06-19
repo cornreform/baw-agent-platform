@@ -1109,8 +1109,24 @@ class BaseConnector(ABC):
             _MULTITASK_SPLIT,
             text, flags=_re.MULTILINE
         )
-        _tasks = [s.strip() for s in _sections if s.strip() and _re.match(_MULTITASK_PATTERN, s.strip())]
+        _tasks_raw = [s.strip() for s in _sections if s.strip() and _re.match(_MULTITASK_PATTERN, s.strip())]
+        # ── Filter: reject tasks with empty body (just a number, no content) ──
+        _tasks = []
+        _skipped_empty = 0
+        for _t in _tasks_raw:
+            _header_match = _re.match(_MULTITASK_PATTERN, _t)
+            if _header_match:
+                _body = _t[_header_match.end():].strip()
+                if not _body:
+                    _skipped_empty += 1
+                    continue
+            _tasks.append(_t)
+        # ── Loop guard: if >50% tasks are empty, abort to break infinite loop ──
+        if _skipped_empty > 0 and len(_tasks_raw) > 0 and _skipped_empty / len(_tasks_raw) > 0.5:
+            return f"[ABORT] {_skipped_empty}/{len(_tasks_raw)} tasks had empty bodies — possible upstream loop. Skipped all empty tasks, {len(_tasks)} remaining."
         _total = len(_tasks)
+        if _total == 0:
+            return f"[INFO] All {len(_tasks_raw)} task(s) had empty bodies — nothing to execute."
         _prev = self._silent_mode
         self._silent_mode = True  # suppress noisy step-by-step progress per sub-task
         # ── Build task context: inject original full list so sub-tasks know their siblings ──
