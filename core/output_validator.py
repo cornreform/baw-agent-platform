@@ -273,7 +273,7 @@ def _empty_fallback() -> str:
 _SECTION_HEADER = re.compile(r'^(?:#{1,3}\s+|\*\*)([^*#\n]{3,60})(?:\*\*)?\s*$', re.MULTILINE)
 _DIAGNOSIS_HEADER = re.compile(r'\n*\[PLAN\] Diagnosis.*$', re.DOTALL)
 # ── Token footer: LLM per-call token breakdown ──
-_TOKEN_FOOTER = re.compile(r'\n*📊\s*\*\*\d+\s+LLM calls?\*\*\s*[—\-]\s*total:\s*[\d.,]+\s*tokens\s*', re.DOTALL)
+_TOKEN_FOOTER = re.compile(r'\n*📊\s*\*\*\d+\s+LLM calls?\*\*\s*[—\-]\s*total:\s*[\d.,KkMm]+\s*tokens\s*', re.DOTALL)
 # ── Model attribution footer ──
 _MODEL_FOOTER = re.compile(r'\n*📊\s*模型[：:]\s*`[^`]+`\s*(?:·\s*`[^`]+`\s*)*\n*')
 
@@ -295,8 +295,21 @@ def _compress_verbose(text: str) -> str:
 
     # Count section headers
     sections = _SECTION_HEADER.findall(text)
-    if len(sections) <= 3:
-        return text  # Reasonable number of sections
+    lines = text.split('\n')
+    # Also trigger on long prose without section headers
+    if len(sections) <= 3 and len(lines) <= 30:
+        return text  # Reasonable length
+    if len(sections) <= 3 and len(lines) > 30:
+        # Prose-heavy long output — take first 15 meaningful lines as compression
+        result = []
+        kept = 0
+        for line in lines:
+            if line.strip() and kept < 15:
+                result.append(line)
+                kept += 1
+            elif not line.strip() and result and result[-1].strip():
+                result.append(line)
+        return '\n'.join(result).strip() + '\n\n[...]'
 
     # Too many sections — extract key info and compress
     lines = text.split('\n')

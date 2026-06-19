@@ -21,7 +21,6 @@ def _import_baw():
     if not hasattr(_import_baw, "_done"):
         sys.path.insert(0, _BAW_ROOT)
         sys.path.insert(0, str(Path(_BAW_ROOT).parent))
-        _import_baw._done = True
     import importlib.util as _iu
 
     # Tools
@@ -73,7 +72,14 @@ def _import_baw():
         # Restore on any failure so the parent process isn't left broken.
         _registry.clear()
         _registry.update(_saved_tools)
+        # BUG FIX: do NOT set _done before successful completion.
+        # Previously _done=True was set before this try block, causing
+        # retries to skip tool setup entirely if a tool module failed.
         raise
+    # IMPORTANT BUG FIX: Set _done ONLY after all tools registered successfully.
+    # Without this, a tool import failure leaves _done=True and retry attempts
+    # skip re-registration, leaving the sub-agent with 0 tools.
+    _import_baw._done = True
     # NEW-1 mitigation: use a per-call key derived from id() so concurrent
     # delegate_task invocations don't clobber each other's snapshot. We still
     # rely on a module attribute (can't easily pass a context object through

@@ -400,8 +400,8 @@ class MemoryStore:
         # Persist decayed scores — they were lost before!
         self._save_all()
 
-        # Auto-compression: if store > 500 entries, compress old low-score entries
-        if len(self._cache) > 500:
+        # Auto-compression: if store > 100 entries, compress old low-score entries
+        if len(self._cache) > 100:
             result = self.compress_old(max_age_days=14, min_score=0.10)
             if result.get("compressed", 0) > 0:
                 # Add a meta-entry about the compression

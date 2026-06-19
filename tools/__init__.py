@@ -14,28 +14,47 @@ from core.tools import register
 
 logger = logging.getLogger("baw.tools")
 
-_TOOL_MODULES = [
-    "bash", "read_file", "write_file", "web_search", "image_generate", "tts", "todo",
-    "petrestaurants", "http_fetch", "restaurant", "memory", "install",
-    "get_skill", "remember", "knowledge_graph", "mcp", "background", "mmx", "code_scan",
-    "config", "execute_code", "session_search", "cronjob", "git", "docker",
-    "system", "self_diagnose", "resource_monitor", "self_capabilities",
-    "tool_generate", "self_migrate", "scan_and_adopt", "skill_import",
-    "self_discover", "list_files",
-    # ── Previously missing tools (6 files existed but not registered) ──
-    "search_files",
-    "patch",
-    "web_extract",
-    "vision",
-    "browser",
-    "selftest",
-    "delegate_task",
+# -- CORE TOOLS (always active, frequently used) --
+_CORE_TOOLS = [
+    "bash", "read_file", "write_file", "web_search", "patch",
+    "search_files", "memory", "remember", "config", "mmx",
 ]
+
+# -- MEDIA TOOLS (image, audio, vision) --
+_MEDIA_TOOLS = [
+    "image_generate", "tts", "vision",
+]
+
+# -- UTILITY TOOLS (infrastructure, monitoring) --
+_UTILITY_TOOLS = [
+    "git", "docker", "system", "todo", "install", "background",
+    "cronjob", "list_files", "resource_monitor", "execute_code",
+    "session_search", "self_diagnose",
+]
+
+# -- SPECIALIZED TOOLS (task-specific, less common) --
+_SPECIALIZED_TOOLS = [
+    "delegate_task", "knowledge_graph", "http_fetch",
+    "self_capabilities", "self_migrate",
+]
+
+# -- RARELY-USED / DEBUG TOOLS --
+_RARE_TOOLS = [
+    "tool_generate", "get_skill", "mcp",
+    "document_structuring", "selftest",
+]
+
+# Combined list
+_TOOL_MODULES = _CORE_TOOLS + _MEDIA_TOOLS + _UTILITY_TOOLS + _SPECIALIZED_TOOLS + _RARE_TOOLS
+
+# Removed (overlapping or rarely used):
+# petrestaurants, restaurant, scan_and_adopt, skill_import,
+# self_discover, mmx, code_scan, web_extract, browser
 
 _tool_modules = []
 for mod_name in _TOOL_MODULES:
     try:
-        mod = __import__(f"tools.{mod_name}", fromlist=[mod_name])
+        mod = __import__("tools." + mod_name, fromlist=[mod_name])
         _tool_modules.append(mod)
     except Exception as e:
         logger.error("Failed to import tool module %s: %s", mod_name, e)
