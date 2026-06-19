@@ -10,7 +10,22 @@ from typing import Optional
 
 logger = logging.getLogger("baw.tts")
 
-MINIMAX_T2A_URL = "https://api.minimax.io/v1/t2a_v2"
+# Read from config.yaml so international endpoints are respected
+def _get_minimax_t2a_url() -> str:
+    import yaml, os
+    from pathlib import Path
+    for p in [Path.home() / ".baw" / "config.yaml", Path("/app/config.yaml")]:
+        if p.exists():
+            try:
+                cfg = yaml.safe_load(p.read_text(encoding="utf-8"))
+                mmx = (cfg or {}).get("providers", {}).get("minimax", {})
+                base = mmx.get("base_url", "")
+                if base:
+                    return base.rstrip("/") + "/t2a_v2"
+            except Exception:
+                pass
+    return "https://api.minimax.io/v1/t2a_v2"  # fallback
+
 DEFAULT_VOICE = "Cantonese_GentleLady"
 DEFAULT_MODEL = "speech-2.8-hd"
 
@@ -61,8 +76,9 @@ def minimax_tts(text: str, api_key: str, voice: str = DEFAULT_VOICE,
 
     try:
         import httpx
+        url = _get_minimax_t2a_url()
         with httpx.Client(timeout=60) as client:
-            r = client.post(MINIMAX_T2A_URL, headers=headers, json=payload)
+            r = client.post(url, headers=headers, json=payload)
             if r.status_code != 200:
                 logger.error(f"[TTS] API error {r.status_code}: {r.text[:200]}")
                 return None

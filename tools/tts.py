@@ -107,11 +107,15 @@ def tts_list_voices(provider: str = "") -> str:
 # ── Provider-specific generators ──
 
 def _tts_minimax(text: str, voice: str, output_path: str, speed: float = 1.0) -> str:
-    """MiniMax TTS via https://api.minimax.io/v1/t2a_v2"""
+    """MiniMax TTS — reads base_url from config.yaml so international endpoints work."""
     api_key = _get_env("MINIMAX_API_KEY")
     if not api_key:
         return "ERROR: MINIMAX_API_KEY not found"
-    # MiniMax TTS uses speech-2.8-hd (NOT shared config.api_model — that belongs to Stepfun)
+    # Read base_url from config (respects user's region choice)
+    _cfg = _load_config()
+    _mmx = _cfg.get("providers", {}).get("minimax", {})
+    _base = _mmx.get("base_url", "https://api.minimax.io/v1")
+    _tts_url = _base.rstrip("/") + "/t2a_v2"
     model = "speech-2.8-hd"
     payload = {
         "model": model,
@@ -121,7 +125,7 @@ def _tts_minimax(text: str, voice: str, output_path: str, speed: float = 1.0) ->
         "output_format": "url",
     }
     req = Request(
-        "https://api.minimax.io/v1/t2a_v2",
+        _tts_url,
         data=json.dumps(payload).encode(),
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
     )
@@ -151,7 +155,9 @@ def _tts_stepfun(text: str, voice: str, output_path: str, speed: float = 1.0) ->
     cfg = _load_config()
     tts_cfg = cfg.get("capabilities", {}).get("tts", {})
     config_section = tts_cfg.get("config", {})
-    base_url = config_section.get("base_url", "https://api.stepfun.ai/step_plan/v1")
+    # Read from stepfun provider config (respects user's base_url choice)
+    _sf = _cfg.get("providers", {}).get("stepfun", {})
+    base_url = config_section.get("base_url") or _sf.get("base_url", "https://api.stepfun.ai/v1")
     model = tts_cfg.get("model", "stepaudio-2.5-tts")
     url = f"{base_url.rstrip('/')}/audio/speech"
     payload = {"model": model, "input": text[:1000], "voice": voice, "response_format": "mp3"}
