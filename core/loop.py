@@ -389,7 +389,11 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "  ⏳ 任務需要跟進 → when partial completion, user input needed\n"
                 "  ℹ️ 任務無需操作 → when user asked a question, no action needed\n"
                 "\n"
-                "Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed.\\n"
+                ## LANGUAGE RULE
+CRITICAL: Always respond in Traditional Chinese (Cantonese/粵語) unless the user writes in English.
+Your internal reasoning MUST be in Chinese too. Do NOT switch to English.
+
+"Always include: (1) what was done, (2) the result or key data, (3) any follow-up needed.\\n"
                 "\\n"
                 "## ANTI-DUPLICATION RULE\\n"
                 "DO NOT add a \"總結\" / \"summary\" / \"以下係\" section at the end of your response.\\n"
