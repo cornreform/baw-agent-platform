@@ -117,16 +117,18 @@ def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
             try:
                 from .evolve import track_tool_call
                 track_tool_call(name, arguments, success=True, duration=_dur)
-            except Exception:
-                pass
+            except Exception as _e:
+                import logging
+                logging.getLogger("baw.tools").debug(f"track_tool_call failed: {_e}")
             return str(result)
         except concurrent.futures.TimeoutError:
             _dur = _t.time() - _start
             try:
                 from .evolve import track_tool_call
                 track_tool_call(name, arguments, success=False, duration=_dur, error="timeout")
-            except Exception:
-                pass
+            except Exception as _e:
+                import logging
+                logging.getLogger("baw.tools").debug(f"track_tool_call timeout failed: {_e}")
             last_error = f"timeout after {timeout}s"
             if attempt < MAX_ATTEMPTS:
                 # Non-idempotent tools: don't retry on timeout (may have partially executed)

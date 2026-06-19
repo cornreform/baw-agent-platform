@@ -109,8 +109,9 @@ def health_check() -> dict:
                     e = json.loads(l)
                     if e.get("ts", 0) > cutoff:
                         recent_24h += 1
-                except Exception:
-                    pass
+                except Exception as _e:
+                    import logging
+                    logging.getLogger("baw.health").debug(f"exception log parse failed: {_e}")
             if recent_24h <= 10:
                 checks.append({"name": "exceptions", "score": 1, "status": "ok", "detail": f"{recent_24h} in 24h"})
                 total_score += 1
