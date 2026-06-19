@@ -2691,6 +2691,7 @@ class BaseConnector(ABC):
             "/pickup — Resume last interrupted session\n\n"
             "**⚙️ Config:**\n"
             "/model — Model selector (or /model `<id>` to switch directly)\n"
+            "/models — Show all auxiliary models (STT, TTS, vision, etc.)\n"
             "/mode `quick|hybrid|tight` — Switch execution mode\n"
             "/tone `<profile>` — Switch tone (casual/business/teaching/...)\n"
             "/set `<key>` `<value>` — Persist config to config.yaml\n"
