@@ -291,6 +291,130 @@ def health_check() -> dict:
     }
 
 
+def doctor_fix() -> dict:
+    """Run health check + auto-fix everything fixable.
+
+    Returns {fixes: [{check, issue, action, result}], remaining: int}.
+    """
+    report = health_check()
+    fixes = []
+    for c in report["checks"]:
+        if c["score"] >= 1:
+            continue  # already healthy
+        _fix = _attempt_fix(c)
+        if _fix:
+            fixes.append(_fix)
+
+    remaining = sum(1 for c in report["checks"] if c["score"] < 1)
+    return {"fixes": fixes, "remaining": remaining, "before": report}
+
+
+def _attempt_fix(check: dict) -> dict | None:
+    """Try to fix a single health check issue. Returns fix record or None."""
+    from pathlib import Path
+    name = check["name"]
+    detail = check.get("detail", "")
+
+    # ── Config drift: fix known bad endpoints ──
+    if name == "config_drift":
+        try:
+            import yaml
+            _cfg_path = Path.home() / ".baw" / "config.yaml"
+            if not _cfg_path.exists():
+                return None
+            _cfg = yaml.safe_load(_cfg_path.read_text(encoding="utf-8"))
+            _providers = _cfg.get("providers", {})
+            _changed = False
+            # Fix minimax .io → minimaxi.com
+            _mmx = _providers.get("minimax", {})
+            if "minimax.io" in _mmx.get("base_url", ""):
+                _mmx["base_url"] = _mmx["base_url"].replace("minimax.io", "minimaxi.com")
+                _changed = True
+            # Fix stepfun /step_plan/ → /v1
+            _sf = _providers.get("stepfun", {})
+            if "/step_plan/" in _sf.get("base_url", ""):
+                _sf["base_url"] = _sf["base_url"].replace("/step_plan/", "/v1")
+                _changed = True
+            if _changed:
+                import os as _os
+                if _cfg_path.exists() and not _os.access(_cfg_path, _os.W_OK):
+                    _cfg_path.chmod(0o644)
+                _cfg_path.write_text(
+                    yaml.dump(_cfg, allow_unicode=True, default_flow_style=False),
+                    encoding="utf-8",
+                )
+                # Invalidate config cache
+                try:
+                    from core.config import load_config
+                    load_config(reload=True)
+                except Exception:
+                    pass
+                return {"check": name, "issue": detail, "action": "fixed base_url drift", "result": "ok"}
+            return None
+        except Exception as e:
+            return {"check": name, "issue": detail, "action": "auto-fix attempted", "result": f"failed: {str(e)[:80]}"}
+
+    # ── Docker socket not writable — report only (can't fix from inside container) ──
+    if name == "docker":
+        return {"check": name, "issue": detail, "action": "requires docker-compose restart with group_add", "result": "manual"}
+
+    # ── Tools registry — re-register ──
+    if name == "tools":
+        try:
+            from tools import register_all
+            from core.tools import list_tools
+            register_all()
+            _count = len(list_tools())
+            return {"check": name, "issue": detail, "action": "re-registered all tools", "result": f"ok ({_count} tools)"}
+        except Exception as e:
+            return {"check": name, "issue": detail, "action": "re-register failed", "result": f"error: {str(e)[:80]}"}
+
+    # ── Knowledge graph — re-create if corrupted ──
+    if name == "knowledge_graph" and "error" in check.get("status", ""):
+        try:
+            _kg_path = Path.home() / ".baw" / "knowledge_graph.json"
+            _kg_path.write_text(
+                json.dumps({"triples": [], "entities": {}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            return {"check": name, "issue": detail, "action": "re-created empty KG", "result": "ok"}
+        except Exception as e:
+            return {"check": name, "issue": detail, "action": "KG re-create failed", "result": f"error: {str(e)[:80]}"}
+
+    # ── Output gate — re-import ──
+    if name == "output_gate":
+        try:
+            import importlib
+            import core.output_validator
+            importlib.reload(core.output_validator)
+            from core.output_validator import _balance_html
+            _test = _balance_html("<b>test")
+            if "</b>" in _test:
+                return {"check": name, "issue": detail, "action": "reloaded output_validator", "result": "ok"}
+            return {"check": name, "issue": detail, "action": "reloaded but test unexpected", "result": "warning"}
+        except Exception as e:
+            return {"check": name, "issue": detail, "action": "reload failed", "result": f"error: {str(e)[:80]}"}
+
+    # ── Other checks — can't auto-fix ──
+    return None
+
+
+def format_doctor_report(result: dict) -> str:
+    """Format doctor fix results as readable string."""
+    lines = ["## 🔧 BAW Doctor — Auto-Fix Report", ""]
+    if result["fixes"]:
+        for f in result["fixes"]:
+            lines.append(f"  {f['check']}: {f['action']} — {f['result']}")
+    else:
+        lines.append("  No fixable issues found.")
+
+    lines.append("")
+    _before = result.get("before", {})
+    lines.append(f"Before: {_before.get('score', '?')}/{_before.get('max_score', '?')} ({_before.get('percentage', '?')}%)")
+    lines.append(f"Remaining manual issues: {result['remaining']}")
+    return "\n".join(lines)
+
+
 def format_health_report(result: dict) -> str:
     """Format health check result as a readable string."""
     lines = [
