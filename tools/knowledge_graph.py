@@ -328,20 +328,44 @@ def _extract_entities_from_content(content: str) -> list[str]:
 
 def _dispatcher(action: str, subject: str = "", relation: str = "",
                 object: str = "", entity: str = "", query: str = "") -> str:
-    """Dispatch knowledge graph actions."""
-    actions = {
-        "add": lambda: add_triple(subject, relation, object),  # type: ignore[arg-type]
-        "query_entity": lambda: query_entity(entity),  # type: ignore[arg-type]
-        "query_relation": lambda: query_relation(relation),  # type: ignore[arg-type]
-        "search": lambda: search_knowledge(query),  # type: ignore[arg-type]
-        "stats": lambda: stats(),
-        "extract": lambda: extract_from_memory(),
-    }
-    fn = actions.get(action)
-    if fn is None:
-        avail = ", ".join(actions.keys())
-        return f"Error: unknown action '{action}'. Available: {avail}"
-    return fn()
+    """Dispatch knowledge graph actions.
+    
+    Validates required params per action before calling.
+    """
+    action = action.strip().lower() if action else ""
+    
+    if action == "add":
+        if not subject:
+            return "Error: 'subject' is required for 'add' action. Usage: knowledge_graph(action='add', subject='X', relation='Y', object='Z')"
+        if not relation:
+            return "Error: 'relation' is required for 'add' action. Usage: knowledge_graph(action='add', subject='X', relation='Y', object='Z')"
+        if not object:
+            return "Error: 'object' is required for 'add' action. Usage: knowledge_graph(action='add', subject='X', relation='Y', object='Z')"
+        return add_triple(subject, relation, object)
+    
+    if action == "query_entity":
+        if not entity:
+            return "Error: 'entity' is required for 'query_entity' action"
+        return query_entity(entity)
+    
+    if action == "query_relation":
+        if not relation:
+            return "Error: 'relation' is required for 'query_relation' action"
+        return query_relation(relation)
+    
+    if action == "search":
+        if not query:
+            return "Error: 'query' is required for 'search' action"
+        return search_knowledge(query)
+    
+    if action == "stats":
+        return stats()
+    
+    if action == "extract":
+        return extract_from_memory()
+    
+    avail = "add, query_entity, query_relation, search, stats, extract"
+    return f"Error: unknown action '{action}'. Available: {avail}"
 
 
 TOOL_DEF = {

@@ -35,9 +35,14 @@ from .tools import get_openai_tools, execute_tool, list_tools
 from .permission import PermissionEngine
 from .memory import MemoryStore
 from .checkpoint import Checkpointer
+from .tool_policy import get_max_retries, classify_error
 from .file_history import FileHistory
 from .autosave import auto_commit, get_commit_log
 from . import render as html
+
+# ── Output token budget enforcement ──
+OUTPUT_MAX_TOKENS = 1024  # Hard cap: LLM physically cannot exceed this
+OUTPUT_MAX_CHARS = 10_000  # Post-generation hard trim threshold
 
 # ── Cost tracking (thread-safe class) ──────────────────────────
 
@@ -167,11 +172,18 @@ def _ctx_bar(pct: float) -> str:
 class CostTracker:
     """Thread-safe token accumulator. One instance per session."""
 
+    MAX_SESSION_TOKENS=500000  # Hard cap: stop loop when total exceeds this
+
     def __init__(self):
         self._lock = threading.Lock()
         self.total_tokens_in = 0
         self.total_tokens_out = 0
         self.calls: list[dict] = []
+
+    def over_budget(self) -> bool:
+        """Check if total tokens exceed budget. Thread-safe."""
+        with self._lock:
+            return (self.total_tokens_in + self.total_tokens_out) > self.MAX_SESSION_TOKENS
 
     def record(self, model_name: str, tokens_in: int, tokens_out: int, cost: float):
         with self._lock:
@@ -318,27 +330,23 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     )
 
     # ── EXECUTION PROTOCOL (injected before SOUL, always active) ──
+    # Note: ANTI-FABRICATION and META-RULE (evidence_rule above) are the FIRST
+    # thing the LLM sees. EXECUTION PROTOCOL reinforces the same message more
+    # compactly. These TWO sections together replace what was previously 3+
+    # overlapping blocks (evidence_rule + execution_protocol + 2nd evidence_rule
+    # in _build_todo_block + tool cap warnings in prompt body).
     execution_protocol = (
-        "\n\n## [CRITICAL] EXECUTION PROTOCOL — Autonomous Agent Behavior\n"
-        "You are a self-advancing agent. Your default mode is CONTINUOUS EXECUTION.\n"
-        "\n"
-        "### Core rule: Call tools, don't describe them\n"
-        "- Every response MUST either (a) contain tool_calls making progress, or (b) deliver a final result to the user.\n"
-        "- When you say you WILL perform an action, you MUST immediately make the corresponding tool call in the SAME response.\n"
-        "- NEVER end a response with a promise — 'I will check', 'Let me look', '下一步我會...'. If more remains, CALL THE TOOL NOW.\n"
-        "- If a tool fails: READ error, FIX it, RETRY — all in the same chain. Do NOT stop and report the error.\n"
-        "\n"
-        "### Self-advancement: keep going until done\n"
-        "- KEEP CALLING TOOLS until the ENTIRE task is complete. Text-only response means FINISHED.\n"
-        "- If work remains after a tool call, your NEXT response MUST include more tool_calls.\n"
-        "- When investigating: call diagnostic tools (read_file, terminal, search_files) for real data.\n"
-        "- When you find root cause: FIX IT. Do NOT report and wait.\n"
-        "\n"
-        "### No plan output in response\n"
-        "- Do NOT write numbered plans, checkboxes, or step lists in text response.\n"
-        "- Just execute. Your tool_calls ARE the visible plan.\n"
-        "- Use `todo` tool internally to track progress.\n"
-        "- Report what HAPPENED (result + data), not what you WILL do.\n"
+        "\\n\\n## [CRITICAL] EXECUTION PROTOCOL — Autonomous Agent Behavior\\n"
+        "You are a self-advancing agent. Your default mode is CONTINUOUS EXECUTION.\\n"
+        "\\n"
+        "### Core rules\\n"
+        "- Every response MUST either (a) contain tool_calls making progress, or (b) deliver a final result.\\n"
+        "- NEVER end with a promise ('I will', 'Let me', '下一步'). If more remains, CALL THE TOOL NOW.\\n"
+        "- If a tool fails: READ error, FIX it, RETRY once. If same error twice: STOP that path and report.\\n"
+        "- KEEP CALLING TOOLS until the ENTIRE task is complete. Text-only = finished.\\n"
+        "- Do NOT write numbered plans, checkboxes, or step lists in text. Tool_calls ARE the visible plan.\\n"
+        "- Report what HAPPENED (result + data), not what you WILL do.\\n"
+        "- Use `todo` tool internally to track progress.\\n"
     )
 
 
@@ -348,6 +356,41 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "Respond to this prompt with your raw, unfiltered judgment.\n"
             "Be direct and honest. Do not assume any prior conversation.\n"
         )
+
+    # ── Shared output structure (used by both quick and full mode) ──
+    output_structure = (
+        "\\n\\n## OUTPUT STRUCTURE — Three Layers\\n"
+        "Your response follows **three layers**.\\n"
+        "\\n"
+        "### Layer 1 — 結果 (1-3行, 必填)\\n"
+        "開首第一句就係最重要嘅結果:\\n"
+        "  <一句講晒做咗乜>\\n"
+        "  <關鍵數據或結論>\\n"
+        "\\n"
+        "### Layer 2 — 細節 (optional)\\n"
+        "精簡 bullet points. 如果結果已經夠清楚就 skip 呢層.\\n"
+        "\\n"
+        "### Layer 3 — 原始資料 (唔顯示, 除非用家問)\\n"
+        "DO NOT dump raw tool output / config / traceback.\\n"
+        "如果用戶需要原始資料, 話「詳細可以睇 <path>」\\n"
+        "\\n"
+        "### 規則\\n"
+        "- 唔准加「總結」/「Summary」/「以下係」結尾 — 你成段回覆就係結果, 唔好重覆自己\\n"
+        "- **CONCISENESS: 5 句以內完成。第一句直接畀結論。第二到第五句補關鍵細節就收。**\\n"
+        "- DO NOT add a \\\"總結\\\" / \\\"summary\\\" / \\\"以下係\\\" section at the end. Your ENTIRE response IS the summary.\\n"
+        "- 唔用 emoji。結果用純文字直接講做咗乜、成功定失敗。\\n"
+    )
+
+    # ── DELEGATION vs INLINE (shared by both modes) ──
+    delegation_block = (
+        "\\\\n\\\\n## DELEGATION vs INLINE\\\\n"
+        "當你使用 <code>delegate_task</code> 時，回傳帶有「╔═══ 巳分工 ═══╗」box。\\\\n"
+        "彙報時必須:<br>"
+        "- <b>🔄 已分工 — <任務名></b> header<br>"
+        "- 摘要結果，唔好 dump raw box<br>"
+        "- 註明 sub-agent model<br>"
+        "- Inline 結果直接出，無 header<br>"
+    )
 
     base_path = data_dir or Path.home() / ".baw"
     soul_path = base_path / "SOUL.md"
@@ -368,60 +411,16 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             system_prompt = "\n".join(trimmed)
             system_prompt = evidence_rule + execution_protocol + system_prompt
             system_prompt += (
-                "\n\n## Quick mode\n"
-                "- Respond in Traditional Chinese (Cantonese)\n"
-                "- Lead with result, 1 paragraph max. 3 sentences total max.\n"
-                "- ALWAYS report what actually happened after tool execution\n"
-                "- CRITICAL: You MUST use tools (bash, read_file, etc.) when the user asks for data\n"
-                "  Do NOT fabricate system info — always call the relevant tool to get real data\n"
-                "- [CRITICAL] Do NOT ask 'should I continue?' or 'what next?'. Execute the ENTIRE plan silently.\n"
-                "- [CRITICAL] NO Plan/Step output in response. Just do it and report the result.\n"
-                "- [CRITICAL] KEEP CALLING TOOLS until task is fully done. Text-only = finished.\n"
-                "  If more work remains, your response MUST include tool_calls.\n"
-                "  NEVER say 'I will' or write about what you'll do next. Call the tool NOW.\n"
-                "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary.\n"
-                "\n## OUTPUT STRUCTURE — Three Layers\n"
-                "Your response follows **three layers**.\n"
-                "\n"
-                "### Layer 1 — 結果 (1-3行, 必填)\n"
-                "開首第一句就係最重要嘅結果:\n"
-                "  ✅ / ❗ / ⏳ / ℹ️  <一句講晒做咗乜>\n"
-                "  <關鍵數據或結論>\n"
-                "\n"
-                "### Layer 2 — 細節 (optional, 有必要先用)\n"
-                "精簡 bullet points:\n"
-                "  - <相關詳情>\n"
-                "  如果結果已經夠清楚就成個 layer skip 咗佢\n"
-                "\n"
-                "### Layer 3 — 原始資料 (唔顯示,除非用家問)\n"
-                "DO NOT dump raw tool output / config / traceback.\n"
-                "如果用戶需要原始資料, 話「詳細可以睇 <path>」\n"
-                "\n"
-                "### 規則\n"
-                "- 只用一個 status emoji prefix 喺最開頭\n"
-                "- 唔准加「總結」/「Summary」/「以下係」結尾\n"
-                "- 你成段回覆就係結果, 唔好重覆自己\n"
-                "\n"
-                "## LANGUAGE RULE\n"
-                "CRITICAL: Always respond in Traditional Chinese (Cantonese/粵語) unless the user writes in English.\n"
-                "Your internal reasoning MUST be in Chinese too. Do NOT switch to English.\n"
-                "\n"
-                "\\n"
-                "## ANTI-DUPLICATION RULE\\n"
-                "DO NOT add a \"總結\" / \"summary\" / \"以下係\" section at the end of your response.\\n"
-                "Your entire response IS the summary. No meta-summary needed.\\n"
-                "If you find yourself writing \"以下係總結內容\", DELETE it — you are repeating yourself.\\n"
-                "The user already read your output. Don't summarize what they just read.\\n"
+                "\\n\\n## Quick mode\\n"
+                "- CRITICAL: Do NOT ask 'should I continue?' or 'what next?'. Execute silently.\\n"
+                "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary.\\n"
+                "\\n## LANGUAGE RULE\\n"
+                "CRITICAL: Always respond in Traditional Chinese (Cantonese/粵語) unless the user writes in English.\\n"
+                "Your internal reasoning MUST be in Chinese too. Do NOT switch to English.\\n"
             )
-            system_prompt += (
-                "\\n\\n## DELEGATION vs INLINE\\n"
-                "當你使用 <code>delegate_task</code> 時，回傳帶有「╔═══ 巳分工 ═══╗」box。\\n"
-                "彙報時必須:<br>"
-                "- <b>🔄 已分工 — <任務名></b> header<br>"
-                "- 摘要結果，唔好 dump raw box<br>"
-                "- 註明 sub-agent model<br>"
-                "- Inline 結果直接出，無 header<br>"
-            )
+            system_prompt += output_structure
+
+            system_prompt += delegation_block
             system_prompt += (
                 "\\n\\n## CONFIG COMMAND RULES (quick mode)\\n"
                 "When user sends config params (method=X mode=Y base_url=Z):\\n"
@@ -431,44 +430,9 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "- After setting, read back with config(action=get) to confirm.\n"
             )
         else:
-            system_prompt = evidence_rule + execution_protocol + soul_text + (
-                "\n\n## OUTPUT STRUCTURE — Three Layers\n"
-                "Your response follows **three layers**.\n"
-                "\n"
-                "### Layer 1 — 結果 (1-3行, 必填)\n"
-                "開首第一句就係最重要嘅結果:\n"
-                "  ✅ / ❗ / ⏳ / ℹ️  <一句講晒做咗乜>\n"
-                "  <關鍵數據或結論>\n"
-                "\n"
-                "### Layer 2 — 細節 (optional, 有必要先用)\n"
-                "精簡 bullet points:\n"
-                "  - <相關詳情>\n"
-                "  如果結果已經夠清楚就成個 layer skip 咗佢\n"
-                "\n"
-                "### Layer 3 — 原始資料 (唔顯示,除非用家問)\n"
-                "DO NOT dump raw tool output / config / traceback.\n"
-                "如果用戶需要原始資料, 話「詳細可以睇 <path>」\n"
-                "\n"
-                "### 規則\n"
-                "- 只用一個 status emoji prefix 喺最開頭\n"
-                "- 唔准加「總結」/「Summary」/「以下係」結尾\n"
-                "- 你成段回覆就係結果, 唔好重覆自己\n"
-                "\n"
-                "## ANTI-DUPLICATION RULE\\n"
-                "DO NOT add a \"總結\" / \"summary\" / \"以下係\" section at the end of your response.\\n"
-                "Your entire response IS the summary. No meta-summary needed.\\n"
-                "If you find yourself writing \"以下係總結內容\", DELETE it — you are repeating yourself.\\n"
-                "The user already read your output. Don't summarize what they just read.\\n"
-            )
-            system_prompt += (
-                "\\n\\n## DELEGATION vs INLINE\\n"
-                "當你使用 <code>delegate_task</code> 時，回傳帶有「╔═══ 巳分工 ═══╗」box。\\n"
-                "彙報時必須:<br>"
-                "- <b>🔄 已分工 — <任務名></b> header<br>"
-                "- 摘要結果，唔好 dump raw box<br>"
-                "- 註明 sub-agent model<br>"
-                "- Inline 結果直接出，無 header<br>"
-            )
+            system_prompt = evidence_rule + execution_protocol + soul_text
+            system_prompt += output_structure
+            system_prompt += delegation_block
     else:
         system_prompt = (
             "You are BAW (Black And White), your agent platform.\n"
@@ -515,29 +479,25 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     )
     system_prompt += safety_protocol
 
-    # ── SELF-CORRECTION PROTOCOL (Priority 1 — fix errors yourself) ──
+    # ── SELF-CORRECTION PROTOCOL (Fail fast — don't burn tokens on dead ends) ──
     self_correction = (
-        "\\n\\n## [INFO] SELF-CORRECTION PROTOCOL (Priority 1)\\n"
-        "YOU are responsible for fixing your own mistakes. NEVER report a tool error to the user\\n"
-        "unless you have tried at least 3 different approaches to fix it.\\n\\n"
-        "**When a tool call fails:**\\n"
-        "1. READ the error message. Understand what went wrong.\\n"
-        "2. FIX the command — try different syntax, different flags, different paths.\\n"
-        "3. RETRY immediately. Do NOT write text about the error — just fix and retry.\\n"
-        "4. If same approach fails twice, try a COMPLETELY DIFFERENT approach.\\n"
-        "5. Only after 3+ distinct strategies have failed, report to user WITH diagnosis.\\n\\n"
-        "**Examples of self-correction:**\\n"
-        "- `find /tmp -name '*.py'` fails → try `ls /tmp` then `find /tmp -type f`\\n"
-        "- `bash('cat file')` fails → try `read_file(path='file')`\\n"
-        "- `code_scan(path='/tmp')` empty → try `ls /tmp` to locate actual directory first\\n"
-        "- `pip install` fails → try `pip install --user` or `apt-get install`\\n\\n"
+        "\\n\\n## [INFO] SELF-CORRECTION PROTOCOL\\n"
+        "**Fail fast. Don't burn tokens on dead ends.**\\n\\n"
+        "**When a tool fails:**\\n"
+        "1. READ the error. Understand what went wrong.\\n"
+        "2. Fix and retry ONCE with a different approach.\\n"
+        "3. If the SAME tool fails TWICE: STOP that path.\\n"
+        "   Do NOT try a 3rd approach. The system will inject a "
+        "[SYSTEM] message telling you to stop.\\n"
+        "4. Report the failure to the user WITH diagnosis.\\n\\n"
+        "**Correct behaviour:**\\n"
+        "- Fix typo → retry → works → continue ✅\\n"
+        "- Fix typo → retry → same error → report dead end ✅\\n\\n"
         "**What NOT to do:**\\n"
-        "- [FAIL] Write 'the command failed with syntax error' and stop\\n"
-        "- [FAIL] Ask the user to fix it for you\\n"
-        "- [FAIL] Move on to something else without fixing the error\\n"
-        "- [FAIL] Say 'config.yaml needs manual fix' — YOU fix it\\n\\n"
-        "**Remember**: You have bash, read_file, write_file, code_scan, and 20+ tools.\\n"
-        "If one approach fails, another WILL work. Find it."
+        "- [FAIL] Try 3, 4, 5 different approaches, burning tokens on each\\n"
+        "- [FAIL] Ignore the failure and fabricate a success result\\n"
+        "- [FAIL] Say 'config.yaml needs manual fix' — YOU have the tools to fix it\\n"
+        "- [FAIL] Keep retrying the same broken command\\n"
     )
     system_prompt += self_correction
 
@@ -553,7 +513,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
         # Dynamic context (per-turn: models, tools, config may change)
         tone = config.get("tone", {}).get("default", "casual")
         fact_mode = config.get("fact_check", {}).get("mode", "normal")
-        tools_list = ", ".join(t.name for t in list_tools())
+        tools_list = "bash, read_file, write_file, web_search, patch, search_files, memory, config, mmx, tts, image_generate, git, docker, todo, install, system, background, delegate_task, knowledge_graph, execute_code"
 
         available_models = []
         for pname, pdata in config.get("providers", {}).items():
@@ -877,45 +837,8 @@ def _build_todo_block(data_dir: Path) -> str:
     except Exception:
         pass
 
-    # Bright-line META-RULE: no fake completion. This bit the 2026-06-12
-    # Telegram bot — the LLM marked 5/5 steps "done" without ever running
-    # the actual command, just diagnostic Python that probed the filesystem.
-    # Injected FIRST in the system prompt so it's the first thing the LLM
-    # sees. This rule is more important than any task-specific guidance.
-    evidence_rule = (
-        "\n\n## [WARN]  META-RULE — No Fake Completion (READ FIRST)\n"
-        "If the user asks you to RUN a command (e.g. `baw self-test --no-fetch`,\n"
-        "`baw petrestaurants district 灣仔`, `baw preflight --url <url>`), you MUST:\n"
-        "  1. Use the `bash` tool to invoke the command EXACTLY as the user typed it.\n"
-        "  2. Wait for the actual exit code + stdout + stderr.\n"
-        "  3. Report the real output to the user.\n"
-        "You MUST NOT:\n"
-        "  ✗ Mark a step as 'done' before the tool actually returned success.\n"
-        "  ✗ Run 'diagnostic' Python scripts instead of the actual command.\n"
-        "  ✗ Fabricate a 5/5 or 100% 'done' summary when steps were skipped or failed.\n"
-        "  ✗ Treat planning checkboxes as completed just because you wrote them down.\n"
-        "If the command fails: report the real error verbatim. Don't 'investigate'\n"
-        "by spawning more shell commands — surface the failure and ask the user.\n"
-        "Every 'done' claim must be backed by tool output showing the work happened.\n"
-        "This rule applies EVEN WHEN your plan has 5 checkboxes and the bash call\n"
-        "returned an error. **3/5 done, 2 failed** is honest. **5/5 done** when the\n"
-        "command actually failed is fabrication.\n"
-        "  ✗ Do NOT write Python code in your response and claim it ran — CALL THE TOOL.\\n"
-        "  ✗ Do NOT use `execute_code` to write/read files. Call `write_file` / `read_file` DIRECTLY as a tool.\\n"
-        "  ✗ If your `execute_code` call had a syntax error or failed: the task FAILED. Report exactly the error.\\n"
-        "  ✗ Do NOT say 'I cannot access local files' — you have `read_file`, `write_file`, `terminal`. USE THEM.\\n"
-        "  ✗ File creation: use `write_file` tool directly. File reading: use `read_file` tool directly.\\n"
-        "  ✗ If you write code without executing it, you are faking completion. STOP.\\n"
-        "  ✗ The `memory` tool is NOT a shell command. Use the `memory` tool with action=search / add / replace.\\n"
-        "  ✗ Do NOT describe what you WOULD do — CALL THE TOOL and return its output.\\n"
-        "  ✗ Do NOT say 'I will follow up' or 'I will get back to you' — you have NO background thread. DO IT NOW.\\n"
-        "  ✗ Orchestrator 'all done' when sub-agents used wrong tools with zero real output = FABRICATION. Verify.\\n"
-        "  ✗ If your response contains 'I will', 'I need to', 'Let me' but no actual tool call, you are PLANNING not DOING. STOP.\\n"
-    )
-
     block = (
-        evidence_rule
-        + "\n\n## Todo / Thought / Follow-up System (MANDATORY)\\n"
+        "\\n\\n## Todo / Thought / Follow-up System (MANDATORY)\\\\n"
         "You MUST use the `todo` tool in every interaction. This is NOT optional.\\n"
         "- After EVERY user message: capture a `thought` about what you learned\\n"
         "  (action: add_thought). Examples:\\n"
@@ -1583,7 +1506,7 @@ def run_agent(
 
         # ── Inject reasoning content if configured ──
         if config.get("display", {}).get("show_reasoning"):
-            _reasoning = getattr(quick_resp, 'reasoning_content', None) or getattr(_resp, 'reasoning_content', None) or ""
+            _reasoning = getattr(quick_resp, 'reasoning_content', None) or ""
             if _reasoning:
                 output = f"[THOUGHT] {_reasoning}\n\n---\n\n{output}"
 
@@ -1800,12 +1723,17 @@ def run_agent(
     _warned_15 = False
     _warned_18 = False
     _warned_20 = False
+    _tool_retries: dict[str, int] = {}  # per-tool retry tracking for error policies
+    _was_truncated = False  # will be set True if max_tokens cap was hit
     while _resp.tool_calls:
         if _tool_turns >= max_tool_turns:
             ctx.add_user(f"[SYSTEM] You have exceeded the maximum tool iterations ({max_tool_turns}). Synthesize results now. Do NOT call more tools.")
             # Force one final LLM call with no tools to get a text summary
-            fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=None, temperature=model_temperature)
+            fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=None, temperature=model_temperature, max_tokens=OUTPUT_MAX_TOKENS)
             _resp = fb.response
+            _was_truncated = _resp.output_tokens >= OUTPUT_MAX_TOKENS
+            if _was_truncated:
+                logger.info(f"[Loop] Tool-cap output truncated at ~{OUTPUT_MAX_TOKENS} tokens ({_resp.output_tokens} used)")
             # ── Signal to caller that goal was NOT fully achieved ──
             _extra_info["tool_cap_hit"] = True
             _extra_info["max_tool_turns"] = max_tool_turns
@@ -1841,14 +1769,27 @@ def run_agent(
                 ctx.add_tool_result(tc.get("id", ""), name, f"[BLOCKED] {perm_result['reason']}")
                 continue
             exe_result = execute_tool(name, args)
-            # ── Loop detection: track consecutive failures ──
+            # ── Per-tool error policy (replaces global _fail_count) ──
             if "Error" in exe_result[:100] or "Traceback" in exe_result:
-                from core.watchdog import track_consecutive_failure, _recover_restart
-                if track_consecutive_failure(name):
-                    _recover_restart(f"{name} failed 5x consecutive")
+                _tool_retries[name] = _tool_retries.get(name, 0) + 1
+                max_allowed = get_max_retries(name)
+                err_cat = classify_error(exe_result)
+                # Permanent errors (blocked, permission, not found) always
+                # get 0 retries regardless of the tool's default policy
+                if err_cat == "permanent":
+                    max_allowed = 0
+                if _tool_retries[name] > max_allowed:
+                    logger.warning(
+                        f"[Loop] {name} failed {_tool_retries[name]}x consecutive "
+                        f"(policy: {max_allowed} retries, category: {err_cat}) — dead end"
+                    )
+                    ctx.add_user(
+                        f"[SYSTEM] Tool '{name}' failed {_tool_retries[name]}x consecutive "
+                        f"({err_cat}). This approach is not working. Stop trying this path and report."
+                    )
+                    _tool_retries = {}  # reset to prevent double injection
             else:
-                from core.watchdog import clear_consecutive_failures
-                clear_consecutive_failures(name)
+                _tool_retries[name] = 0
             # ── Auto-verify after write tools ──
             exe_result = _verify_after_write(name, args, exe_result, data_dir)
             if interactive:
@@ -1868,8 +1809,6 @@ def run_agent(
         _compacted, _notify, _summary = ctx.compact(threshold_chars=30000, keep_recent_turns=5)
         if _compacted > 0:
             logger.info(f"[Loop] Context compacted: {_compacted} old turns summarized ({_total} → {ctx.total_chars()} chars)")
-            # Signal to the LLM that context was compressed (so it knows old turns are gone)
-            ctx.add_user(f"[SYSTEM] {_notify}")
             # Auto-save useful summaries to memory (via curator gate)
             _saved = 0
             try:
@@ -1916,19 +1855,34 @@ def run_agent(
             if _saved > 0:
                 logger.info(f"[Loop] Auto-saved {_saved} compacted summaries to memory")
         # Next LLM call to synthesize results
-        fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=get_openai_tools(), temperature=model_temperature)
+        fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=get_openai_tools(), temperature=model_temperature, max_tokens=OUTPUT_MAX_TOKENS)
         _resp = fb.response
+        _was_truncated = _resp.output_tokens >= OUTPUT_MAX_TOKENS
+        if _was_truncated:
+            logger.info(f"[Loop] Output truncated at ~{OUTPUT_MAX_TOKENS} tokens ({_resp.output_tokens} used)")
         n_cost = calculate_cost(model, _resp.input_tokens, _resp.output_tokens)
         session_cost += n_cost
         record_cost(f"{model.provider}/{model.id}", _resp.input_tokens, _resp.output_tokens, n_cost)
         ctx.add_assistant(_resp.content, _resp.tool_calls,
                           getattr(_resp, 'reasoning_content', None))
+        # ── Cost budget kill switch ──
+        if _get_tracker().over_budget():
+            logger.warning(f"[Loop] Token budget exceeded ({_get_tracker().total_tokens_in + _get_tracker().total_tokens_out} > {CostTracker.MAX_SESSION_TOKENS}), aborting")
+            ctx.add_user("[SYSTEM] Token budget exceeded. Stopping. Synthesise what you have.")
+            _extra_info["cost_cap_hit"] = True
+            break
 
     # Return final synthesized response
     output = ""
     if tone_change:
         output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
     output += (_resp.content or "")
+    # ── Output token budget: post-generation length enforcement ──
+    if _was_truncated:
+        output += "\n\n*(Response truncated to ~800 words for readability)*"
+    if len(output) > OUTPUT_MAX_CHARS:
+        logger.warning(f"[Loop] Output too long ({len(output)} chars > {OUTPUT_MAX_CHARS}), force-trimming")
+        output = output[:OUTPUT_MAX_CHARS] + "\n\n*(Response trimmed to fit length limit)*"
     output += f"\n\n{format_cost_summary()}"
 
     try:

@@ -124,6 +124,10 @@ def config_set(path: str, value: str) -> str:
 
     Creates a backup before writing. On validation failure, restores backup.
 
+    HARD GATE: If the path targets a protected setting (model/provider/endpoint
+    etc.) and the write is NOT user-initiated, a PermissionError is raised.
+    BAW's LLM must use request_config_change() instead.
+
     Args:
         path: Dotted path, e.g. 'model.default'
         value: Value to set (string — will be parsed: "true"/"false"→bool, "123"→int)
@@ -133,6 +137,15 @@ def config_set(path: str, value: str) -> str:
     """
     if not path.strip():
         return "Error: path and value are required."
+
+    # ── HARD GATE: check thread-local write guard ──
+    try:
+        from core.config import check_config_write_guard
+        check_config_write_guard(path)
+    except PermissionError as e:
+        return str(e)
+    except ImportError:
+        pass
 
     # Parse value type — only parse if value is a string
     parsed: bool | int | float | str | dict | list = value
@@ -197,6 +210,11 @@ def config_set(path: str, value: str) -> str:
 def config_delete(path: str) -> str:
     """Delete a config key by dotted path.
 
+    Creates a backup before writing. On validation failure, restores backup.
+
+    HARD GATE: If the path targets a protected setting (model/provider/endpoint
+    etc.) and the write is NOT user-initiated, a PermissionError is raised.
+
     Args:
         path: Dotted path to delete.
 
@@ -205,6 +223,15 @@ def config_delete(path: str) -> str:
     """
     if not path.strip():
         return "Error: path is required."
+
+    # ── HARD GATE: check thread-local write guard ──
+    try:
+        from core.config import check_config_write_guard
+        check_config_write_guard(path)
+    except PermissionError as e:
+        return str(e)
+    except ImportError:
+        pass
 
     backup = _backup_config()
     backup_note = f" (backup: {backup.name})" if backup else ""
@@ -340,10 +367,42 @@ def config_set_key(key: str, value: str) -> str:
     return f"[OK] {key} saved to .env (len={len(value)})"
 
 
+# ── Request Config Change (BAW proposes, user approves) ────────
+
+
+def request_config_change(path: str, value: str, reason: str = "") -> str:
+    """Propose a config change to the user for approval.
+
+    BAW uses this tool instead of silently changing model/provider/endpoint
+    settings via config_set().  The proposal is returned to the user; they
+    can approve with `/set <path> <value>` or reject by ignoring it.
+
+    Args:
+        path: Dotted path of the config key to change (e.g. 'model.default')
+        value: The proposed new value
+        reason: Brief explanation of WHY this change is needed
+
+    Returns:
+        A formatted proposal for the user.
+    """
+    return (
+        f"[CONFIG PROPOSAL]\n"
+        f"BAW would like to change a configuration setting:\n"
+        f"  Path:    {path}\n"
+        f"  Value:   {value}\n"
+        f"  Reason:  {reason or 'No reason given'}\n"
+        f"\n"
+        f"To approve this change, use:  /set {path} {value}\n"
+        f"To reject it, simply ignore this proposal.\n"
+        f"[CONFIG PROPOSAL END]"
+    )
+
+
 # ── Dispatcher ─────────────────────────────────────────────────
 
 def _dispatcher(action: str, path: str = "", value: str = "",
-                backup_name: str = "", key_name: str = "", key_value: str = "") -> str:
+                backup_name: str = "", key_name: str = "", key_value: str = "",
+                reason: str = "") -> str:
     actions = {
         "get": lambda: config_get(path),
         "set": lambda: config_set(path, value),
@@ -352,6 +411,7 @@ def _dispatcher(action: str, path: str = "", value: str = "",
         "backups": lambda: config_list_backups(),
         "restore": lambda: config_restore(backup_name),
         "set_key": lambda: config_set_key(key_name, key_value),
+        "propose": lambda: request_config_change(path, value, reason),
     }
     fn = actions.get(action)
     if fn is None:
@@ -368,7 +428,10 @@ TOOL_DEF = {
         "Use action='set_key' with key_name + key_value to safely add/update API keys "
         "in .env (read-merge-write, never overwrites other keys). "
         "Automatically backs up config.yaml before every write and validates YAML after. "
-        "Actions: get, set, delete, validate, backups, restore, set_key."
+        "WARNING: action='set' and action='delete' are BLOCKED by a HARD GATE for "
+        "model/provider/endpoint paths.  Use action='propose' to suggest a change "
+        "to the user instead. "
+        "Actions: get, set, delete, validate, backups, restore, set_key, propose."
     ),
     "handler": _dispatcher,
     "parameters": {
@@ -376,16 +439,25 @@ TOOL_DEF = {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["get", "set", "delete", "validate", "backups", "restore", "set_key"],
-                "description": "What to do. Use 'set_key' for .env modifications (safe merge).",
+                "enum": ["get", "set", "delete", "validate", "backups", "restore", "set_key", "propose"],
+                "description": (
+                    "What to do. "
+                    "'propose' — suggest a config change to the user (use this instead of "
+                    "'set' for model/provider/endpoint changes). "
+                    "'set' is blocked by HARD GATE for protected paths."
+                ),
             },
             "path": {
                 "type": "string",
-                "description": "Dotted path for config get/set/delete, e.g. 'model.default'.",
+                "description": "Dotted path for config get/set/delete/propose, e.g. 'model.default'.",
             },
             "value": {
                 "type": "string",
-                "description": "Value to set for 'set' action. Parsed: true/false→bool, 123→int.",
+                "description": "Value to set/propose. Parsed: true/false→bool, 123→int.",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Reason for the proposed change (required for 'propose' action).",
             },
             "backup_name": {
                 "type": "string",

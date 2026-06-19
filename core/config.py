@@ -20,12 +20,20 @@ This module:
   3. Loads ~/.baw/.env into os.environ once.
   4. Caches the merged result so repeated calls don't re-parse YAML.
   5. Provides model_id validation so P0-1's override can fail loud, not silent.
+
+HARD GATE (thread-local write guard):
+  BAW's LLM is physically prevented from changing model/provider/endpoint
+  settings without explicit user approval.  The guard uses a thread-local
+  flag that defaults to False.  Only user-initiated code paths (slash
+  commands, explicit user commands) bypass the gate by wrapping the write
+  in the `allow_config_write()` context manager.
 """
 
 from __future__ import annotations
 
 import os
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -48,6 +56,64 @@ BAW_HOME: Path = Path.home() / ".baw"
 _LOCK = threading.Lock()
 _CACHED: Optional[dict] = None
 _ENV_LOADED = False
+
+# ── Thread-Local Write Guard (HARD GATE) ──────────────────────
+# Prevents BAW's LLM from autonomously changing model/provider/endpoint
+# settings.  Default: BLOCKED.  Only user-initiated code paths (slash
+# commands, explicit /set, /model) bypass by wrapping with
+# allow_config_write().
+
+_write_guard = threading.local()
+_write_guard.allowed = False
+
+# Protected key prefixes — any config path starting with these triggers the gate.
+PROTECTED_PREFIXES = [
+    "model.",
+    "providers.",
+    "capabilities.",
+]
+
+
+@contextmanager
+def allow_config_write():
+    """Context manager that permits config writes for the current thread.
+
+    Use this to wrap any user-initiated config write (e.g. slash commands,
+    /set, /model, /reload).  BAW's agent loop does NOT use this, so LLM-
+    triggered writes through execute_tool() are physically blocked.
+    """
+    old = getattr(_write_guard, 'allowed', False)
+    _write_guard.allowed = True
+    try:
+        yield
+    finally:
+        _write_guard.allowed = old
+
+
+def check_config_write_guard(path: str) -> None:
+    """Raise PermissionError if writing to a protected path without user approval.
+
+    Checks the thread-local write-allow flag and the protected-prefix list.
+    Also catches endpoint/base_url keys anywhere in the dotted path.
+    """
+    if getattr(_write_guard, 'allowed', False):
+        return  # User-initiated write — allowed
+    path_lower = path.lower()
+    for prefix in PROTECTED_PREFIXES:
+        if path_lower.startswith(prefix):
+            raise PermissionError(
+                f"[HARD GATE] Cannot write to protected path '{path}'. "
+                f"BAW is not allowed to autonomously change model/provider/endpoint "
+                f"settings.  Use request_config_change() to propose this change to "
+                f"the user."
+            )
+    # Catch endpoint/base_url keys anywhere in the dotted path
+    if "endpoint" in path_lower or "base_url" in path_lower:
+        raise PermissionError(
+            f"[HARD GATE] Cannot write to endpoint/base_url path '{path}'. "
+            f"BAW is not allowed to autonomously change endpoint settings. "
+            f"Use request_config_change() to propose this change to the user."
+        )
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
