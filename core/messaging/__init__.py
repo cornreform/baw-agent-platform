@@ -1315,27 +1315,32 @@ class BaseConnector(ABC):
             return f"[FAIL] Summarization failed: {e}"
 
     def _compress_session(self, config: dict, data_dir: Path, session: dict) -> str:
-        """Compress session: summarize early part, keep last 4 messages + summary header.
-        Returns summary text. Can be called on-demand (/compact) or auto-triggered."""
+        """Compress session: use context.py compact summary instead of LLM summarization.
+        Keeps last 4 messages + summary header. Saves summary to memory."""
         conv_history = session.get("messages", [])
         if not conv_history:
             return "📭 No messages to compress."
 
+        # Use heuristic compaction from context.py — free, no LLM call
         _summary = "[Conversation auto-compressed]"
         try:
-            from ..llm import call_llm_with_fallback
-            _sum_text = "\n".join(
-                m.get("content", "")[:200]
-                for m in conv_history[:30]
-            )
-            _sum_resp = call_llm_with_fallback(
-                config,
-                [{"role": "user", "content": f"Summarize this conversation in Traditional Chinese, capturing key decisions, facts, and pending actions. Bullet points only.\n\n{_sum_text}"}],
-                temperature=0.3,
-            )
-            _summary = _sum_resp.response.content.strip() or _summary
+            from ..context import Context, Message
+            # Build a temporary context from session messages
+            _tmp_ctx = Context(system_prompt="")
+            for m in conv_history:
+                _role = m.get("role", "")
+                _content = m.get("content", "") or ""
+                if _role == "user":
+                    _tmp_ctx.add_user(_content)
+                elif _role == "assistant":
+                    _tmp_ctx.add_assistant(_content, m.get("tool_calls"))
+                elif _role == "tool":
+                    _tmp_ctx.add_tool_result(m.get("tool_call_id", ""), m.get("name", ""), _content)
+            _compacted, _, _compact_text = _tmp_ctx.compact(threshold_chars=5000, keep_recent_turns=0)
+            if _compacted > 0 and _compact_text:
+                _summary = _compact_text[:500]
         except Exception as e:
-            logger.warning(f"[Context] Summarization via LLM failed: {e}")
+            logger.warning(f"[Context] Heuristic compaction failed (will use default summary): {e}")
 
         # Save summary to memory
         try:
