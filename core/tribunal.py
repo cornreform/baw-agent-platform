@@ -140,10 +140,28 @@ def _call_model(provider: str, model: str, messages: list[dict],
 
 def _invoke_judge(judge_cfg: dict, prompt: str, system: str = "") -> JudgeVerdict:
     t0 = time.time()
+
+    # Build message list once
     messages = [{"role": "system", "content": system}] if system else []
     messages.append({"role": "user", "content": prompt})
 
-    result = _call_model(judge_cfg["provider"], judge_cfg["name"], messages)
+    # Chain of attempts: primary → fallback(s)
+    attempts = [(judge_cfg["provider"], judge_cfg["name"])]
+    fb = judge_cfg.get("fallback")
+    if fb:
+        fbp = fb.get("provider", "")
+        fbn = fb.get("name", "")
+        if fbp and fbn:
+            attempts.append((fbp, fbn))
+
+    result = {"content": "", "error": "All models failed", "tokens_in": 0, "tokens_out": 0}
+    used_provider, used_model = "", ""
+    for provider, model in attempts:
+        result = _call_model(provider, model, messages)
+        if result["content"] and not result["error"]:
+            used_provider, used_model = provider, model
+            break
+
     latency = (time.time() - t0) * 1000
 
     confidence = 0.7
@@ -158,7 +176,7 @@ def _invoke_judge(judge_cfg: dict, prompt: str, system: str = "") -> JudgeVerdic
 
     return JudgeVerdict(
         judge_name=judge_cfg["name"],
-        provider=judge_cfg["provider"],
+        provider=used_provider or judge_cfg["provider"],
         content=content,
         confidence=confidence,
         latency_ms=latency,
@@ -290,15 +308,28 @@ class Tribunal:
         # Phase 2: Consensus
         consensus = _score_consensus(valid)
 
-        # Phase 3: Chief Justice synthesis
+        # Phase 3: Chief Justice synthesis (with fallback)
         t0 = time.time()
         if self.chief and self.chief.get("name"):
             synthesis_prompt = _build_synthesis_prompt(prompt, valid, consensus)
-            chief_result = _call_model(
-                self.chief["provider"], self.chief["name"],
-                [{"role": "user", "content": synthesis_prompt}],
-                temperature=temperature
-            )
+            # Chain: chief primary → chief fallback
+            chief_attempts = [(self.chief["provider"], self.chief["name"])]
+            cf = self.chief.get("fallback")
+            if cf:
+                cfp = cf.get("provider", "")
+                cfn = cf.get("name", "")
+                if cfp and cfn:
+                    chief_attempts.append((cfp, cfn))
+            chief_result = {"content": "", "tokens_in": 0, "tokens_out": 0}
+            for cp_name, cm_name in chief_attempts:
+                cr = _call_model(
+                    cp_name, cm_name,
+                    [{"role": "user", "content": synthesis_prompt}],
+                    temperature=temperature
+                )
+                if cr.get("content", "").strip() and not cr.get("error"):
+                    chief_result = cr
+                    break
             verdict_text = chief_result.get("content", "").strip()
         else:
             # No chief — use highest-confidence judge as fallback
