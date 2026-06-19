@@ -67,8 +67,8 @@ _write_guard = threading.local()
 _write_guard.allowed = False
 
 # Protected key prefixes — any config path starting with these triggers the gate.
+# 'model.' intentionally excluded: model.default is user preference, not system safety.
 PROTECTED_PREFIXES = [
-    "model.",
     "providers.",
     "capabilities.",
 ]
