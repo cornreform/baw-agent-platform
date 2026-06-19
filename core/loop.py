@@ -1209,9 +1209,30 @@ def run_agent(
         if drift_fixes:
             for fix in drift_fixes:
                 logger.warning(f"[health] {fix['capability']}: {fix['issue']} → {fix['fix_applied']}")
-            # Save healed config
-            from .model_discovery import _save_config
-            _save_config(config, data_dir)
+            # Sync auto-heal changes to user config (NOT full merged dump)
+            # Use the config tool's mechanism to write only changed keys
+            # so user config isn't overwritten by repo defaults
+            try:
+                import yaml
+                user_cfg_path = (data_dir or Path.home() / ".baw") / "config.yaml"
+                if user_cfg_path.exists():
+                    user_cfg = yaml.safe_load(user_cfg_path.read_text(encoding="utf-8")) or {}
+                    changed = False
+                    caps = config.get("capabilities", {})
+                    for cap_name in caps:
+                        if cap_name not in user_cfg.setdefault("capabilities", {}):
+                            user_cfg["capabilities"][cap_name] = caps[cap_name]
+                            changed = True
+                    if changed:
+                        import os as _os
+                        if user_cfg_path.exists() and not _os.access(user_cfg_path, _os.W_OK):
+                            user_cfg_path.chmod(0o644)
+                        user_cfg_path.write_text(
+                            yaml.dump(user_cfg, allow_unicode=True, default_flow_style=False),
+                            encoding="utf-8",
+                        )
+            except Exception as _sc:
+                logger.warning(f"[health] Could not sync drift fixes to user config: {_sc}")
             logger.info(f"[health] Auto-healed {len(drift_fixes)} capability config drift(s)")
     except Exception as _he:
         logger.debug(f"[health] capability health check skipped: {_he}")
