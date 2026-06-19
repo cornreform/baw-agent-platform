@@ -2443,6 +2443,31 @@ class BaseConnector(ABC):
                     break
             if _stripped:
                 output = output.strip()
+            # ── Credential guard: redact API keys that may have leaked into output ──
+            # BAW's bash tool strips API keys from subprocess env, but LLM output may
+            # still contain keys from config dumps, .env reads, or hallucinated fabrications.
+            _cred_patterns = [
+                # OpenAI/DeepSeek-style keys: sk-... (at least 20 chars after prefix)
+                (r'(sk-[A-Za-z0-9]{20,})', 'sk-***REDACTED***'),
+                # Generic API key patterns: long alphanumeric with KEY/SECRET/TOKEN prefix
+                (r'([A-Z_]{3,30}_(?:API_)?(?:KEY|SECRET|TOKEN)\s*=\s*)([\S]{20,})',
+                 r'\1***REDACTED***'),
+                # Bearer tokens in curl or HTTP headers
+                (r'(Bearer\s+)([A-Za-z0-9_\-\.]{20,})', r'\1***REDACTED***'),
+                # JSON config: "api_key": "long-string"
+                (r'("api_key"\s*:\s*")([^"]{20,})(")', r'\1***REDACTED***\3'),
+                # Hex-style keys: 32+ hex chars that look like API keys
+                (r'\b([A-Za-z0-9+/]{40,}={0,2})\b', None),  # base64-like
+            ]
+            _redacted_count = 0
+            for _cp, _replacement in _cred_patterns:
+                if _replacement:
+                    _new_output, _n = re.subn(_cp, _replacement, output)
+                    if _n > 0:
+                        output = _new_output
+                        _redacted_count += _n
+            if _redacted_count > 0:
+                output = f"[SECURITY] {_redacted_count} credential(s) redacted\n\n{output}"
             # Limit to 4000 chars
             if len(output) > 4000:
                 output = output[:3997] + "..."
