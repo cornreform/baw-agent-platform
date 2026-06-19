@@ -184,6 +184,13 @@ def config_set(path: str, value: str) -> str:
             return f"Save failed (rolled back): {save_err}"
         return f"Save failed (no backup to restore): {save_err}"
 
+    # Invalidate in-memory cache so subsequent load_config() picks up change
+    try:
+        from core.config import load_config
+        load_config(reload=True)
+    except Exception:
+        pass
+
     return f"config.{path} = {parsed}{backup_note}"
 
 
