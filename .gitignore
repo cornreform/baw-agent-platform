@@ -28,3 +28,4 @@ data/restaurant_cache.json
 # Logs
 *.log
 dream-log.md
+.pylib/

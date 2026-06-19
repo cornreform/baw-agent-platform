@@ -41,8 +41,8 @@ from .autosave import auto_commit, get_commit_log
 from . import render as html
 
 # ── Output token budget enforcement ──
-OUTPUT_MAX_TOKENS = 1024  # Hard cap: LLM physically cannot exceed this
-OUTPUT_MAX_CHARS = 10_000  # Post-generation hard trim threshold
+OUTPUT_MAX_TOKENS = 1024  # Hard cap: passed to API as max_tokens
+OUTPUT_MAX_CHARS = 4_096   # Post-generation hard trim (~4 chars/token × 1024)
 
 # ── Cost tracking (thread-safe class) ──────────────────────────
 
@@ -308,43 +308,19 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     # and reported "5/5 (100%)" — pure fabrication. This rule exists
     # because the LLM otherwise defaults to "plan completion" optimism.
     evidence_rule = (
-        "\n\n## [WARN]  META-RULE — No Fake Completion (READ FIRST)\n"
-        "If the user asks you to RUN a command (e.g. `baw self-test --no-fetch`,\n"
-        "`baw petrestaurants district 灣仔`, `baw preflight --url <url>`), you MUST:\n"
-        "  1. Use the `bash` tool to invoke the command EXACTLY as the user typed it.\n"
-        "  2. Wait for the actual exit code + stdout + stderr.\n"
-        "  3. Report the real output to the user.\n"
-        "You MUST NOT:\n"
-        "  ✗ Mark a step as 'done' before the tool actually returned success.\n"
-        "  ✗ Run 'diagnostic' Python scripts instead of the actual command.\n"
-        "  ✗ Fabricate a 5/5 or 100% 'done' summary when steps were skipped or failed.\n"
-        "  ✗ Treat planning checkboxes as completed just because you wrote them down.\n"
-        "If the command fails: report the real error verbatim. Don't 'investigate'\n"
-        "by spawning more shell commands — surface the failure and ask the user.\n"
-        "Every 'done' claim must be backed by tool output showing the work happened.\n"
-        "This rule applies EVEN WHEN your plan has 5 checkboxes and the bash call\n"
-        "returned an error. **3/5 done, 2 failed** is honest. **5/5 done** when the\n"
-        "command actually failed is fabrication.\n"
-        "  ✗ Do NOT write Python code in your response and claim it ran — CALL THE TOOL.\\n"
-        "  ✗ Do NOT use `execute_code` to write/read files. Call `write_file` / `read_file` DIRECTLY as a tool.\\n"
-        "  ✗ If your `execute_code` call had a syntax error or failed: the task FAILED. Report exactly the error.\\n"
-        "  ✗ Do NOT say 'I cannot access local files' — you have `read_file`, `write_file`, `terminal`. USE THEM.\\n"
-        "  ✗ File creation: use `write_file` tool directly. File reading: use `read_file` tool directly.\\n"
-        "  ✗ If you write code without executing it, you are faking completion. STOP.\\n"
-        "  ✗ The `memory` tool is NOT a shell command. Use the `memory` tool with action=search / add / replace.\\n"
-        "  ✗ Do NOT describe what you WOULD do — CALL THE TOOL and return its output.\\n"
-        "  ✗ Do NOT say 'I will follow up' or 'I will get back to you' — you have NO background thread. DO IT NOW.\\n"
-        "  ✗ Orchestrator 'all done' when sub-agents used wrong tools with zero real output = FABRICATION. Verify.\\n"
-        "  ✗ If your response contains 'I will', 'I need to', 'Let me' but no actual tool call, you are PLANNING not DOING. STOP.\\n"
-        "  ✗ Over-generalization from ONE search result is fabrication. \\n"
-        "     If a search says 'HTML is more reliable', that does NOT mean \\n"
-        "     'Telegram does not support Markdown'. Report the actual finding. \\n"
-        "     Do not extrapolate from a single data point to a universal claim.\\n"
-        "  ✗ Factual claims about what a system 'supports' or 'does not support' \\n"
-        "     require tool verification (config/get, read_file, or official docs). \\n"
-        "     Guessing = fabrication.\\n"
-        "  ✗ If unsure, say 'I need to check' then actually check with a tool.\\n"
-        "     Never pretend confidence when you only have partial information.\\n"
+        "\n\n## [WARN]  META-RULE — No Fabrication\n"
+        "### Must do:\n"
+        "  - Run commands EXACTLY as typed via `bash` tool — report real exit/output\n"
+        "  - Use `write_file`/`read_file` DIRECTLY — NOT `execute_code` for file ops\n"
+        "  - If a tool call failed: say 'failed: <actual error>'. Do NOT retry 3x.\n"
+        "### Must NOT:\n"
+        "  - Claim '5/5 done' when steps failed. 3/5 done, 2 failed = honest.\n"
+        "  - Say 'I will follow up' / 'Let me check' + no tool call = planning not doing.\n"
+        "  - Say 'I cannot access files' — you have read/write/terminal tools.\n"
+        "  - Over-generalize from one search result ('HTML is more reliable' ≠ 'Markdown not supported').\n"
+        "  - Orchestrator 'all completed' when sub-agents returned errors = fabrication.\n"
+        "  - Treat checkboxes as completion. Only tool output = done.\n"
+        "This rule > any task guidance. First injected, always active.\n"
     )
 
     # ── EXECUTION PROTOCOL (injected before SOUL, always active) ──
@@ -1758,6 +1734,10 @@ def run_agent(
             _was_truncated = getattr(_resp, 'finish_reason', '') == 'length'
             if _was_truncated:
                 logger.info(f"[Loop] Tool-cap output truncated at ~{OUTPUT_MAX_TOKENS} tokens ({_resp.output_tokens} used)")
+            # ── Hard post-gen enforcement ──
+            if _resp.content and len(_resp.content) > OUTPUT_MAX_CHARS:
+                logger.warning(f"[Loop] Tool-cap post-gen: {len(_resp.content)} chars → {OUTPUT_MAX_CHARS}")
+                _resp.content = _resp.content[:OUTPUT_MAX_CHARS - 50] + "\n\n[...truncated...]"
             # ── Signal to caller that goal was NOT fully achieved ──
             _extra_info["tool_cap_hit"] = True
             _extra_info["max_tool_turns"] = max_tool_turns
@@ -1881,7 +1861,7 @@ def run_agent(
                 logger.info(f"[Loop] Auto-saved {_saved} compacted summaries to memory")
         # ── Pre-call budget check: if context already too big, stop before burning more ──
         _ctx_tokens = _get_tracker().total_tokens_in + _get_tracker().total_tokens_out
-        if _get_tracker().over_budget() or _ctx_tokens > CostTracker.MAX_SESSION_TOKENS * 0.6:
+        if _get_tracker().over_budget() or _ctx_tokens > CostTracker.MAX_SESSION_TOKENS * 0.8:
             logger.warning(f"[Loop] Pre-call budget check: {_ctx_tokens} tokens used, stopping")
             ctx.add_user(f"[SYSTEM] Token budget nearly exhausted ({_human_tokens(_ctx_tokens)}). Synthesise what you have — no more LLM calls.")
             _extra_info["cost_cap_hit"] = True
@@ -1892,6 +1872,11 @@ def run_agent(
         _was_truncated = getattr(_resp, 'finish_reason', '') == 'length'
         if _was_truncated:
             logger.info(f"[Loop] Output truncated at ~{OUTPUT_MAX_TOKENS} tokens ({_resp.output_tokens} used)")
+        # ── Hard post-gen enforcement: some providers (DeepSeek) ignore max_tokens ──
+        if _resp.content and len(_resp.content) > OUTPUT_MAX_CHARS:
+            logger.warning(f"[Loop] Post-gen enforcement: {len(_resp.content)} chars truncated to {OUTPUT_MAX_CHARS}")
+            _resp.content = _resp.content[:OUTPUT_MAX_CHARS - 50] + "\n\n[...truncated to token budget...]"
+            _was_truncated = True
         n_cost = calculate_cost(model, _resp.input_tokens, _resp.output_tokens)
         session_cost += n_cost
         record_cost(f"{model.provider}/{model.id}", _resp.input_tokens, _resp.output_tokens, n_cost)
