@@ -232,9 +232,9 @@ def _strip_stale_lines(text: str) -> str:
 
 
 def _enforce_length(text: str) -> str:
-    # Sync with loop.py OUTPUT_MAX_CHARS (4,096 chars ≈ 1,024 tokens × 4)
-    if len(text) > 4096:
-        text = text[:4093] + "..."
+    # Telegram splits messages > 4096 chars; 12K allows verbose but still bounded
+    if len(text) > 12000:
+        text = text[:11997] + "..."
     return text
 
 
