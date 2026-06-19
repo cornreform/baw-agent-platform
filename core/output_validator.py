@@ -98,7 +98,10 @@ def validate_output(output: str, *, prompt: str = "") -> str:
     # Phase 7: Length enforcement
     result = _enforce_length(result)
 
-    # Phase 8: Final sanity — output must not be empty
+    # Phase 8: HTML tag balance — ensure all <b> <i> <u> <s> <code> are closed
+    result = _balance_html(result)
+
+    # Phase 9: Final sanity — output must not be empty
     if not result.strip():
         return _empty_fallback()
 
@@ -233,6 +236,32 @@ def _enforce_length(text: str) -> str:
     # Use 8000 for analysis/verbose tasks — Telegram splits long messages.
     if len(text) > 8000:
         text = text[:7997] + "..."
+    return text
+
+
+_BALANCE_TAGS = {'b', 'i', 'u', 's', 'code', 'a'}
+
+def _balance_html(text: str) -> str:
+    """Ensure all inline HTML tags are properly closed.
+    
+    Detects unclosed opening tags and appends closing tags at the end.
+    Does NOT fix deeply nested cross-contamination — just prevents
+    Telegram's HTML parser from rejecting the entire message.
+    """
+    import re as _re
+    _open_tags = _re.findall(r'<(b|i|u|s|code|a)(?:\s[^>]*)?>', text)
+    _close_tags = _re.findall(r'</(b|i|u|s|code|a)>', text)
+    # Count per tag type
+    _open_count = {}
+    for t in _open_tags:
+        _open_count[t] = _open_count.get(t, 0) + 1
+    for t in _close_tags:
+        _open_count[t] = _open_count.get(t, 0) - 1
+    # Append missing closing tags
+    for tag in ('a', 'code', 's', 'u', 'i', 'b'):
+        n = _open_count.get(tag, 0)
+        if n > 0:
+            text += ''.join(f'</{tag}>' for _ in range(n))
     return text
 
 

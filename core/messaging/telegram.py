@@ -332,9 +332,12 @@ class TelegramConnector(BaseConnector):
         )
         if r.status_code != 200:
             if "can't parse entities" in r.text:
+                # Strip all HTML tags so raw <b> isn't shown literally
+                import re as _re
+                _clean = _re.sub(r'<[^>]+>', '', text)
                 r = self._client.post(
                     f"{self._api_base}/sendMessage",
-                    json={"chat_id": chat_id, "text": text},
+                    json={"chat_id": chat_id, "text": _clean},
                     timeout=10,
                 )
         if r.status_code == 200:
