@@ -383,7 +383,7 @@ def cmd_setup(data_dir: Path):
          [{"id": "deepseek-v4-flash", "capabilities": ["chat"], "context_window": 65536,
            "cost_per_1m_input": 0.30, "cost_per_1m_output": 1.20},
           {"id": "deepseek-v4-pro", "capabilities": ["chat"], "context_window": 65536}]),
-        (2,  "MINIMAX_API_KEY", "MiniMax",        "minimax", "https://api.minimax.io/v1",
+        (2,  "MINIMAX_API_KEY", "MiniMax",        "minimax", "https://api.minimax.io/v1",  # 國際版可改 https://api.minimaxi.com/v1
          [{"id": "MiniMax-M3", "capabilities": ["chat", "vision", "tts", "image_generation"], "context_window": 1048576},
           {"id": "MiniMax-M2.7-highspeed", "capabilities": ["chat"], "context_window": 1048576},
           {"id": "MiniMax-M2.7", "capabilities": ["chat"], "context_window": 1048576},
