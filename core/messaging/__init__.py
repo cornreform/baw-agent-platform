@@ -2326,35 +2326,45 @@ class BaseConnector(ABC):
                     r'╔═══ 巳分工.*?╚═════════════════════════════╝',
                     output, _sa_re.DOTALL
                 )
-                for _i, (_sa_id, _box) in enumerate(zip(_subagent_msgs, _sa_boxes)):
-                    _lines = _box.split('\n')
-                    # Extract footer: Iterations + model info
-                    _footer = ""
-                    for _l in _lines:
-                        if 'Iterations:' in _l:
-                            _footer = _l.strip().lstrip('│').strip()
-                            break
-                    # Extract result summary (skip header + footer lines)
-                    _result_parts = []
-                    _in_body = False
-                    for _l in _lines:
-                        _stripped = _l.strip()
-                        if '├───' in _stripped and not _in_body:
-                            _in_body = True
-                            continue
-                        if '├───' in _stripped and _in_body:
-                            break
-                        if _in_body and _stripped.startswith('│'):
-                            _content = _stripped[1:].strip()
-                            if _content and 'Goal:' not in _content:
-                                _result_parts.append(_content)
-                    _result_text = '\n'.join(_result_parts[:5])[:300]
-                    if _result_text:
-                        _update = f"✅ **子任務完成**"
-                        if _footer:
-                            _update += f" · {_footer}"
-                        _update += f"\n{_result_text}"
-                        self.send(chat_id, _update, edit_msg_id=_sa_id)
+                # ── Always iterate over ALL sub-agent messages, not just matched boxes ──
+                for _i, _sa_id in enumerate(_subagent_msgs):
+                    if _i < len(_sa_boxes):
+                        _box = _sa_boxes[_i]
+                        _lines = _box.split('\n')
+                        # Extract footer: Iterations + model info
+                        _footer = ""
+                        for _l in _lines:
+                            if 'Iterations:' in _l:
+                                _footer = _l.strip().lstrip('│').strip()
+                                break
+                        # Extract result summary (skip header + footer lines)
+                        _result_parts = []
+                        _in_body = False
+                        for _l in _lines:
+                            _stripped = _l.strip()
+                            if '├───' in _stripped and not _in_body:
+                                _in_body = True
+                                continue
+                            if '├───' in _stripped and _in_body:
+                                break
+                            if _in_body and _stripped.startswith('│'):
+                                _content = _stripped[1:].strip()
+                                if _content and 'Goal:' not in _content:
+                                    _result_parts.append(_content)
+                        _result_text = '\n'.join(_result_parts[:5])[:300]
+                        if _result_text:
+                            _update = "✅ **子任務完成**"
+                            if _footer:
+                                _update += f" · {_footer}"
+                            _update += f"\n{_result_text}"
+                            self.send(chat_id, _update, edit_msg_id=_sa_id)
+                        elif _footer:
+                            self.send(chat_id, f"✅ **子任務完成** · {_footer}", edit_msg_id=_sa_id)
+                        else:
+                            self.send(chat_id, "✅ **子任務完成**", edit_msg_id=_sa_id)
+                    else:
+                        # ── Fallback: no box pattern matched → still mark as completed ──
+                        self.send(chat_id, "✅ **子任務完成**", edit_msg_id=_sa_id)
 
             # ── Append failure report if any (proactive, not waiting for next request) ──
             if all_failure_reasons:
@@ -2398,6 +2408,41 @@ class BaseConnector(ABC):
             # ── Compress excessive blank lines: 3+ consecutive newlines → 2 (keep 1 blank line max)
             output = re.sub(r'\n{3,}', '\n\n', output)
             output = output.strip()
+            # ── Hard anti-duplication: strip trailing 總結/summary sections ──
+            # LLM system prompt has ANTI-DUPLICATION RULE but LLMs often ignore it.
+            # This is a HARD post-processing filter — strip summary-section headers
+            # that appear at the END of output and either repeat content or are empty.
+            _dedup_patterns = [
+                (r'\n*#{1,3}\s*總結\s*\n', '總結'),
+                (r'\n*#{1,3}\s*Summary\s*\n', 'Summary'),
+                (r'\n*#{1,3}\s*总结\s*\n', '总结'),
+                (r'\n*以下係總結內容[：:]\s*\n', '以下係總結內容'),
+                (r'\n*以下係總結[：:]\s*\n', '以下係總結'),
+                (r'\n*以上係總結[：:]\s*\n', '以上係總結'),
+                (r'\n*\*\*總結\*\*[：:]?\s*\n', '**總結**'),
+                (r'\n*\*\*Summary\*\*[：:]?\s*\n', '**Summary**'),
+                (r'\n*總結[：:]\s*\n', '總結：'),
+            ]
+            _stripped = False
+            for _pat, _label in _dedup_patterns:
+                _match = re.search(_pat, output)
+                if not _match:
+                    continue
+                _before = output[:_match.start()]
+                _after = output[_match.end():]
+                # Only strip if (a) section is near end (last 40% of output), OR
+                # (b) after-content is empty or just repeats before-content
+                _pos_ratio = _match.start() / max(len(output), 1)
+                _after_clean = _after.strip()
+                _is_near_end = _pos_ratio > 0.6
+                _is_empty_after = len(_after_clean) < 20
+                _is_repeat = _after_clean and len(_after_clean) < len(_before) * 0.3 and _after_clean[:50] in _before[-200:]
+                if _is_near_end or _is_empty_after or _is_repeat:
+                    output = _before.strip()
+                    _stripped = True
+                    break
+            if _stripped:
+                output = output.strip()
             # Limit to 4000 chars
             if len(output) > 4000:
                 output = output[:3997] + "..."
