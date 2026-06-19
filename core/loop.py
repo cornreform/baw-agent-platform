@@ -59,8 +59,15 @@ def _human_tokens(n: int) -> str:
 
 
 # ── Constants ──────────────────────────────────────────────────
-MAX_TOOL_TURNS = 25      # increased from 15 — give BAW room for complex tasks
-                         # but system prompt warns at turn 20 to self-terminate
+MAX_TOOL_TURNS = 25      # base — overridden dynamically by task complexity below
+
+# ── Tool cap scaling by task complexity ──
+_TOOL_TURNS_BY_COMPLEXITY = {
+    "simple":   50,
+    "moderate": 75,
+    "complex":  100,
+}
+
 MAX_QUICK_TOOL_TURNS = 5  # stricter cap for quick mode
 
 
@@ -1535,6 +1542,11 @@ def run_agent(
     from .token_killer import should_activate_court, estimate_task_complexity
     _skip_court = (not should_activate_court(prompt) and mode not in ("deep", "full"))
     _complexity = estimate_task_complexity(prompt)
+    # ── Scale tool cap by task complexity ──
+    _base_turns = _TOOL_TURNS_BY_COMPLEXITY.get(_complexity, MAX_TOOL_TURNS)
+    if max_tool_turns == 25 and _base_turns > 25:  # only override default (25)
+        max_tool_turns = _base_turns
+        logger.info(f"[loop] Tool cap scaled to {max_tool_turns} ({_complexity} task)")
     if _skip_court:
         logger.info(f"[loop] Court bypassed — safe task ({_complexity})")
         court_result = None
@@ -1738,15 +1750,16 @@ def run_agent(
             _extra_info["tool_cap_hit"] = True
             _extra_info["max_tool_turns"] = max_tool_turns
             break
-        # ── Progressive tool cap warnings ──
-        if _tool_turns >= 15 and not _warned_15:
-            ctx.add_user("[SYSTEM] ⏱ 15/25 tool turns used — ask yourself: do you have enough data? If yes, synthesise and stop. If not, focus on must-haves only, skip nice-to-haves.")
+        # ── Progressive tool cap warnings (proportional to max_tool_turns) ──
+        _warn_pct = max_tool_turns / 100.0  # per-point percentage
+        if _tool_turns >= int(60 * _warn_pct) and not _warned_15:
+            ctx.add_user(f"[SYSTEM] ⏱ {_tool_turns}/{max_tool_turns} tool turns used — ask yourself: do you have enough data? If yes, synthesise and stop. If not, focus on must-haves only, skip nice-to-haves.")
             _warned_15 = True
-        elif _tool_turns >= 18 and not _warned_18:
-            ctx.add_user("[SYSTEM] ⏱ 18/25 tool turns used — start wrapping up. Prioritise results synthesis over additional data gathering.")
+        elif _tool_turns >= int(75 * _warn_pct) and not _warned_18:
+            ctx.add_user(f"[SYSTEM] ⏱ {_tool_turns}/{max_tool_turns} tool turns used — start wrapping up. Prioritise results synthesis over additional data gathering.")
             _warned_18 = True
-        elif _tool_turns >= 20 and not _warned_20:
-            ctx.add_user("[SYSTEM] ⏱ 20/25 tool turns used — YOU MUST WRAP UP NOW. 5 turns remaining. Call no new investigative tools. Synthesise what you have into a final response.")
+        elif _tool_turns >= int(85 * _warn_pct) and not _warned_20:
+            ctx.add_user(f"[SYSTEM] ⏱ {_tool_turns}/{max_tool_turns} tool turns used — YOU MUST WRAP UP NOW. {max_tool_turns - _tool_turns} turns remaining. Call no new investigative tools. Synthesise what you have into a final response.")
             _warned_20 = True
         _tool_turns += 1
         for tc in _resp.tool_calls:
