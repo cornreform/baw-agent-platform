@@ -1,40 +1,49 @@
 # BAW Scheduled Tasks
 # Cron format: min hour day month weekday
-# Updated for v1.0.0 container deployment
-# Fixed 2026-06-18: inline Python uses intermediate vars to avoid f-string backslash bug
+# ⚠️ All times in HKT (Asia/Hong_Kong) — set cron.timezone in config.yaml
+#
+# Nightly maintenance window: 02:00-05:00 HKT (45-min gaps)
+# These run silently — check ~/.baw/daily_reports/ for outputs
+# Morning report is DISABLED by default — enable via /cron enable daily-self-report
 
-- name: weekly-self-evolution
-  cron: "0 3 * * 0"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.evolve import auto_optimize, flush_behavior; flush_behavior(); r=auto_optimize(); pf=r.get('patterns_found',0); sp='soul_patched' if r.get('soul_patched') else 'no changes'; print(f'Weekly evolve: {pf} patterns, {sp}')\""
-  description: "Weekly self-evolution: analyze memory, revise SOUL.md, optimize config"
-  enabled: true
-
-- name: daily-memory-decay
-  cron: "0 4 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.memory import MemoryStore; from pathlib import Path; m=MemoryStore(Path.home() / '.baw'); m.decay(); print('Memory decay completed')\""
-  description: "Daily memory score decay for old entries"
+- name: daily-backup
+  cron: "0 2 * * *"
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.backup import create_backup; r=create_backup(); sm=r.get('size_mb',0); print(f'Backup: {sm}MB')\""
+  description: "02:00 HKT — Daily backup of config/memory/skills (keeps last 7)"
   enabled: true
 
 - name: nightly-health-check
   cron: "0 3 * * *"
   command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.doctor import cmd_doctor; from pathlib import Path; cmd_doctor(Path.home() / '.baw', fix=False); print('Health check completed')\""
-  description: "Nightly system health check"
+  description: "03:00 HKT — Full self-diagnose: provider health, disk, config"
   enabled: true
 
-- name: daily-evolve-analyze
-  cron: "0 */6 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.evolve import analyze, auto_optimize, flush_behavior; flush_behavior(); r=auto_optimize(dry_run=True); pf=r.get('patterns_found',0); qc=r.get('queued_count',0); print(f'Evolve analyze: {pf} patterns, {qc} queued')\""
-  description: "Every 6h: analyze behavior + extract correction lessons"
+- name: daily-memory-decay
+  cron: "30 3 * * *"
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.memory import MemoryStore; from pathlib import Path; m=MemoryStore(Path.home() / '.baw'); m.decay(); print('Memory decay completed')\""
+  description: "03:30 HKT — Memory store score decay for old entries"
   enabled: true
 
 - name: daily-kg-extract
-  cron: "30 4 * * *"
+  cron: "0 4 * * *"
   command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.knowledge_graph import extract_from_memory; print(extract_from_memory())\""
-  description: "Daily: auto-populate knowledge graph from memory store"
+  description: "04:00 HKT — Auto-populate knowledge graph from memory store"
   enabled: true
 
-- name: daily-backup
-  cron: "0 2 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.backup import create_backup; r=create_backup(); sm=r.get('size_mb',0); print(f'Backup: {sm}MB')\""
-  description: "Daily backup of ~/.baw/ (config, memory, skills) — keeps last 7"
+- name: daily-evolve-analyze
+  cron: "30 4 * * *"
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.evolve import analyze, auto_optimize, flush_behavior; flush_behavior(); r=auto_optimize(dry_run=True); pf=r.get('patterns_found',0); qc=r.get('queued_count',0); print(f'Evolve analyze: {pf} patterns, {qc} queued')\""
+  description: "04:30 HKT — Analyze behavior, extract patterns, queue SOUL.md patches"
   enabled: true
+
+- name: weekly-self-evolution
+  cron: "0 3 * * 0"
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.evolve import auto_optimize, flush_behavior; flush_behavior(); r=auto_optimize(); pf=r.get('patterns_found',0); sp='soul_patched' if r.get('soul_patched') else 'no changes'; print(f'Weekly evolve: {pf} patterns, {sp}')\""
+  description: "Sun 03:00 HKT — Full self-evolution: analyze memory, apply SOUL.md patches"
+  enabled: true
+
+- name: daily-self-report
+  cron: "0 10 * * *"
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.scheduler import Scheduler; from pathlib import Path; s=Scheduler(Path.home() / '.baw'); print(s.status_report())\""
+  description: "10:00 HKT — Morning report: collect nightly results → compact summary (DISABLED — enable via /cron enable daily-self-report)"
+  enabled: false
