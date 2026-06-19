@@ -40,9 +40,9 @@ from .file_history import FileHistory
 from .autosave import auto_commit, get_commit_log
 from . import render as html
 
-# ── Output token budget enforcement ──
-OUTPUT_MAX_TOKENS = 1024  # Hard cap: passed to API as max_tokens
-OUTPUT_MAX_CHARS = 12_000  # Post-generation hard trim (Telegram splits longer messages)
+# ── Output token budget (effectively unlimited — user prefers complete answers) ──
+OUTPUT_MAX_TOKENS = 100_000  # Effectively unlimited; prevents infinite loops
+OUTPUT_MAX_CHARS = 1_000_000  # Effectively unlimited; safety bound only
 
 # ── Cost tracking (thread-safe class) ──────────────────────────
 
