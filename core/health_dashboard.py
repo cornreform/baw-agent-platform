@@ -189,9 +189,12 @@ def health_check() -> dict:
     _tools_ok = 0
     _tools_total = 0
     try:
-        from core.tools import list_tools, _tools as _tool_registry
-        _tools_total = len(_tool_registry) if _tool_registry else 0
-        _tools_ok = sum(1 for t in (_tool_registry or {}).values() if t is not None)
+        from tools import register_all as _reg_all
+        _reg_all()  # ensure tools are registered before checking
+        from core.tools import list_tools
+        _tools = list_tools()
+        _tools_total = len(_tools) if _tools else 0
+        _tools_ok = sum(1 for t in (_tools or []) if t is not None)
         if _tools_ok >= 35:
             checks.append({"name": "tools", "score": 1, "status": "ok", "detail": f"{_tools_total} registered"})
             total_score += 1
