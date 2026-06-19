@@ -88,6 +88,9 @@ def validate_output(output: str, *, prompt: str = "") -> str:
     # Phase 6: Stale line cleanup — remove empty emoji-only lines
     result = _strip_stale_lines(result)
 
+    # Phase 6b: Verbosity compression — collapse excessive sections
+    result = _compress_verbose(result)
+
     # Phase 7: Length enforcement
     result = _enforce_length(result)
 
@@ -192,6 +195,70 @@ def _enforce_length(text: str) -> str:
 
 def _empty_fallback() -> str:
     return "✅ 任務已完成。（無額外輸出）"
+
+
+# ── Verbosity patterns: section headers that signal bloated output ──
+_SECTION_HEADER = re.compile(r'^(?:#{1,3}\s+|\*\*)([^*#\n]{3,60})(?:\*\*)?\s*$', re.MULTILINE)
+_DIAGNOSIS_HEADER = re.compile(r'\n*\[PLAN\] Diagnosis.*$', re.DOTALL)
+
+def _compress_verbose(text: str) -> str:
+    """Aggressively compress output that has too many sections or is too long.
+
+    Detects:
+    - >3 bold/markdown section headers → collapse to compact format
+    - [PLAN] Diagnosis sections at end → strip
+    - Token footer per-call breakdown → strip (keep summary line)
+    """
+    # Strip diagnosis sections — they're noise after a failure report
+    text = _DIAGNOSIS_HEADER.sub('', text).strip()
+
+    # Count section headers
+    sections = _SECTION_HEADER.findall(text)
+    if len(sections) <= 3:
+        return text  # Reasonable number of sections
+
+    # Too many sections — extract key info and compress
+    lines = text.split('\n')
+    result_lines = []
+    first_result_written = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            result_lines.append(line)
+            continue
+
+        # Keep the first non-header, non-empty line as the lead result
+        if not first_result_written and not _SECTION_HEADER.match(stripped):
+            if not stripped.startswith(('[', '📊', '╔')):
+                result_lines.insert(0, stripped)
+                result_lines.insert(1, '')
+                first_result_written = True
+                continue
+
+        # Keep only essential headers (max 2), skip the rest
+        header_match = _SECTION_HEADER.match(stripped)
+        if header_match:
+            # Only keep if we haven't exceeded max sections
+            current_headers = sum(1 for l in result_lines if _SECTION_HEADER.match(l.strip()))
+            if current_headers >= 2:
+                continue  # Skip this section header
+            result_lines.append(line)
+            continue
+
+        # Keep bullet points under kept headers only
+        if stripped.startswith(('- ', '• ', '* ')):
+            # Check if previous kept line was a header
+            result_lines.append(line)
+            continue
+
+        # Skip everything else
+        pass
+
+    if len(result_lines) < 3:
+        return text  # Compression produced nothing useful, keep original
+
+    return '\n'.join(result_lines).strip()
 
 
 def score_output(output: str) -> dict:
