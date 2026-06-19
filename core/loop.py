@@ -243,6 +243,8 @@ class CostTracker:
 
     def reset(self):
         with self._lock:
+            self.total_tokens_in = 0
+            self.total_tokens_out = 0
             self.total = 0.0
             self.calls = []
 
@@ -1867,6 +1869,13 @@ def run_agent(
                         pass
             if _saved > 0:
                 logger.info(f"[Loop] Auto-saved {_saved} compacted summaries to memory")
+        # ── Pre-call budget check: if context already too big, stop before burning more ──
+        _ctx_tokens = _get_tracker().total_tokens_in + _get_tracker().total_tokens_out
+        if _get_tracker().over_budget() or _ctx_tokens > CostTracker.MAX_SESSION_TOKENS * 0.8:
+            logger.warning(f"[Loop] Pre-call budget check: {_ctx_tokens} tokens used, stopping")
+            ctx.add_user(f"[SYSTEM] Token budget nearly exhausted ({_human_tokens(_ctx_tokens)}). Synthesise what you have — no more LLM calls.")
+            _extra_info["cost_cap_hit"] = True
+            break
         # Next LLM call to synthesize results
         fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=get_openai_tools(), temperature=model_temperature, max_tokens=OUTPUT_MAX_TOKENS)
         _resp = fb.response
