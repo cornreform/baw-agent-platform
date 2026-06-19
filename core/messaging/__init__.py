@@ -2140,6 +2140,21 @@ class BaseConnector(ABC):
                 if not _focus_max_tool_turns:
                     _focus_max_tool_turns = 25  # complex tasks need more tools per round
                 logger.info(f"[_run_baw] Complex task — tool_turns={_focus_max_tool_turns}")
+                # ── Background task notification: tell user upfront for long tasks ──
+                if chat_id and not _is_focus_mode:
+                    try:
+                        _bg_msg = (
+                            "⏳ **Detected complex task** — running in background.
+"
+                            "Estimated: multiple rounds, multiple tools.
+"
+                            "I will send the full result when ready.
+"
+                            "You can send new messages — they will queue."
+                        )
+                        self.send(chat_id, _bg_msg)
+                    except Exception:
+                        pass
             output = ""
             info = {}
             all_plan_recaps = []
