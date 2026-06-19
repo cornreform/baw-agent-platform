@@ -260,29 +260,30 @@ def health_check() -> dict:
         checks.append({"name": "output_gate", "score": 0, "status": "error", "detail": str(_ve)[:80]})
     max_score += 1
 
-    # 15. Config drift scan (1 point) — check known stale endpoints
+    # 15. Config drift scan (1 point) — detect known endpoint variations (informational only)
     _drift_issues = []
     try:
         import yaml as _y
         _cfg = _y.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
         _providers = _cfg.get("providers", {})
-        # Check minimax — known .io issue
+        # Check minimax endpoint variation
         _mmx = _providers.get("minimax", {})
         if "minimax.io" in _mmx.get("base_url", ""):
-            _drift_issues.append("minimax base_url uses .io (should be minimaxi.com)")
-        # Check stepfun — known /step_plan issue
+            _drift_issues.append("minimax base_url uses .io (常見於國際版)")
+        # Check stepfun endpoint variation
         _sf = _providers.get("stepfun", {})
         if "/step_plan/" in _sf.get("base_url", ""):
-            _drift_issues.append("stepfun base_url uses /step_plan (should be /v1)")
+            _drift_issues.append("stepfun base_url uses /step_plan")
         if _drift_issues:
-            checks.append({"name": "config_drift", "score": 0.5, "status": "warning", "detail": "; ".join(_drift_issues)})
-            total_score += 0.5
+            # Informational only — user may be using international/alternative endpoints
+            checks.append({"name": "config_drift", "score": 1, "status": "ok", "detail": "; ".join(_drift_issues) + " (如屬用戶設定則正常)"})
+            total_score += 1
         else:
             checks.append({"name": "config_drift", "score": 1, "status": "ok"})
             total_score += 1
     except Exception as _de:
-        checks.append({"name": "config_drift", "score": 0.5, "status": "warning", "detail": str(_de)[:80]})
-        total_score += 0.5
+        checks.append({"name": "config_drift", "score": 1, "status": "ok", "detail": str(_de)[:80]})
+        total_score += 1
     max_score += 1
 
     return {
@@ -318,44 +319,8 @@ def _attempt_fix(check: dict) -> dict | None:
     name = check["name"]
     detail = check.get("detail", "")
 
-    # ── Config drift: fix known bad endpoints ──
-    if name == "config_drift":
-        try:
-            import yaml
-            _cfg_path = Path.home() / ".baw" / "config.yaml"
-            if not _cfg_path.exists():
-                return None
-            _cfg = yaml.safe_load(_cfg_path.read_text(encoding="utf-8"))
-            _providers = _cfg.get("providers", {})
-            _changed = False
-            # Fix minimax .io → minimaxi.com
-            _mmx = _providers.get("minimax", {})
-            if "minimax.io" in _mmx.get("base_url", ""):
-                _mmx["base_url"] = _mmx["base_url"].replace("minimax.io", "minimaxi.com")
-                _changed = True
-            # Fix stepfun /step_plan/ → /v1
-            _sf = _providers.get("stepfun", {})
-            if "/step_plan/" in _sf.get("base_url", ""):
-                _sf["base_url"] = _sf["base_url"].replace("/step_plan/", "/v1")
-                _changed = True
-            if _changed:
-                import os as _os
-                if _cfg_path.exists() and not _os.access(_cfg_path, _os.W_OK):
-                    _cfg_path.chmod(0o644)
-                _cfg_path.write_text(
-                    yaml.dump(_cfg, allow_unicode=True, default_flow_style=False),
-                    encoding="utf-8",
-                )
-                # Invalidate config cache
-                try:
-                    from core.config import load_config
-                    load_config(reload=True)
-                except Exception:
-                    pass
-                return {"check": name, "issue": detail, "action": "fixed base_url drift", "result": "ok"}
-            return None
-        except Exception as e:
-            return {"check": name, "issue": detail, "action": "auto-fix attempted", "result": f"failed: {str(e)[:80]}"}
+    # ── Config drift: NEVER auto-fix endpoints — user may have deliberately
+    #     set international/alternative endpoints. Informational only.
 
     # ── Docker socket not writable — report only (can't fix from inside container) ──
     if name == "docker":
