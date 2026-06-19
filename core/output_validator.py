@@ -69,7 +69,11 @@ def validate_output(output: str, *, prompt: str = "") -> str:
 
     result = output
 
-    # Phase 1: Strip HTML tags (Telegram doesn't render them)
+    # Phase 0: Convert Markdown bold (**text**) to HTML bold (<b>text</b>)
+    # Telegram sends with parse_mode=HTML, not Markdown
+    result = _markdown_bold_to_html(result)
+
+    # Phase 1: Strip HTML tags that escaped through (safety net, will be re-applied below)
     result = _strip_html(result)
 
     # Phase 2: Normalise whitespace
@@ -103,12 +107,49 @@ def validate_output(output: str, *, prompt: str = "") -> str:
 
 # ── Internal helpers ──
 
+# ── Allowed HTML tags that Telegram renders with parse_mode=HTML ──
+_ALLOWED_HTML_TAGS = {'b', 'i', 'u', 's', 'code', 'pre', 'a', 'em', 'strong'}
+
 def _strip_html(text: str) -> str:
-    return re.sub(r'<[^>]+>', '', text)
+    """Strip dangerous HTML tags, preserve safe formatting tags.
+
+    Telegram supports parse_mode=HTML with these safe tags:
+    <b>, <i>, <u>, <s>, <code>, <pre>, <a>
+    All other tags (script, style, div, etc.) are removed.
+    """
+    # Strip everything that isn't an allowed tag
+    # Pattern: <tagname ...> or </tagname>
+    def _keep_safe(m):
+        tag = m.group(1).lower().split()[0].rstrip('>').lstrip('/')
+        # Remove attributes from allowed tags (keep bare tags only)
+        # Actually for simplicity: keep allowed tags as-is
+        if tag in _ALLOWED_HTML_TAGS or tag.lstrip('/') in _ALLOWED_HTML_TAGS:
+            return m.group(0)
+        return ''
+    result = re.sub(r'</?(\w+)[^>]*>', _keep_safe, text)
+    # Also strip HTML comments
+    result = re.sub(r'<!--.*?-->', '', result, flags=re.DOTALL)
+    return result
 
 
 def _compress_blank_lines(text: str) -> str:
     return re.sub(r'\n{3,}', '\n\n', text)
+
+
+def _markdown_bold_to_html(text: str) -> str:
+    """Convert **text** or __text__ (Markdown bold) to <b>text</b> (HTML bold).
+
+    Handles:
+    - **bold text** → <b>bold text</b>
+    - __bold text__ → <b>bold text</b>
+    - Nested punctuation inside bold: **1. Item** → <b>1. Item</b>
+    - Multi-word bold spans
+    """
+    # Convert **text** (double asterisk)
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # Convert __text__ (double underscore)
+    text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
+    return text
 
 
 def _redact_credentials(text: str) -> str:
