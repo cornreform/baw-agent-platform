@@ -25,7 +25,17 @@ def _ensure_store():
 def _load() -> dict:
     _ensure_store()
     try:
-        return json.loads(_KG_FILE.read_text(encoding="utf-8"))
+        data = json.loads(_KG_FILE.read_text(encoding="utf-8"))
+        # ── Auto-heal: normalise entities from list to dict ──
+        if isinstance(data.get("entities"), list):
+            entities = {}
+            for name in data["entities"]:
+                entities[_normalize(name)] = {
+                    "name": name, "first_seen": "", "relations": []
+                }
+            data["entities"] = entities
+            _save(data)
+        return data
     except (json.JSONDecodeError, FileNotFoundError):
         return {"triples": [], "entities": {}}
 
