@@ -132,6 +132,7 @@ def _check_cron() -> dict:
 
 def _handler(
     quick: bool = False,
+    fix: bool = False,
 ) -> str:
     """Run comprehensive self-diagnosis.
 
@@ -140,7 +141,17 @@ def _handler(
 
     Args:
         quick: If True, skip provider checks (faster).
+        fix: If True, run doctor auto-fix on detected issues.
     """
+    # ── Doctor fix mode ──
+    if fix:
+        try:
+            from core.health_dashboard import doctor_fix, format_doctor_report
+            result = doctor_fix()
+            return format_doctor_report(result)
+        except Exception as e:
+            return f"[FAIL] Doctor fix failed: {e}"
+
     checks = {}
 
     # Fast checks
@@ -204,6 +215,7 @@ TOOL_DEF = {
         "[SELF-OPERATION] Run comprehensive self-diagnosis on BAW. "
         "Checks container health, LLM providers, tools registration, "
         "memory store, disk usage, config integrity, and cron jobs. "
+        "Pass fix=True to auto-fix detected issues (e.g., config drift, tools, KG). "
         "Returns a health score (0-100%) with recommendations."
     ),
     "handler": _handler,
@@ -213,6 +225,11 @@ TOOL_DEF = {
             "quick": {
                 "type": "boolean",
                 "description": "Skip provider checks for faster diagnosis.",
+                "default": False,
+            },
+            "fix": {
+                "type": "boolean",
+                "description": "Auto-fix detected issues (config drift, tools, KG, etc).",
                 "default": False,
             },
         },
