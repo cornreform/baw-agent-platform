@@ -2420,8 +2420,12 @@ class BaseConnector(ABC):
             # All post-processing (HTML strip, blank line compression,
             # credential redaction, anti-duplication, hallucination guard,
             # length enforcement) is now centralised in output_validator.
-            from ..output_validator import validate_output
-            output = validate_output(output, prompt=prompt)
+            # importlib.reload prevents Python module caching from silently
+            # running stale code when container has mounted source volumes.
+            import importlib
+            from .. import output_validator as _ov
+            importlib.reload(_ov)
+            output = _ov.validate_output(output, prompt=prompt)
 
             # ── Context-aware empty output fallback ──
             if not output.strip():
