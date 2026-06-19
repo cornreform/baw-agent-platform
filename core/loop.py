@@ -824,25 +824,15 @@ def _build_todo_block(data_dir: Path) -> str:
     except Exception:
         pass
 
+    # Only inject full todo block when there are actual pending items
+    if not carried and not os.environ.get("BAW_SHOW_TODO"):
+        # No pending items → skip the block entirely (saves ~375 tokens per call)
+        return ""
+    
+    # Full block only when needed
     block = (
-        "\\n\\n## Todo / Thought / Follow-up System (MANDATORY)\\\\n"
-        "You MUST use the `todo` tool in every interaction. This is NOT optional.\\n"
-        "- After EVERY user message: capture a `thought` about what you learned\\n"
-        "  (action: add_thought). Examples:\\n"
-        "  * User corrects you → thought: 'User prefers shorter responses'\\n"
-        "  * User asks about a topic → thought: 'User interested in X'\\n"
-        "  * You fix a bug → thought: 'Fixed X by doing Y — remember this pattern'\\n"
-        "- After completing any task: schedule a `followup` to verify it later\\n"
-        "  (action: add_followup). Example: 'Verify GitHub release version matches tag'\\n"
-        "- For multi-step work: create `task` items and mark complete as you go\\n"
-        "  (actions: write, done). Show progress — not just final result.\\n"
-        "- At the START of every session: surface pending items (action: surface)\\n"
-        "  so nothing is forgotten across turns.\\n"
-        "- EVERY turn should leave at least ONE thought or todo item.\\n"
-        "  An empty todo list at session end = you forgot to reflect.\\n"
-        "\\n**SELF-CHECK**: Before ending your response, ask yourself:\\n"
-        "  'Did I record what I learned? Did I schedule pending work?'\\n"
-        "  If the answer is NO, call the `todo` tool before finishing."
+        "\n\n## Todo / Follow-up System\n"
+        "Use `todo` tool for tracking: thoughts, tasks, follow-ups.\n"
     )
     if carried:
         block += "\n\n### [WARN] Pending follow-ups carried over from previous sessions:\n"
@@ -1503,7 +1493,7 @@ def run_agent(
         # ── Context compaction: summarize old turns before returning ──
         _q_total = ctx.total_chars()
         if _q_total > 15000:
-            _q_compacted, _q_notify, _q_summary = ctx.compact(threshold_chars=15000, keep_recent_turns=2)
+            _q_compacted, _q_notify, _q_summary = ctx.compact(threshold_chars=15000, keep_recent_turns=3)
             if _q_compacted > 0:
                 logger.info(f"[Loop] Quick mode context compacted: {_q_compacted} turns ({_q_total} → {ctx.total_chars()} chars)")
         
@@ -1811,7 +1801,7 @@ def run_agent(
         _total = ctx.total_chars()
         if _total > 15000:
             logger.info(f"[Loop] Context over threshold ({_total} chars), compacting...")
-        _compacted, _notify, _summary = ctx.compact(threshold_chars=15000, keep_recent_turns=2)
+        _compacted, _notify, _summary = ctx.compact(threshold_chars=15000, keep_recent_turns=3)
         if _compacted > 0:
             logger.info(f"[Loop] Context compacted: {_compacted} old turns summarized ({_total} → {ctx.total_chars()} chars)")
             # Auto-save useful summaries to memory (via curator gate)
