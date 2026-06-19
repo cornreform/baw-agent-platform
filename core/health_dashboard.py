@@ -181,6 +181,107 @@ def health_check() -> dict:
     total_score += 1
     max_score += 1
 
+    # ═══════════════════════════════════════════════════════════════
+    # NEW: Extended checks — cover recent system components
+    # ═══════════════════════════════════════════════════════════════
+
+    # 11. Tools registry (1 point) — verify all tools loadable
+    _tools_ok = 0
+    _tools_total = 0
+    try:
+        from core.tools import list_tools, _tools as _tool_registry
+        _tools_total = len(_tool_registry) if _tool_registry else 0
+        _tools_ok = sum(1 for t in (_tool_registry or {}).values() if t is not None)
+        if _tools_ok >= 35:
+            checks.append({"name": "tools", "score": 1, "status": "ok", "detail": f"{_tools_total} registered"})
+            total_score += 1
+        else:
+            checks.append({"name": "tools", "score": 0.5, "status": "warning", "detail": f"only {_tools_ok}/{_tools_total} ok"})
+            total_score += 0.5
+    except Exception as _te:
+        checks.append({"name": "tools", "score": 0, "status": "error", "detail": str(_te)[:80]})
+    max_score += 1
+
+    # 12. Docker socket (1 point) — verify docker access
+    _dock = Path("/var/run/docker.sock")
+    if _dock.exists():
+        import stat as _st
+        _mode = _dock.stat().st_mode
+        try:
+            _writ = bool(_mode & _st.S_IWGRP) or bool(_mode & _st.S_IWUSR)
+            if _writ:
+                checks.append({"name": "docker", "score": 1, "status": "ok"})
+                total_score += 1
+            else:
+                checks.append({"name": "docker", "score": 0.5, "status": "warning", "detail": "socket exists but not writable"})
+                total_score += 0.5
+        except Exception:
+            checks.append({"name": "docker", "score": 0.5, "status": "warning"})
+            total_score += 0.5
+    else:
+        checks.append({"name": "docker", "score": 0, "status": "missing", "detail": "no docker.sock mounted"})
+    max_score += 1
+
+    # 13. Knowledge graph (1 point) — verify KG integrity
+    _kg_path = Path.home() / ".baw" / "knowledge_graph.json"
+    if _kg_path.exists():
+        try:
+            _kg = json.loads(_kg_path.read_text(encoding="utf-8"))
+            _triples = len(_kg.get("triples", []))
+            _entities = len(_kg.get("entities", {}))
+            if _triples > 0:
+                checks.append({"name": "knowledge_graph", "score": 1, "status": "ok", "detail": f"{_triples} triples, {_entities} entities"})
+                total_score += 1
+            else:
+                checks.append({"name": "knowledge_graph", "score": 0.5, "status": "ok", "detail": "empty graph"})
+                total_score += 0.5
+        except Exception as _ke:
+            checks.append({"name": "knowledge_graph", "score": 0, "status": "error", "detail": str(_ke)[:80]})
+    else:
+        checks.append({"name": "knowledge_graph", "score": 0, "status": "missing"})
+    max_score += 1
+
+    # 14. Output quality gate (1 point) — verify validator + HTML balancer
+    try:
+        from core.output_validator import validate_output, _balance_html
+        # Test HTML balancing
+        _test = _balance_html("<b>hello <i>world</b>")
+        _balanced = "</i>" in _test  # should have closed the unclosed <i>
+        if _balanced:
+            checks.append({"name": "output_gate", "score": 1, "status": "ok", "detail": "HTML balancer active"})
+            total_score += 1
+        else:
+            checks.append({"name": "output_gate", "score": 0.5, "status": "warning", "detail": "balancer loaded but test unexpected"})
+            total_score += 0.5
+    except Exception as _ve:
+        checks.append({"name": "output_gate", "score": 0, "status": "error", "detail": str(_ve)[:80]})
+    max_score += 1
+
+    # 15. Config drift scan (1 point) — check known stale endpoints
+    _drift_issues = []
+    try:
+        import yaml as _y
+        _cfg = _y.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+        _providers = _cfg.get("providers", {})
+        # Check minimax — known .io issue
+        _mmx = _providers.get("minimax", {})
+        if "minimax.io" in _mmx.get("base_url", ""):
+            _drift_issues.append("minimax base_url uses .io (should be minimaxi.com)")
+        # Check stepfun — known /step_plan issue
+        _sf = _providers.get("stepfun", {})
+        if "/step_plan/" in _sf.get("base_url", ""):
+            _drift_issues.append("stepfun base_url uses /step_plan (should be /v1)")
+        if _drift_issues:
+            checks.append({"name": "config_drift", "score": 0.5, "status": "warning", "detail": "; ".join(_drift_issues)})
+            total_score += 0.5
+        else:
+            checks.append({"name": "config_drift", "score": 1, "status": "ok"})
+            total_score += 1
+    except Exception as _de:
+        checks.append({"name": "config_drift", "score": 0.5, "status": "warning", "detail": str(_de)[:80]})
+        total_score += 0.5
+    max_score += 1
+
     return {
         "score": round(total_score, 1),
         "max_score": max_score,
