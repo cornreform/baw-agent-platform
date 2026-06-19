@@ -1758,6 +1758,9 @@ def run_agent(
     _resp = neutral_response
     _tool_turns = 0
     _extra_info = {}  # carry extra metadata (e.g. tool_cap_hit) to return dict
+    _warned_15 = False
+    _warned_18 = False
+    _warned_20 = False
     while _resp.tool_calls:
         if _tool_turns >= max_tool_turns:
             ctx.add_user(f"[SYSTEM] You have exceeded the maximum tool iterations ({max_tool_turns}). Synthesize results now. Do NOT call more tools.")
@@ -1768,6 +1771,16 @@ def run_agent(
             _extra_info["tool_cap_hit"] = True
             _extra_info["max_tool_turns"] = max_tool_turns
             break
+        # ── Progressive tool cap warnings ──
+        if _tool_turns >= 15 and not _warned_15:
+            ctx.add_user("[SYSTEM] ⏱ 15/25 tool turns used — ask yourself: do you have enough data? If yes, synthesise and stop. If not, focus on must-haves only, skip nice-to-haves.")
+            _warned_15 = True
+        elif _tool_turns >= 18 and not _warned_18:
+            ctx.add_user("[SYSTEM] ⏱ 18/25 tool turns used — start wrapping up. Prioritise results synthesis over additional data gathering.")
+            _warned_18 = True
+        elif _tool_turns >= 20 and not _warned_20:
+            ctx.add_user("[SYSTEM] ⏱ 20/25 tool turns used — YOU MUST WRAP UP NOW. 5 turns remaining. Call no new investigative tools. Synthesise what you have into a final response.")
+            _warned_20 = True
         _tool_turns += 1
         for tc in _resp.tool_calls:
             func = tc.get("function", {})
@@ -1818,18 +1831,40 @@ def run_agent(
             logger.info(f"[Loop] Context compacted: {_compacted} old turns summarized ({_total} → {ctx.total_chars()} chars)")
             # Signal to the LLM that context was compressed (so it knows old turns are gone)
             ctx.add_user(f"[SYSTEM] {_notify}")
-            # Auto-save useful summaries to memory
+            # Auto-save useful summaries to memory (via curator gate)
             _saved = 0
+            try:
+                from core.memory_curator import curate, classify, value_score
+            except ImportError:
+                curate = None
             for _line in _summary.split("\n"):
                 _line = _line.strip()
                 if not _line or not _line.startswith("[壓縮]"):
                     continue
-                # Score line for importance (keywords = valuable knowledge)
-                _import_kw = ["config", "bug", "fix", "prefer", "根因", "配置",
-                              "設定", "修復", "錯誤", "修正", "改咗", "改用",
-                              "workaround", "cancel", "skip", "block"]
-                _score = sum(1 for kw in _import_kw if kw in _line.lower())
-                if _score >= 1:
+                # Run through curator gate
+                _decision = None
+                if curate is not None:
+                    try:
+                        _decision = curate(
+                            content=_line,
+                            tags=["compaction", "auto"],
+                            source="system",
+                            existing_entries=list(reversed(mem._cache))[:100],
+                        )
+                    except Exception:
+                        pass
+                # Fallback: keyword scoring if curator unavailable or discards
+                _should_save = False
+                if _decision and _decision["action"] not in ("discard",):
+                    _should_save = True
+                elif _decision is None:
+                    # Legacy keyword scoring fallback
+                    _import_kw = ["config", "bug", "fix", "prefer", "根因", "配置",
+                                  "設定", "修復", "錯誤", "修正", "改咗", "改用",
+                                  "workaround", "cancel", "skip", "block"]
+                    _score = sum(1 for kw in _import_kw if kw in _line.lower())
+                    _should_save = _score >= 1
+                if _should_save:
                     try:
                         mem.remember(
                             content=f"[壓縮記憶] {_line}",
