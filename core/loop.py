@@ -245,7 +245,6 @@ class CostTracker:
         with self._lock:
             self.total_tokens_in = 0
             self.total_tokens_out = 0
-            self.total = 0.0
             self.calls = []
 
 
@@ -1745,7 +1744,7 @@ def run_agent(
             # Force one final LLM call with no tools to get a text summary
             fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=None, temperature=model_temperature, max_tokens=OUTPUT_MAX_TOKENS)
             _resp = fb.response
-            _was_truncated = _resp.output_tokens >= OUTPUT_MAX_TOKENS
+            _was_truncated = getattr(_resp, 'finish_reason', '') == 'length'
             if _was_truncated:
                 logger.info(f"[Loop] Tool-cap output truncated at ~{OUTPUT_MAX_TOKENS} tokens ({_resp.output_tokens} used)")
             # ── Signal to caller that goal was NOT fully achieved ──
@@ -1871,7 +1870,7 @@ def run_agent(
                 logger.info(f"[Loop] Auto-saved {_saved} compacted summaries to memory")
         # ── Pre-call budget check: if context already too big, stop before burning more ──
         _ctx_tokens = _get_tracker().total_tokens_in + _get_tracker().total_tokens_out
-        if _get_tracker().over_budget() or _ctx_tokens > CostTracker.MAX_SESSION_TOKENS * 0.8:
+        if _get_tracker().over_budget() or _ctx_tokens > CostTracker.MAX_SESSION_TOKENS * 0.6:
             logger.warning(f"[Loop] Pre-call budget check: {_ctx_tokens} tokens used, stopping")
             ctx.add_user(f"[SYSTEM] Token budget nearly exhausted ({_human_tokens(_ctx_tokens)}). Synthesise what you have — no more LLM calls.")
             _extra_info["cost_cap_hit"] = True
@@ -1879,7 +1878,7 @@ def run_agent(
         # Next LLM call to synthesize results
         fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=get_openai_tools(), temperature=model_temperature, max_tokens=OUTPUT_MAX_TOKENS)
         _resp = fb.response
-        _was_truncated = _resp.output_tokens >= OUTPUT_MAX_TOKENS
+        _was_truncated = getattr(_resp, 'finish_reason', '') == 'length'
         if _was_truncated:
             logger.info(f"[Loop] Output truncated at ~{OUTPUT_MAX_TOKENS} tokens ({_resp.output_tokens} used)")
         n_cost = calculate_cost(model, _resp.input_tokens, _resp.output_tokens)
@@ -1899,13 +1898,14 @@ def run_agent(
     if tone_change:
         output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
     output += (_resp.content or "")
+    # Append cost summary BEFORE length trim so it's counted
+    output += f"\\n\\n{format_cost_summary()}"
     # ── Output token budget: post-generation length enforcement ──
     if _was_truncated:
         output += "\n\n*(Response truncated to ~800 words for readability)*"
     if len(output) > OUTPUT_MAX_CHARS:
         logger.warning(f"[Loop] Output too long ({len(output)} chars > {OUTPUT_MAX_CHARS}), force-trimming")
         output = output[:OUTPUT_MAX_CHARS] + "\n\n*(Response trimmed to fit length limit)*"
-    output += f"\n\n{format_cost_summary()}"
 
     try:
         mem.remember(f"User: {prompt[:150]} → BAW: {(_resp.content or '')[:150]}")
