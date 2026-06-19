@@ -276,6 +276,16 @@ def reset_cost():
 
 # ── System prompt ──────────────────────────────────────────────
 
+def _summarize_providers(config: dict) -> str:
+    """Compact provider summary: 'deepseek(3) minimax(8) openrouter(342) ...'"""
+    parts = []
+    for pname, pdata in config.get("providers", {}).items():
+        count = len(pdata.get("models", []))
+        if count > 0:
+            parts.append(f"{pname}({count})")
+    return " ".join(parts) if parts else "none configured"
+
+
 def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                         fresh_start: bool = False,
                         quick_mode: bool = False) -> str:
@@ -523,13 +533,6 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
         fact_mode = config.get("fact_check", {}).get("mode", "normal")
         tools_list = "bash, read_file, write_file, web_search, patch, search_files, memory, config, mmx, tts, image_generate, git, docker, todo, install, system, background, delegate_task, knowledge_graph, execute_code"
 
-        available_models = []
-        for pname, pdata in config.get("providers", {}).items():
-            for m in pdata.get("models", []):
-                mid = m.get("id", "?")
-                caps = m.get("capabilities", [])
-                available_models.append(f"{mid} ({pname}: {', '.join(caps)})")
-        models_summary = ", ".join(available_models) if available_models else "none configured"
         default_model = config.get("model", {}).get("default", "unknown")
         config_path = data_dir / "config.yaml" if data_dir else Path.home() / ".baw" / "config.yaml"
         env_path = data_dir / ".env" if data_dir else Path.home() / ".baw" / ".env"
@@ -545,9 +548,9 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             f"  Those live in the system prompt (you're reading it now).\n"
             f"  DO NOT edit config.yaml to add safety rules, output rules, or enforcement policies.\n"
             f"- Default model: {default_model}\n"
-            f"- Available models: {models_summary}\n"
-            f"  NEVER fabricate model names. Only use models from this list.\n"
-            f"  If you need a model not in the list, you must add it to config.yaml first.\n"
+            f"- Available models summary (use self_capabilities for full list):\n"
+            f"  {_summarize_providers(config)}\n"
+            f"  NEVER fabricate model names. Only use models that exist in config.\n"
             f"\n## Tool self-configuration (CRITICAL)\n"
             f"- When told to use a new tool: 'which <tool>' or 'find / -name <tool>' to locate it.\n"
             f"- [CRITICAL] EXCEPTION: BAW-registered tools (mmx, install) are SELF-CONTAINED.\n"
@@ -1520,6 +1523,14 @@ def run_agent(
 
         output += final_content
         output += f"\n\n{format_cost_summary()}"
+        
+        # ── Context compaction: summarize old turns before returning ──
+        _q_total = ctx.total_chars()
+        if _q_total > 15000:
+            _q_compacted, _q_notify, _q_summary = ctx.compact(threshold_chars=15000, keep_recent_turns=2)
+            if _q_compacted > 0:
+                logger.info(f"[Loop] Quick mode context compacted: {_q_compacted} turns ({_q_total} → {ctx.total_chars()} chars)")
+        
         try:
             mem.remember(f"User: {prompt[:150]} → BAW: {final_content[:150]}")
         except Exception as _me:
