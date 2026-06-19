@@ -42,7 +42,7 @@ from . import render as html
 
 # ── Output token budget enforcement ──
 OUTPUT_MAX_TOKENS = 1024  # Hard cap: passed to API as max_tokens
-OUTPUT_MAX_CHARS = 4_096   # Post-generation hard trim (~4 chars/token × 1024)
+OUTPUT_MAX_CHARS = 12_000  # Post-generation hard trim (Telegram splits longer messages)
 
 # ── Cost tracking (thread-safe class) ──────────────────────────
 
