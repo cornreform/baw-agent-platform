@@ -20,6 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Code copy with inline chown (single layer, no trailing chown -R)
 COPY --chown=baw:baw . .
+# Copy schedule.yaml to BAW data directory so cron tasks are pre-configured
+COPY --chown=baw:baw schedule.yaml /home/baw/.baw/schedule.yaml
 
 # Create baw CLI wrapper inside the container
 RUN mkdir -p /home/baw/.local/bin && \

@@ -399,13 +399,35 @@ class Scheduler:
                 (task_dir / "status.txt").write_text("blocked", encoding="utf-8")
                 return task_id
             import subprocess as sp
-            sp.Popen(
-                shell_cmd,
-                shell=True,
-                stdout=(task_dir / "stdout.txt").open("w"),
-                stderr=(task_dir / "stderr.txt").open("w"),
-                cwd=str(self.data_dir.parent),
-            )
+            # Run in background thread, capture result
+            def _run_shell():
+                try:
+                    _result = sp.run(
+                        shell_cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                        cwd=str(self.data_dir.parent),
+                    )
+                    (task_dir / "stdout.txt").write_text(_result.stdout or "", encoding="utf-8")
+                    (task_dir / "stderr.txt").write_text(_result.stderr or "", encoding="utf-8")
+                    if _result.returncode == 0:
+                        (task_dir / "status.txt").write_text("completed", encoding="utf-8")
+                        print(f"[BAW-SCHED] ✅ {task.name} completed")
+                    else:
+                        (task_dir / "status.txt").write_text(f"failed({_result.returncode})", encoding="utf-8")
+                        err_preview = (_result.stderr or "")[:200]
+                        print(f"[BAW-SCHED] ❌ {task.name} failed (rc={_result.returncode}): {err_preview}")
+                except sp.TimeoutExpired:
+                    (task_dir / "status.txt").write_text("timeout", encoding="utf-8")
+                    print(f"[BAW-SCHED] ⏰ {task.name} timed out after 300s")
+                except Exception as _e:
+                    (task_dir / "stderr.txt").write_text(str(_e), encoding="utf-8")
+                    (task_dir / "status.txt").write_text(f"error: {str(_e)[:100]}", encoding="utf-8")
+                    print(f"[BAW-SCHED] ❌ {task.name} error: {_e}")
+            _th = threading.Thread(target=_run_shell, daemon=True)
+            _th.start()
             return task_id
 
         # BAW agent mode
