@@ -2153,6 +2153,7 @@ class BaseConnector(ABC):
             if chat_id:
                 self.send_typing(chat_id)
 
+            _loop_start = time.time()  # track execution time for summary
             for _round in range(1, _MAX_AUTO_ROUNDS + 1):
                 # Build round-specific prompt with retry context
                 if _round == 1:
@@ -2560,10 +2561,23 @@ class BaseConnector(ABC):
                         output += f"\nMEDIA:{_mp}"
 
             # ── Clear progress message after BAW completes ──
+            # Don't repeat the first line of output — that's what the message above is.
+            # Show a compact execution summary instead.
             if chat_id and _progress_msg_id:
                 try:
-                    _first_line = output.strip().split('\n')[0][:100] if output.strip() else "✅ 完成"
-                    self.send(chat_id, f"✅ {_first_line}", edit_msg_id=_progress_msg_id)
+                    _elapsed = int(time.time() - _loop_start)
+                    _summary_parts = []
+                    if _round > 1:
+                        _summary_parts.append(f"R{_round}")
+                    if _recalc_total > 0:
+                        _summary_parts.append(f"{_recalc_total} recalcs")
+                    if _elapsed > 5:
+                        _summary_parts.append(f"{_elapsed}s")
+                    if _summary_parts:
+                        _clear_text = f"✅ Done · {' · '.join(_summary_parts)}"
+                    else:
+                        _clear_text = "✅ Done"
+                    self.send(chat_id, _clear_text, edit_msg_id=_progress_msg_id)
                 except Exception:
                     pass
 
