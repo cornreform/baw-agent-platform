@@ -186,6 +186,7 @@ class CostTracker:
         self.total_tokens_in = 0
         self.total_tokens_out = 0
         self.calls: list[dict] = []
+        self.primary_model: str = ""
 
     def over_budget(self) -> bool:
         """Check if total tokens exceed budget. Thread-safe."""
@@ -201,6 +202,7 @@ class CostTracker:
             })
             self.total_tokens_in += tokens_in
             self.total_tokens_out += tokens_out
+            self.primary_model = model_name  # last used model
 
         # Detailed token log (async-safe write)
         try:
@@ -226,8 +228,11 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
+            model_tag = f" ({self.primary_model})" if self.primary_model else ""
+            n = len(self.calls)
+            label = "call" if n == 1 else "calls"
             return (
-                f"📊 **{len(self.calls)} LLM calls** — total: {_human_tokens(total)} tokens"
+                f"📊 {n} {label}{model_tag} — total: {_human_tokens(total)} tokens"
             )
 
     def html_summary(self) -> str:
@@ -237,8 +242,11 @@ class CostTracker:
             ti = self.total_tokens_in
             to = self.total_tokens_out
             total = ti + to
+            model_tag = f" ({self.primary_model})" if self.primary_model else ""
+            n = len(self.calls)
+            label = "call" if n == 1 else "calls"
             return (
-                f"📊 <b>{len(self.calls)} LLM calls</b> — total: {_human_tokens(total)}"
+                f"📊 <b>{n} {label}</b>{model_tag} — total: {_human_tokens(total)}"
             )
 
     def reset(self):
@@ -246,6 +254,7 @@ class CostTracker:
             self.total_tokens_in = 0
             self.total_tokens_out = 0
             self.calls = []
+            self.primary_model = ""
 
 
 _TRACKER: CostTracker | None = None
