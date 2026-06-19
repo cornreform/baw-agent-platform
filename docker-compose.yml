@@ -20,6 +20,7 @@ services:
       - /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro
       - ~/.baw:/home/baw/.baw
       - ~/.mmx:/home/baw/.mmx
+      - /home/user/baw:/app                                    # live code mount — no rebuild needed
     # Load Telegram token + API keys from BAW's own env files
     env_file:
       - ~/.baw/telegram.env
