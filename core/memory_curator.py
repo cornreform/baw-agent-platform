@@ -92,7 +92,6 @@ _CLASSIFIER_RULES = [
     # --- Command (medium value) ---
     (Classification.COMMAND, [
         r"(?:command|cmd|cli|terminal|bash|script)",
-        r"(?:installed via|安裝 via|npm install|pip install|apt install)",
         r"(?:run|execute|execute) .*(?:成功|success|ok|done)",
     ]),
     # --- Install (medium-low value) ---
@@ -199,12 +198,13 @@ def detect_conflicts(content: str, existing_entries: list[dict]) -> Optional[dic
             overlap = content_kw & existing_kw
             jaccard = len(overlap) / max(len(content_kw | existing_kw), 1)
 
-            if jaccard >= 0.6:
-                # Check if this corrects the old one
-                correction_signals = ["actually", "更正", "修正", "正確是", "not", "but", "不過"]
-                is_correction = any(s in content_norm for s in correction_signals)
+            # Check for correction signals in content
+            correction_signals = ["actually", "更正", "修正", "正確是", "不過", "但係"]
+            negation_signals = ["not", "but", "no", "don't", "唔係", "不是"]
+            has_correction_signal = any(s in content_norm for s in correction_signals + negation_signals)
 
-                if is_correction:
+            if jaccard >= 0.6:
+                if has_correction_signal:
                     return {
                         "type": "update",
                         "target_id": entry["id"],
@@ -216,6 +216,14 @@ def detect_conflicts(content: str, existing_entries: list[dict]) -> Optional[dic
                         "target_id": entry["id"],
                         "reason": f"High similarity ({jaccard:.0%} keyword overlap)",
                     }
+
+            # Broader match: correction signal + at least 2 overlapping keywords
+            if has_correction_signal and len(overlap) >= 2 and jaccard >= 0.15:
+                return {
+                    "type": "update",
+                    "target_id": entry["id"],
+                    "reason": f"Correction detected ({jaccard:.0%} overlap, {len(overlap)} shared keywords)",
+                }
 
             if jaccard >= 0.4 and _detect_contradiction(content, existing):
                 return {

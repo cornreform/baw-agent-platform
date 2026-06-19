@@ -105,7 +105,7 @@ class Context:
         """
         total = self.total_chars()
         if total <= threshold_chars:
-            return 0, ""
+            return 0, "", ""
 
         # Group messages into turns (user+assistant cycles)
         # A turn = 1 user msg + possibly multiple assistant+tool cycles
@@ -117,7 +117,7 @@ class Context:
 
         if len(turn_boundaries) <= keep_recent_turns:
             # Not enough turns to compact meaningfully
-            return 0, ""
+            return 0, "", ""
 
         # Keep the most recent N turns untouched
         keep_from = turn_boundaries[-keep_recent_turns]
