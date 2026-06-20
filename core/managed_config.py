@@ -136,18 +136,40 @@ def is_managed(path: str) -> bool:
 
 
 def refuse_write(path: str) -> None:
-    """Raise PermissionError if *path* is a managed key.
+    """Check permission for a managed key write.
 
-    This is stricter than the regular HARD GATE — managed keys are
-    blocked even when allow_config_write() is active.  Only direct
-    file editing can change them.
+    Default: raise PermissionError (ask user).
+    If user has granted session/permanent permission, allow.
+    If user has blocked, raise with BLOCKED message.
     """
     if not is_managed(path):
         return
+
+    # Check user-configured permission
+    try:
+        from .permissions import check
+        level = check(f"config:{path}")
+        if level == "granted":
+            return  # User approved exact path — allow write
+        # Also check broader scopes (e.g. /permit config:providers. → matches all providers)
+        parts = path.split(".")
+        for i in range(len(parts) - 1, 0, -1):
+            broad = f"config:{'.'.join(parts[:i])}."
+            if check(broad) == "granted":
+                return
+        if level == "blocked":
+            raise PermissionError(
+                f"[BLOCKED] User has blocked writes to managed key '{path}'. "
+                f"Use /permit {path} to unblock."
+            )
+    except ImportError:
+        pass
+
+    # Default: ask user
     raise PermissionError(
-        f"[MANAGED SCOPE] Cannot write to managed key '{path}'. "
-        f"This value is system-defined and write-protected. "
-        f"Edit ~/.baw/config.yaml directly if you must change it."
+        f"[MANAGED SCOPE] '{path}' is a system-managed setting. "
+        f"To approve this change, use: /permit config:{path}\n"
+        f"Or for permanent approval: /permit config:{path} permanent"
     )
 
 

@@ -124,6 +124,17 @@ def handle_slash(command: str, args: list[str],
     if cmd in ("fresh", "fr", "raw"):
         return _cmd_fresh(args, config, data_dir, verbose)
 
+    # ── Permission commands ──
+    if cmd in ("permit", "allow"):
+        return _cmd_permit(args, data_dir)
+    if cmd in ("block", "deny"):
+        return _cmd_block(args, data_dir)
+    if cmd in ("permissions", "perms"):
+        return _cmd_permissions(data_dir)
+    if cmd == "reset-perms":
+        scope = " ".join(args) if args else None
+        return _cmd_reset_perms(scope, data_dir)
+
     # Not a slash command
     return None
 
@@ -174,6 +185,11 @@ _HELP_COMMANDS: list[dict] = [
 
     {"cat": "🔧 System", "cmd": "/update, /up", "desc": "Git pull + changelog + restart"},
     {"cat": "🔧 System", "cmd": "/tts on|off|status", "desc": "Toggle text-to-speech"},
+
+    {"cat": "⚙️ Config", "cmd": "/permit <scope> [duration]", "desc": "Grant permission (session/permanent/5m/1h)"},
+    {"cat": "⚙️ Config", "cmd": "/block <scope> [duration]", "desc": "Block a permission"},
+    {"cat": "⚙️ Config", "cmd": "/permissions, /perms", "desc": "List all permissions"},
+    {"cat": "⚙️ Config", "cmd": "/reset-perms [scope]", "desc": "Reset permission(s) to default (ask)"},
 ]
 
 def _cmd_help() -> str:
@@ -835,3 +851,85 @@ def _cmd_aux_models(config: dict) -> str:
         parts.append(f"❓ Two executors: capabilities.executor=`{cap_exec}` != executor.model=`{top_exec}`")
 
     return "\n".join(parts)
+
+# ── Permission handlers ─────────────────────────────────────────
+#
+# /permit config:providers.openrouter session    — approve once
+# /permit config:providers.openrouter permanent  — approve forever
+# /permit config:providers. permanent           — approve all provider config
+# /block config:providers.openrouter             — block forever
+# /permissions                                    — list all
+# /reset-perms config:providers.openrouter        — clear approval
+
+
+def _cmd_permit(args: list[str], data_dir: Path) -> str:
+    """Grant a permission. Usage: /permit <scope> [duration]"""
+    if not args:
+        return (
+            "Usage: /permit <scope> [duration]\n"
+            "  scope: e.g. config:providers.openrouter, config:providers., config:model.default\n"
+            "  duration: session (default), permanent, 5m, 1h, 1d\n"
+            "Examples:\n"
+            "  /permit config:providers.openrouter session\n"
+            "  /permit config:providers.openrouter permanent\n"
+            "  /permit config:providers. permanent  — allow all provider config\n"
+            "  /permit deploy session"
+        )
+
+    from .permissions import grant
+
+    scope = args[0]
+    duration = args[1] if len(args) >= 2 else "session"
+
+    grant(scope, duration, data_dir)
+
+    if duration == "session":
+        return f"Granted: {scope} (session — cleared on restart)"
+    elif duration == "permanent":
+        return f"Granted: {scope} (permanent — saved to permissions.json)"
+    else:
+        return f"Granted: {scope} ({duration})"
+
+
+def _cmd_block(args: list[str], data_dir: Path) -> str:
+    """Block a permission. Usage: /block <scope> [duration]"""
+    if not args:
+        return "Usage: /block <scope> [session|permanent]"
+
+    from .permissions import block
+
+    scope = args[0]
+    duration = args[1] if len(args) >= 2 else "permanent"
+    block(scope, duration, data_dir)
+
+    return f"Blocked: {scope} ({duration})"
+
+
+def _cmd_permissions(data_dir: Path) -> str:
+    """List all permissions (session + persistent)."""
+    from .permissions import list_perms
+
+    perms = list_perms(data_dir)
+    if not perms:
+        return "No permissions configured. All sensitive operations will prompt for approval."
+
+    lines = ["Current Permissions:", ""]
+    for scope, entry in sorted(perms.items()):
+        icon = "G" if entry["level"] == "granted" else ("B" if entry["level"] == "blocked" else "?")
+        source = entry.get("source", "")
+        expires = f" (expires: {entry.get('expires_in', 'N/A')})" if entry.get("expires_in") else ""
+        lines.append(f"  {icon} {scope} — {entry['level']} ({source}){expires}")
+
+    return "\n".join(lines)
+
+
+def _cmd_reset_perms(scope: str | None, data_dir: Path) -> str:
+    """Reset permission(s) to default (ask)."""
+    from .permissions import reset
+
+    if scope:
+        reset(scope, data_dir)
+        return f"Reset: {scope} → will ask next time"
+    else:
+        reset(None, data_dir)
+        return "Reset all permissions → everything will ask next time"
