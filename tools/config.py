@@ -48,6 +48,10 @@ def _save_cfg(cfg: dict) -> str:
     """Save config dict to YAML file. Returns error string or empty on success."""
     try:
         import yaml
+        from core.managed_config import strip_managed_keys
+        # Strip managed keys before writing — they're maintained via
+        # managed_config.yaml and apply_managed_layer() on load.
+        cfg = strip_managed_keys(cfg)
         yaml_text = yaml.dump(cfg, default_flow_style=False, allow_unicode=True)
         # Validate by re-parsing
         yaml.safe_load(yaml_text)

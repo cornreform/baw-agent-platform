@@ -154,6 +154,13 @@ Examples:
     except Exception as e:
         logger.warning(f"[Discover] Auto-discovery skipped: {e}")
 
+    # ── Managed scope: create managed_config.yaml from current config ──
+    try:
+        from core.managed_config import initialize_managed_source
+        initialize_managed_source()
+    except Exception as e:
+        logger.warning(f"[ManagedScope] Initialization skipped: {e}")
+
     # ── Capability config health check & auto-heal ──
     try:
         from core.capabilities import validate_capability_health

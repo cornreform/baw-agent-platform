@@ -41,6 +41,9 @@ def load_config(data_dir: Path) -> dict:
 
 
 def save_config(data_dir: Path, config: dict):
+    """Write config dict to config.yaml with managed key protection."""
+    from core.managed_config import strip_managed_keys
+    config = strip_managed_keys(config)
     path = data_dir / "config.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.dump(config, default_flow_style=False, allow_unicode=True))

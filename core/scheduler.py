@@ -31,6 +31,54 @@ STATE_FILE = "schedule_state.json"
 TASKS_DIR = "tasks"
 POLL_INTERVAL = 60  # seconds
 
+# ── Subprocess env sanitization ──
+
+_ALLOWED_ENV_KEYS = {
+    "PATH", "HOME", "USER", "LANG", "LC_ALL",
+    "PYTHONPATH", "PYTHON_VERSION", "PYTHON_SHA256",
+    "BAW_HOME", "BAW_RUNTIME_HOME", "BAW_LOG_LEVEL",
+    "HOSTNAME", "SHELL", "GPG_KEY", "TERM",
+    "LD_LIBRARY_PATH", "LD_PRELOAD",
+    "TMPDIR", "TEMP", "TMP",
+    "PWD", "OLDPWD",
+}
+
+_SENSITIVE_PREFIXES = ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH",
+                       "BOT_TOKEN", "CREDENTIALS", "PRIVATE_KEY")
+
+
+def _sanitized_env() -> dict[str, str]:
+    """Return env dict with API keys stripped, safe system vars preserved.
+
+    Prevents cron subprocesses from inheriting sensitive credentials.
+    """
+    env = {}
+    for key, val in os.environ.items():
+        upper_key = key.upper()
+        # Block sensitive-looking keys
+        if any(upper_key.startswith(p) or upper_key.endswith(p) for p in _SENSITIVE_PREFIXES):
+            continue
+        # Block any key containing both "KEY" and a provider name pattern
+        if "KEY" in upper_key and any(
+            p in upper_key for p in ("API", "OPEN", "SECRET", "ACCESS")
+        ):
+            continue
+        # Keep only allowed keys + a few common patterns
+        if key in _ALLOWED_ENV_KEYS:
+            pass  # explicitly allowed
+        elif key.startswith("PYTHON"):
+            pass  # PYTHON* vars
+        elif key.startswith("BAW_"):
+            pass  # BAW internal vars
+        elif key.startswith("DOCKER_"):
+            pass  # Docker runtime vars
+        elif key in ("SHELL", "TERM", "PWD", "OLDPWD", "SHLVL", "TZ"):
+            pass  # common POSIX vars
+        else:
+            continue  # exclude everything else
+        env[key] = val
+    return env
+
 
 # ── Task definition ──
 
@@ -216,6 +264,7 @@ class Scheduler:
                                 ["baw", "--mode", "hybrid", "--task-id", task_id, prompt],
                                 capture_output=True, text=True, timeout=600,
                                 cwd=str(self.data_dir.parent),
+                                env=_sanitized_env(),
                             )
                             (task_dir / "stdout.txt").write_text(_r.stdout or "", encoding="utf-8")
                             (task_dir / "stderr.txt").write_text(_r.stderr or "", encoding="utf-8")
@@ -429,6 +478,7 @@ class Scheduler:
                         text=True,
                         timeout=300,
                         cwd=str(self.data_dir.parent),
+                        env=_sanitized_env(),
                     )
                     (task_dir / "stdout.txt").write_text(_result.stdout or "", encoding="utf-8")
                     (task_dir / "stderr.txt").write_text(_result.stderr or "", encoding="utf-8")
@@ -458,6 +508,7 @@ class Scheduler:
                     ["baw", "--mode", "hybrid", "--task-id", task_id, prompt or task.name],
                     capture_output=True, text=True, timeout=600,
                     cwd=str(self.data_dir.parent),
+                    env=_sanitized_env(),
                 )
                 (task_dir / "stdout.txt").write_text(_result.stdout or "", encoding="utf-8")
                 (task_dir / "stderr.txt").write_text(_result.stderr or "", encoding="utf-8")
