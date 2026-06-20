@@ -423,11 +423,10 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             )
             if not config.get("display", {}).get("show_reasoning"):
                 system_prompt += (
-                    "\\n## THINKING BAN (HARD GATE)\\n"
-                    "User does NOT need to see your reasoning process.\\n"
-                    "NEVER output analysis, research notes, intermediate steps, or tool results.\\n"
-                    "No 'I checked...' 'I analyzed...' 'Based on...' preamble.\\n"
-                    "Direct answer only — lead with result.\\n"
+                    "\\n## NO THINKING PREAMBLE\\n"
+                    "Do not start with 'I checked...' 'I analyzed...' 'Based on...' etc.\\n"
+                    "Lead with the result directly. After giving it, you may ask the user\\n"
+                    "if they need more or offer next steps.\\n"
                 )
             system_prompt += output_structure
 
