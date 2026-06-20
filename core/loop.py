@@ -1944,6 +1944,12 @@ def run_agent(
     _warned_20 = False
     _tool_retries: dict[str, int] = {}  # per-tool retry tracking for error policies
     _was_truncated = False  # will be set True if max_tokens cap was hit
+
+    # ── Auto-steer: track original goal for focus adherence ──
+    _focus_goal = prompt[:300] if prompt else ""
+    _focus_interval = max(5, max_tool_turns // 5)  # check every ~20% of turns
+    _focus_tool_history: list[str] = []
+
     while _resp.tool_calls:
         if _tool_turns >= max_tool_turns:
             ctx.add_user(f"[SYSTEM] You have exceeded the maximum tool iterations ({max_tool_turns}). Synthesize results now. Do NOT call more tools.")
@@ -1972,6 +1978,15 @@ def run_agent(
         elif _tool_turns >= int(85 * _warn_pct) and not _warned_20:
             ctx.add_user(f"[SYSTEM] ⏱ {_tool_turns}/{max_tool_turns} tool turns used — YOU MUST WRAP UP NOW. {max_tool_turns - _tool_turns} turns remaining. Call no new investigative tools. Synthesise what you have into a final response.")
             _warned_20 = True
+        # ── Auto-steer focus check: every N turns, remind of original goal ──
+        if _focus_goal and _tool_turns > 0 and _tool_turns % _focus_interval == 0:
+            _recent_tools = ", ".join(_focus_tool_history[-5:])
+            ctx.add_user(
+                f"[FOCUS CHECK] Tool loop {_tool_turns}/{max_tool_turns} turns used.\n"
+                f"  Original goal: {_focus_goal[:200]}\n"
+                f"  Recent tools: {_recent_tools}\n"
+                f"  Question: Are you still on track? If off-topic, redirect back to the goal now."
+            )
         _tool_turns += 1
         for tc in _resp.tool_calls:
             func = tc.get("function", {})
@@ -2014,6 +2029,10 @@ def run_agent(
                     _tool_retries = {}  # reset to prevent double injection
             else:
                 _tool_retries[name] = 0
+            # ── Track tool for auto-steer focus history ──
+            _focus_tool_history.append(name)
+            if len(_focus_tool_history) > 20:
+                _focus_tool_history.pop(0)
             # ── Auto-verify after write tools ──
             exe_result = _verify_after_write(name, args, exe_result, data_dir)
             if interactive:
