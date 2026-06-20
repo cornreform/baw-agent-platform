@@ -1132,6 +1132,32 @@ def run_agent(
 
     model = get_model(config, model_id)
     model_temperature = getattr(model, "temperature", 0.7)
+
+    # ── task_rules routing: keyword match on user prompt ──
+    # If the user said something matching a task_rule, override model_id.
+    # This runs BEFORE the router's tier-based override, so task_rules win.
+    if not model_id:
+        _task_rules = config.get("model", {}).get("task_rules", []) or []
+        _prompt_lower = prompt.lower()
+        for _rule in _task_rules:
+            _match = _rule.get("match", "")
+            _target = _rule.get("model", "")
+            if _match and _target:
+                # match is a pipe-delimited keyword list
+                _keywords = _match.lower().split("|")
+                for _kw in _keywords:
+                    _kw = _kw.strip()
+                    if _kw and _kw in _prompt_lower:
+                        logger.info(f"[task_rules] '{_kw}' → {_target}")
+                        try:
+                            model = get_model(config, _target)
+                            model_id = _target
+                            model_temperature = getattr(model, "temperature", 0.7)
+                        except Exception as _re:
+                            logger.warning(f"[task_rules] could not load model {_target}: {_re}")
+                        break
+                if model_id:
+                    break
     perm = PermissionEngine(config)
     mem = MemoryStore(data_dir or Path.home() / ".baw")
     checkpointer = Checkpointer()
@@ -1538,8 +1564,8 @@ def run_agent(
         
         # ── Context compaction: summarize old turns before returning ──
         _q_total = ctx.total_chars()
-        if _q_total > 15000:
-            _q_compacted, _q_notify, _q_summary = ctx.compact(threshold_chars=15000, keep_recent_turns=3)
+        if _q_total > 60000:
+            _q_compacted, _q_notify, _q_summary = ctx.compact(threshold_chars=60000, keep_recent_turns=12)
             if _q_compacted > 0:
                 logger.info(f"[Loop] Quick mode context compacted: {_q_compacted} turns ({_q_total} → {ctx.total_chars()} chars)")
         
@@ -1845,9 +1871,9 @@ def run_agent(
             logger.debug(f"[Loop] Session trimmed: {_trimmed} old messages removed")
         # ── Context compaction: summarize old turns, don't just drop ──
         _total = ctx.total_chars()
-        if _total > 15000:
+        if _total > 60000:
             logger.info(f"[Loop] Context over threshold ({_total} chars), compacting...")
-        _compacted, _notify, _summary = ctx.compact(threshold_chars=15000, keep_recent_turns=3)
+        _compacted, _notify, _summary = ctx.compact(threshold_chars=60000, keep_recent_turns=12)
         if _compacted > 0:
             logger.info(f"[Loop] Context compacted: {_compacted} old turns summarized ({_total} → {ctx.total_chars()} chars)")
             # Auto-save useful summaries to memory (via curator gate)

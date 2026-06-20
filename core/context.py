@@ -95,6 +95,10 @@ class Context:
         Instead of blind dropping (trim), summarizes old turns into compact form:
         '[User: <goal>] → [BAW: <result>]'
 
+        **Instruction protection**: turns whose user message contains instruction
+        keywords (用/開/改用/設定/請/改用/轉/切換/幫我/重新/繼續/分析/檢查/查)
+        are NOT compacted — they are preserved in full to prevent user intent loss.
+
         Args:
             threshold_chars: Trigger compaction when total chars > this value.
             keep_recent_turns: Number of most recent turns to keep untouched.
@@ -106,6 +110,16 @@ class Context:
         total = self.total_chars()
         if total <= threshold_chars:
             return 0, "", ""
+
+        # Keywords that identify a turn as containing user instructions
+        # Turns matching these will NOT be compacted
+        _INSTRUCTION_KEYWORDS = {
+            "用", "開", "改用", "設定", "請", "改用", "轉", "切換",
+            "幫我", "重新", "繼續", "分析", "檢查", "查", "研究",
+            "建立", "製作", "生成", "寫", "改", "修復",
+            "use", "set", "switch", "change", "enable", "please",
+            "analyze", "check", "research", "find", "create", "build",
+        }
 
         # Group messages into turns (user+assistant cycles)
         # A turn = 1 user msg + possibly multiple assistant+tool cycles
@@ -135,18 +149,42 @@ class Context:
         if current_turn:
             old_turns.append(current_turn)
 
-        # Compress each old turn into a single line
-        compressed_lines: list[str] = []
+        # Classify turns: instruction turns go to front (preserved), rest are compressed
+        preserved_turns: list[list[Message]] = []
+        compressed_turns: list[list[Message]] = []
+
         for turn in old_turns:
+            is_instruction = False
+            for msg in turn:
+                if msg.role == "user" and not msg.content.startswith("[SYSTEM]"):
+                    content_lower = msg.content.lower()
+                    for kw in _INSTRUCTION_KEYWORDS:
+                        if kw in content_lower:
+                            is_instruction = True
+                            break
+                    break
+            if is_instruction:
+                preserved_turns.append(turn)
+            else:
+                compressed_turns.append(turn)
+
+        # Compress non-instruction turns
+        compressed_lines: list[str] = []
+        for turn in compressed_turns:
             user_content = ""
             assistant_content = ""
             tool_failures = 0
             for msg in turn:
                 if msg.role == "user" and not user_content:
-                    # Take first line or first 80 chars
-                    user_content = msg.content.split("\n")[0][:120].strip()
+                    # Preserve more of instructions: first 300 chars, not first 120
+                    user_text = msg.content.split("\n")[0][:300].strip()
+                    # If user_text is still just a snippet and original has more,
+                    # try to include key context
+                    if len(msg.content.split("\n")[0]) > 300:
+                        user_text += "…"
+                    user_content = user_text
                 elif msg.role == "assistant" and msg.content and not assistant_content:
-                    assistant_content = msg.content.split("\n")[0][:150].strip()
+                    assistant_content = msg.content.split("\n")[0][:200].strip()
                 elif msg.role == "tool" and ("Error" in str(msg.content) or "FAIL" in str(msg.content)):
                     tool_failures += 1
 
@@ -157,26 +195,34 @@ class Context:
                 line += f" [✖ {tool_failures} errors]"
             compressed_lines.append(line)
 
-        # Insert compacted summary at the start of remaining messages
+        # Build new message list: preserved turns + recent turns + compression summary
+        preserved_msgs: list[Message] = []
+        for turn in preserved_turns:
+            preserved_msgs.extend(turn)
+
         compact_summary = "\n".join(compressed_lines)
         summary_msg = Message(
             role="system",
             content=(
-                f"[CONTEXT COMPACTION] The following {len(compressed_lines)} old conversation turns\n"
+                f"[CONTEXT COMPACTION] The following {len(compressed_turns)} old conversation turns\n"
                 f"have been compacted into summaries to save space.\n"
+                f"{len(preserved_turns)} instruction turns are preserved in full.\n"
                 f"The last {keep_recent_turns} turns are preserved in full.\n\n"
                 f"{compact_summary}"
             ),
         )
-        self.messages.insert(0, summary_msg)
+
+        # Final order: preserved_turns → summary → recent_turns
+        self.messages = preserved_msgs + [summary_msg] + self.messages
 
         notification = (
             f"✅ 對話歷史壓縮完成 — "
-            f"{len(compressed_lines)} 條舊訊息已合併為摘要，"
+            f"{len(compressed_turns)} 條舊訊息壓縮為摘要，"
+            f"{len(preserved_turns)} 條指令完整保留，"
             f"保留最新 {keep_recent_turns} 輪完整內容"
         )
 
-        return len(compressed_lines), notification, compact_summary
+        return len(compressed_turns), notification, compact_summary
 
     def trim(self, max_messages: int = 60) -> int:
         """Trim message history to prevent unbounded session growth.

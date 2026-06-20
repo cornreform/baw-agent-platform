@@ -215,8 +215,8 @@ def strip_managed_keys(config: dict) -> dict:
 
 _MANAGED_SOURCE_PATH = Path.home() / ".baw" / "managed_config.yaml"
 
-# Sentinel for "not loaded" — we can't use None because empty dict is valid
-_LOAD_SENTINEL: Any = {}  # dict or None
+# Sentinel for "not loaded" — None means "never loaded"
+_LOAD_SENTINEL: Any = None  # None=not loaded, {} or dict=loaded result
 
 
 def _load_managed_source() -> dict:
