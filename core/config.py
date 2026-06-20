@@ -34,6 +34,8 @@ from __future__ import annotations
 import os
 import threading
 from contextlib import contextmanager
+from .managed_config import apply_managed_layer, refuse_write, invalidate_cache as _invalidate_managed
+import copy
 from pathlib import Path
 from typing import Optional
 
@@ -93,9 +95,14 @@ def allow_config_write():
 def check_config_write_guard(path: str) -> None:
     """Raise PermissionError if writing to a protected path without user approval.
 
-    Checks the thread-local write-allow flag and the protected-prefix list.
-    Also catches endpoint/base_url keys anywhere in the dotted path.
+    Checks:
+      1. Managed scope — managed keys are ALWAYS blocked (even with user approval)
+      2. Thread-local write-allow flag + protected-prefix list
+      3. endpoint/base_url keys anywhere in the dotted path
     """
+    # Layer 1: Managed scope — always blocked, even user-initiated
+    refuse_write(path)
+
     if getattr(_write_guard, 'allowed', False):
         return  # User-initiated write — allowed
     path_lower = path.lower()
@@ -209,6 +216,9 @@ def load_config(*, reload: bool = False, config_path: Optional[Path] = None) -> 
         if config_path is not None:
             merged = _deep_merge(merged, _load_yaml(Path(config_path)))
 
+        # 4) Managed scope — system-defined overrides, highest priority
+        merged = apply_managed_layer(merged)
+
         if config_path is None and not reload:
             _CACHED = merged
         return merged
@@ -247,7 +257,8 @@ def get_api_key_for_model(config: dict, model_id: str) -> str:
 
 
 def invalidate_cache() -> None:
-    """Clear the config cache. Call after `baw config set` writes new values."""
+    """Clear the config and managed config caches. Call after config writes."""
     global _CACHED
     with _LOCK:
         _CACHED = None
+    _invalidate_managed()
