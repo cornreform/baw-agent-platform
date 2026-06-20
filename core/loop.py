@@ -417,12 +417,14 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "\\n## Quick mode\\n"
                 "- CRITICAL: Do NOT ask 'should I continue?' or 'what next?'. Execute silently.\\n"
                 "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary.\\n"
-                "\\n## LANGUAGE RULE (HARD GATE)\\n"
-                "CRITICAL: ALL output MUST be in Traditional Chinese (Cantonese/粵語).\\n"
-                "This includes research analysis, tool call results, headers, and reasoning.\\n"
-                "Translate English material to Chinese before presenting it.\\n"
-                "Technical terms (API, Docker, GitHub, etc.) can stay English.\\n"
-                "English preamble before Chinese answer is EXPLICITLY BANNED.\\n"
+                "\\n## LANGUAGE RULE\\n"
+                "Match user's language. User speaks Cantonese/Traditional Chinese → respond in same.\\n"
+                "User speaks English → respond in English. Technical terms keep original form.\\n"
+                "\\n## THINKING BAN (HARD GATE)\\n"
+                "User does NOT need to see your reasoning process.\\n"
+                "NEVER output analysis, research notes, intermediate steps, or tool results.\\n"
+                "No 'I checked...' 'I analyzed...' 'Based on...' preamble.\\n"
+                "Direct answer only — lead with result.\\n"
             )
             system_prompt += output_structure
 
@@ -442,9 +444,10 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     else:
         system_prompt = (
             "You are BAW (Black And White), your agent platform.\n"
-            "Respond in Traditional Chinese (Cantonese).\n"
+            "Match user's language. Speak what the user speaks.\n"
             "Be concise, lead with results.\n"
             "Never ask the user what to do — figure it out yourself.\n"
+            "Do NOT show reasoning, analysis, or intermediate steps.\n"
             "\n"
             "## Self-configuration (when no SOUL.md found)\n"
             "- Your config lives at ~/.baw/config.yaml\n"
