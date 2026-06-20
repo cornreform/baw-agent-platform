@@ -69,17 +69,22 @@ class TelegramConnector(BaseConnector):
                     # Register slash command menu
                     self._register_commands()
 
+                    # ── Key Vault: backup .env keys to secure storage ──
+                    try:
+                        from ..key_vault import backup as _kv_backup, restore as _kv_restore
+                        _kv_restore()  # auto-restore if .env is missing keys
+                        _kv_backup()   # sync vault with current .env
+                    except Exception as _kve:
+                        logger.warning(f"[KeyVault] init failed: {_kve}")
+
                     # ── Provider health ping (startup check) + dead-provider notification ──
                     try:
-                        import yaml as _yaml
-                        from pathlib import Path as _Path
                         from ..llm import ping_provider_health
-                        _cfg_path = _Path.home() / ".baw" / "config.yaml"
-                        if _cfg_path.exists():
-                            _full_cfg = _yaml.safe_load(_cfg_path.read_text(encoding="utf-8"))
-                            _health = ping_provider_health(_full_cfg)
-                            _dead = {k: v for k, v in _health.items() if v not in ("healthy", "no_key")}
-                            if _dead:
+                        from ..config import load_config as _load_full_cfg
+                        _full_cfg = _load_full_cfg(reload=True)
+                        _health = ping_provider_health(_full_cfg)
+                        _dead = {k: v for k, v in _health.items() if v not in ("healthy", "key_set", "no_key", "no_key_config", "auth_error")}
+                        if _dead:
                                 logger.warning(f"[Telegram] Dead providers at startup: {list(_dead.keys())}")
                                 
                                 # Build user notification with fix suggestions

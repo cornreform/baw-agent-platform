@@ -130,7 +130,7 @@ def generate_weekly_report() -> str:
 
     lines.append("")
     lines.append(f"### 錯誤率 (7 天)")
-    lines.append(f"  [STATS] 總錯誤: **{errors['total']}**")
+    lines.append(f"  [STATS] 總錯誤: <b>{errors['total']}</b>")
     lines.append(f"  ⚡ 平均: {errors['rate_per_hour']}/小時")
 
     if errors["by_provider"]:
@@ -148,7 +148,7 @@ def generate_weekly_report() -> str:
     else:
         assessment = "[CRITICAL] 系統不穩定，需要立即處理"
 
-    lines.append(f"\n**{assessment}**")
+    lines.append(f"\n<b>{assessment}</b>")
     lines.append(f"\n*報告生成: {now.strftime('%Y-%m-%d %H:%M UTC')}*")
 
     return "\n".join(lines)
@@ -163,7 +163,7 @@ def alert_if_high_error_rate(threshold: int = 5, hours: int = 1) -> str | None:
             f"{p}: {c}" for p, c in sorted(rate["by_provider"].items(), key=lambda x: -x[1])
         )
         return (
-            f"🚨 **BAW 錯誤率偏高**\n"
+            f"🚨 <b>BAW 錯誤率偏高</b>\n"
             f"過去 {hours} 小時: **{rate['total']} 次錯誤** (threshold: {threshold})\n"
             f"分佈: {providers_detail}\n"
             f"建議: 執行 /doctor 檢查系統狀態"

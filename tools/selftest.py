@@ -499,7 +499,7 @@ def selftest(full: bool = False) -> str:
     failed = sum(1 for r in results if r["status"] == "fail")
     warned = sum(1 for r in results if r["status"] == "warn")
 
-    report_lines.append(f"**Summary**: {passed}/{total} pass, {warned} warn, {failed} fail")
+    report_lines.append(f"<b>Summary</b>: {passed}/{total} pass, {warned} warn, {failed} fail")
     report_lines.append("")
 
     for r in results:

@@ -239,7 +239,7 @@ def _handler(path: str, scan_type: str = "quick", max_files: int = 100) -> str:
 TOOL_DEF = {
     "name": "code_scan",
     "description": (
-        "[SCAN] **SECURITY SCANNER** — MUST USE before executing any downloaded code. "
+        "[SCAN] </b>SECURITY SCANNER</b> — MUST USE before executing any downloaded code. "
         "Scan a directory for security risks: eval/exec, shell injection, "
         "credential leaks, unsafe deserialization, system bypass flags, "
         "and auto-install triggers. "

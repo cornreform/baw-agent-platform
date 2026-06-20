@@ -203,11 +203,11 @@ def cronjob(
         jobs = _load_jobs(cron_dir)
         if not jobs:
             return "[cronjob] No jobs scheduled."
-        lines = [f"**Cron Jobs** ({len(jobs)}/{_MAX_JOBS})"]
+        lines = [f"<b>Cron Jobs</b> ({len(jobs)}/{_MAX_JOBS})"]
         for j in jobs:
             status = "▶" if j.get("enabled", True) else "⏸"
             lines.append(
-                f"  {status} **{j.get('name', '?')}** — `{j.get('schedule', '?')}`"
+                f"  {status} <b>{j.get('name', '?')}</b> — `{j.get('schedule', '?')}`"
                 f"\n      → {j.get('prompt', '')[:80]}"
             )
         return "\n".join(lines)
@@ -291,7 +291,7 @@ def cronjob(
         jobs.append(job)
         _save_jobs(cron_dir, jobs)
         return (
-            f"[cronjob] Created: **{name}**\n"
+            f"[cronjob] Created: <b>{name}</b>\n"
             f"  Schedule: `{schedule}`\n"
             f"  Prompt: {prompt[:120]}"
         )
@@ -325,7 +325,7 @@ def cronjob(
         job["last_run"] = time.time()
         job["next_run"] = _next_run(job.get("schedule", ""))
         _save_jobs(cron_dir, jobs)
-        return f"[cronjob] Run queued: **{name}** — {job.get('prompt', '')[:120]}"
+        return f"[cronjob] Run queued: <b>{name}</b> — {job.get('prompt', '')[:120]}"
 
     return f"[cronjob] Unknown action: '{action}'. Use: create, list, remove, pause, resume, run."
 

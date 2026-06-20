@@ -176,7 +176,7 @@ def _write_dream_log(data_dir: Path, report: dict):
         lines.append("### 🔴 On-Hold Tasks (Stuck)")
         lines.append("")
         for t in report["on_hold_tasks"]:
-            lines.append(f"- **{t['id']}** — `{t['status']}`")
+            lines.append(f"- <b>{t['id']}</b> — `{t['status']}`")
             lines.append(f"  - Prompt: {t['prompt']}")
             lines.append(f"  - Reason: {t['reason']}")
         lines.append("")
@@ -186,7 +186,7 @@ def _write_dream_log(data_dir: Path, report: dict):
         lines.append("")
         for t in report["stale_tasks"]:
             lines.append(
-                f"- **{t['id']}** — `{t['status']}` ({t['age_days']}d old)\n"
+                f"- <b>{t['id']}</b> — `{t['status']}` ({t['age_days']}d old)\n"
                 f"  - {t['prompt']}"
             )
         lines.append("")

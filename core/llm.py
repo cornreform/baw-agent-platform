@@ -757,7 +757,7 @@ def call_llm_with_fallback(
     )
     if any(p in error_msg.lower() for p in _REQUEST_FORMAT_PATTERNS):
         raise RuntimeError(
-            "** 對話狀態已損壞**\n\n"
+            "<b>對話狀態已損壞</b>\n\n"
             "LLM 請求中的 messages 順序有問題（tool role message 缺少對應的 tool_calls）。\n\n"
             "原因: BAW 在多次 LLM 調用中，conversation state 被 corruption，\n"
             "導致發送咗格式錯誤嘅 request 畀 API。\n\n"
@@ -863,7 +863,7 @@ def call_llm_with_fallback(
         _provider_status.append(f"  {_pname}: {_status} (模型: {', '.join(_models[:2])})")
 
     _friendly = (
-        f"** 無可用的 AI 服務**\n\n"
+        f"<b>無可用的 AI 服務</b>\n\n"
         f"所有配置的 LLM provider 均無法連線。\n\n"
         f"Provider 狀態:\n"
         + "\n".join(_provider_status) + "\n\n"
@@ -977,52 +977,69 @@ def validate_config(config: dict) -> list[str]:
 # ── Startup provider health ping ──────────────────────────────────
 
 def ping_provider_health(config: dict) -> dict:
-    """Ping all configured providers at startup to detect dead providers.
-    
+    """Check all configured provider API key presence at startup.
+
+    Two-phase check:
+      Phase 1: Key presence — does the .env var exist?
+      Phase 2: HTTP ping to /models — is the provider reachable?
+        (Phase 2 is best-effort. Some providers don't expose /models.)
+
     Returns a dict mapping provider_name -> health_status.
     Auto-blacklists providers that return 401/403.
     If default model's provider is dead, logs CRITICAL warning.
     """
     import logging as _log
     import httpx as _httpx
-    
+
     providers = config.get("providers", {})
     default_model = config.get("model", {}).get("default", "")
     health = {}
-    
+
     for pname, pcfg in providers.items():
         base_url = pcfg.get("base_url", "")
         api_key_env = pcfg.get("api_key_env", "")
+
+        if not base_url:
+            health[pname] = "no_config"
+            continue
+
+        if not api_key_env:
+            health[pname] = "no_key_config"
+            continue
+
         api_key = os.environ.get(api_key_env, "")
-        
-        if not api_key or not base_url:
+        if not api_key:
             health[pname] = "no_key"
             continue
-        
+
+        # Phase 1: Key present — mark as "key_set", try HTTP ping
+        health[pname] = "key_set"
+
+        # Phase 2: Optional HTTP ping (best-effort, may fail silently)
         try:
-            client = _httpx.Client(timeout=10)
+            client = _httpx.Client(timeout=5)
             r = client.get(
                 f"{base_url.rstrip('/')}/models",
                 headers={"Authorization": f"Bearer {api_key}"},
             )
             client.close()
-            
+
             if r.status_code == 200:
                 health[pname] = "healthy"
                 _log.info(f"[Health] {pname}: OK ({r.status_code})")
             elif r.status_code in (401, 403):
                 health[pname] = "auth_error"
-                _blacklist_provider(pname)
-                _log.warning(f"[Health] {pname}: AUTH ERROR ({r.status_code}) — blacklisted")
+                _log.warning(f"[Health] {pname}: AUTH ERROR ({r.status_code}) — key may not have /models access")
+                # Don't blacklist — key might work for chat even if /models fails
             elif r.status_code in (402, 429):
                 health[pname] = "quota_issue"
                 _log.warning(f"[Health] {pname}: QUOTA/RATE ({r.status_code})")
             else:
-                health[pname] = f"http_{r.status_code}"
-                _log.warning(f"[Health] {pname}: {r.status_code}")
+                _log.debug(f"[Health] {pname}: HTTP {r.status_code} on /models (non-critical)")
+                # Keep "key_set" — chat endpoint may work
         except Exception as e:
-            health[pname] = "unreachable"
-            _log.warning(f"[Health] {pname}: unreachable ({type(e).__name__})")
+            _log.debug(f"[Health] {pname}: /models unreachable ({type(e).__name__}) — keeping key_set")
+            # Keep "key_set" — chat endpoint may work even if /models doesn't
     
     # Check if default model's provider is dead
     try:

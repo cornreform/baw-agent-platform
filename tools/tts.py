@@ -256,7 +256,7 @@ def tts_generate(text: str, voice: str = "", output_path: str = "",
 TOOL_DEF = {
     "name": "tts",
     "description": (
-        "🔊 **DIRECTLY GENERATES AUDIO MP3 FILES** from text via TTS. "
+        "🔊 </b>DIRECTLY GENERATES AUDIO MP3 FILES</b> from text via TTS. "
         "When the user asks for TTS, voice, audio, or 'read out loud', "
         "you MUST call this tool — do NOT say you cannot generate audio. "
         "Supports Cantonese voices. Auto-detects provider (MiniMax / Stepfun / Edge). "
