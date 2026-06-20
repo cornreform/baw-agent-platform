@@ -71,7 +71,9 @@ _write_guard.allowed = False
 # Protected key prefixes — any config path starting with these triggers the gate.
 # 'model.' intentionally excluded: model.default is user preference, not system safety.
 PROTECTED_PREFIXES = [
-    "providers.",
+    # "providers." removed — BAW can self-configure providers/models.
+    # Managed config layer (managed_config.py) still protects critical keys
+    # like base_url and api_key_env from being overwritten.
     "capabilities.",
 ]
 
