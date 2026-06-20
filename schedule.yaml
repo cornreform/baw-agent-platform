@@ -53,3 +53,15 @@
   command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.kg_curator import curate; r=curate(action='curate',dry_run=False); print(r); print(); from tools.kg_curator import stats; print(stats())\""
   description: "Mon 05:00 HKT — Weekly KG curation: consolidate noise, remove orphans"
   enabled: true
+
+- name: weekly-memory-quality
+  cron: "15 5 * * 1"
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.memory_quality import _handler; print(_handler({'action': 'both'}))\""
+  description: "Mon 05:15 HKT — Weekly memory quality report (loss score)"
+  enabled: true
+
+- name: weekly-session-synthesis
+  cron: "30 5 * * 1"
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.session_synthesis import synthesize; print(synthesize(days_back=7, store=True))\""
+  description: "Mon 05:30 HKT — Weekly cross-session pattern synthesis"
+  enabled: true
