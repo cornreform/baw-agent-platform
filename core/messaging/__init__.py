@@ -1167,7 +1167,7 @@ class BaseConnector(ABC):
                 # ── Send per-task header message (permanent, visible) ──
                 _header_msg_id = ""
                 if chat_id:
-                    _header_msg_id = self.send(chat_id, f"🔧 **Task {_i}/{_total}** — {_task_short}")
+                    _header_msg_id = self.send(chat_id, f"🔧 <b>Task {_i}/{_total}</b> — {_task_short}")
                 # Inject sibling task context so each sub-task knows the full picture
                 _task_with_context = (
                     f"[MULTI-TASK {_i}/{_total}]\n\n"
@@ -1213,7 +1213,7 @@ class BaseConnector(ABC):
                 # ── Send result as follow-up message ──
                 _result_preview = _resp.strip()[:800]
                 _status = "❌" if _is_fail else "✅"
-                _result_msg = f"{_status} **Task {_i}/{_total}**\n{_result_preview}"
+                _result_msg = f"{_status} <b>Task {_i}/{_total}</b>\n{_result_preview}"
                 if chat_id:
                     self.send(chat_id, _result_msg)
                 # Small delay between tasks
@@ -1223,7 +1223,7 @@ class BaseConnector(ABC):
             self._silent_mode = _prev
         # ── Compact summary (Telegram-optimized) ──
         _summary = (
-            f"*📊 Summary*  |  Total: {_total}  |  ✅ Pass: {_pass}  |  ❌ Fail: {_fail}"
+            f"<b>📊 Summary</b>  |  Total: {_total}  |  ✅ Pass: {_pass}  |  ❌ Fail: {_fail}"
         )
         if _suspicious:
             _summary += f"\n⚠️ _Suspicious results:_ {', '.join(_suspicious)}"
