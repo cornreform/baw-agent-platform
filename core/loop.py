@@ -414,12 +414,15 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             system_prompt = "\n".join(trimmed)
             system_prompt = evidence_rule + execution_protocol + system_prompt
             system_prompt += (
-                "\\n\\n## Quick mode\\n"
+                "\\n## Quick mode\\n"
                 "- CRITICAL: Do NOT ask 'should I continue?' or 'what next?'. Execute silently.\\n"
                 "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary.\\n"
-                "\\n## LANGUAGE RULE\\n"
-                "CRITICAL: Always respond in Traditional Chinese (Cantonese/粵語) unless the user writes in English.\\n"
-                "Your internal reasoning MUST be in Chinese too. Do NOT switch to English.\\n"
+                "\\n## LANGUAGE RULE (HARD GATE)\\n"
+                "CRITICAL: ALL output MUST be in Traditional Chinese (Cantonese/粵語).\\n"
+                "This includes research analysis, tool call results, headers, and reasoning.\\n"
+                "Translate English material to Chinese before presenting it.\\n"
+                "Technical terms (API, Docker, GitHub, etc.) can stay English.\\n"
+                "English preamble before Chinese answer is EXPLICITLY BANNED.\\n"
             )
             system_prompt += output_structure
 
