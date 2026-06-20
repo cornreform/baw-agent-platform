@@ -1213,6 +1213,33 @@ def run_agent(
     except Exception as _he:
         logger.debug(f"[health] capability health check skipped: {_he}")
 
+    # ── KG auto-curation: lightweight check on every startup ──
+    try:
+        from tools.kg_curator import stats, curate
+        kg_report = stats()
+        logger.info(f"[startup] {kg_report.split(chr(10))[0]}")
+        # Auto-curate if signal ratio below 15% and last curation >12h ago
+        import json as _json
+        _kg_data = _json.loads((Path(data_dir or Path.home() / ".baw") / "knowledge_graph.json").read_text(encoding="utf-8"))
+        _last = _kg_data.get("_curated_at", "")
+        _should_run = False
+        if _last:
+            from datetime import datetime, timezone
+            _last_dt = datetime.fromisoformat(_last)
+            _hours_since = (datetime.now(timezone.utc) - _last_dt).total_seconds() / 3600
+            _should_run = _hours_since > 12
+        else:
+            _should_run = True  # never curated
+
+        total_triples = _kg_data.get("triples", [])
+        signal_count = sum(1 for t in total_triples if t.get("r", "") not in {"mentioned_in", "tagged"})
+        noise_ratio = 1 - (signal_count / max(len(total_triples), 1))
+        if noise_ratio > 0.85 and _should_run:
+            result = curate(action="curate", dry_run=False)
+            logger.info(f"[startup] KG auto-curated: {result.split(chr(10))[1]}")
+    except Exception as _ke:
+        logger.debug(f"[startup] KG auto-curation skipped: {_ke}")
+
     system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
 
     # ── Tier-based routing decision ──
