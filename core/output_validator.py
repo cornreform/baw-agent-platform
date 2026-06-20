@@ -73,6 +73,12 @@ def validate_output(output: str, *, prompt: str = "") -> str:
     # Telegram sends with parse_mode=HTML, not Markdown
     result = _markdown_bold_to_html(result)
 
+    # Phase 0a: Fix malformed HTML tags — remove spaces after < and before >
+    result = re.sub(r'<\s+', '<', result)
+    result = re.sub(r'\s+>', '>', result)
+
+    # Phase 0b: Strip standalone <b> / </b> that are NOT part of markdown conversion
+
     # Phase 1: Strip HTML tags that escaped through (safety net, will be re-applied below)
     result = _strip_html(result)
 
