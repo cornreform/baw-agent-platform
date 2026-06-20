@@ -1213,6 +1213,25 @@ def run_agent(
     except Exception as _he:
         logger.debug(f"[health] capability health check skipped: {_he}")
 
+    # ── Sync schedule.yaml from project to runtime (factory defaults) ──
+    try:
+        _baw_home = Path(os.environ.get("BAW_HOME", ""))
+        _runtime_dir = Path(data_dir or Path.home() / ".baw")
+        # Ensure reports dir exists (for cron delivery)
+        (_runtime_dir / "reports").mkdir(parents=True, exist_ok=True)
+        if _baw_home.exists():
+            _src_schedule = _baw_home / "schedule.yaml"
+            _dst_schedule = _runtime_dir / "schedule.yaml"
+            if _src_schedule.exists():
+                _src_mtime = _src_schedule.stat().st_mtime
+                _dst_mtime = _dst_schedule.stat().st_mtime if _dst_schedule.exists() else 0
+                if _src_mtime > _dst_mtime or not _dst_schedule.exists():
+                    import shutil as _shutil
+                    _shutil.copy2(str(_src_schedule), str(_dst_schedule))
+                    logger.info(f"[startup] schedule.yaml synced from project ({_src_schedule.name})")
+    except Exception as _ss:
+        logger.debug(f"[startup] schedule.yaml sync skipped: {_ss}")
+
     # ── KG auto-curation: lightweight check on every startup ──
     try:
         from tools.kg_curator import stats, curate

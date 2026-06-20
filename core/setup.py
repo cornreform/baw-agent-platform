@@ -1004,6 +1004,19 @@ def cmd_setup(data_dir: Path):
 
     # ── Save ──
     save_config(data_dir, cfg)
+
+    # ── Init default schedule.yaml if missing ──
+    _sched_dst = data_dir / "schedule.yaml"
+    if not _sched_dst.exists():
+        _sched_src = Path(__file__).parent.parent / "schedule.yaml"
+        if _sched_src.exists():
+            import shutil
+            shutil.copy2(str(_sched_src), str(_sched_dst))
+            _sched_dst.chmod(0o600)
+            _ok(f"Default schedule copied to {_sched_dst}")
+    # Ensure reports directory exists
+    (data_dir / "reports").mkdir(parents=True, exist_ok=True)
+
     print()
     _print_header("Setup Complete")
     _ok(f"Config saved to {data_dir / 'config.yaml'}")
