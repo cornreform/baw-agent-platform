@@ -376,8 +376,8 @@ def tribunal_command(query: str) -> str:
         bench = tcfg.get("bench") or _get_default_bench(cfg)
         chief = tcfg.get("chief") or _get_default_chief(cfg)
 
-        lines = ["⚖️ **Tribunal Configuration**", ""]
-        lines.append(f"**Chief Justice:** {chief.get('name', 'not set')} ({chief.get('provider', '')})")
+        lines = ["⚖️ <b>Tribunal Configuration</b>", ""]
+        lines.append(f"<b>Chief Justice:</b> {chief.get('name', 'not set')} ({chief.get('provider', '')})")
         lines.append("")
         lines.append(f"**Bench ({len(bench)} judges):**")
         for i, j in enumerate(bench, 1):
@@ -403,7 +403,7 @@ def tribunal_command(query: str) -> str:
 
     if not query:
         return (
-            "🏛️ **Tribunal** — Multi-Model Consensus Engine\n\n"
+            "🏛️ <b>Tribunal</b> — Multi-Model Consensus Engine\n\n"
             "Usage:\n"
             "`/tribunal <question>` — Ask for a consensus ruling\n"
             "`/tribunal bench` — Show current judge configuration\n\n"
@@ -415,9 +415,9 @@ def tribunal_command(query: str) -> str:
     ruling = t.deliberate(query)
 
     lines = [
-        "🏛️ **Tribunal Ruling**",
+        "🏛️ <b>Tribunal Ruling</b>",
         "",
-        f"📋 **Verdict:**\n{ruling.verdict}",
+        f"📋 <b>Verdict:</b>\n{ruling.verdict}",
         "",
         f"📊 Consensus: {ruling.consensus_score:.0%} ({ruling.judge_count} judges, {ruling.dissent_count} dissent)",
     ]

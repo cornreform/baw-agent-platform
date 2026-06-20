@@ -153,14 +153,14 @@ def todo_surface() -> str:
         return "[OK] No pending items -- clean slate."
     out = []
     if carried:
-        out.append("[TODO] **Carried over from previous sessions:**")
+        out.append("[TODO] <b>Carried over from previous sessions:</b>")
         for it in carried:
             tag = f" (from {it.session_id})" if it.session_id else ""
             out.append(f"  [TODO] [{it.id[-6:]}]{tag} {it.content}")
     if local:
         if out:
             out.append("")
-        out.append("[PLAN] **This session:**")
+        out.append("[PLAN] <b>This session:</b>")
         out.append(_format_items(local, st.stats()))
     return "\n".join(out)
 

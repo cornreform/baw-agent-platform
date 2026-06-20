@@ -154,11 +154,11 @@ def capability_help(config: dict) -> str:
     for func in ("chat", "stt", "tts"):
         r = resolve_capability(config, func)
         if r is None:
-            lines.append(f"  **{func}** → ❌ 未設定")
+            lines.append(f"  <b>{func}</b> → ❌ 未設定")
         elif r["type"] == "model":
-            lines.append(f"  **{func}** → `{r['id']}` ({r['provider']})")
+            lines.append(f"  <b>{func}</b> → `{r['id']}` ({r['provider']})")
         else:
-            lines.append(f"  **{func}** → method: `{r['method']}`")
+            lines.append(f"  <b>{func}</b> → method: `{r['method']}`")
     return "\n".join(lines)
 
 
@@ -167,7 +167,7 @@ def validate_capability_health(config: dict) -> list[dict]:
 
     Returns list of {capability, issue, fix_applied} dicts.
     Auto-heals: contradictory fields, missing env vars, method drift.
-    **Code-enforced** — runs before EVERY LLM call in run_agent().
+    <b>Code-enforced</b> — runs before EVERY LLM call in run_agent().
     """
     import os
     from pathlib import Path

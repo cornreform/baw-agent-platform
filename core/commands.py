@@ -199,7 +199,7 @@ def _cmd_help() -> str:
     for entry in _HELP_COMMANDS:
         grouped[entry["cat"]].append(entry)
 
-    lines = ["**BAW Commands**", ""]
+    lines = ["<b>BAW Commands</b>", ""]
     for cat in ["💬 Core", "📋 Sessions", "⚙️ Config", "🧠 Memory", "🛠 Tools", "🔧 System"]:
         cmds = grouped.get(cat, [])
         if not cmds:
@@ -241,7 +241,7 @@ def _cmd_status(config: dict, data_dir: Path) -> str:
     fact_mode = config.get("fact_check", {}).get("mode", "normal")
 
     lines = [
-        "**BAW Status**",
+        "<b>BAW Status</b>",
         f"  Model: {model_cfg.get('default', '?')} (fallback: {model_cfg.get('fallback', 'none')})",
         f"  Tone: {tone}",
         f"  Fact check: {fact_mode}",
@@ -586,7 +586,7 @@ def _cmd_docs(filepath: str) -> str:
     if not chain:
         return f"No docs chain found for: {filepath}\nTry creating docs/README.md in the project root."
 
-    lines = [f"📚 **Docs Chain for**: `{path}`\n"]
+    lines = [f"📚 <b>Docs Chain for</b>: `{path}`\n"]
     lines.append(f"Found {len(chain)} doc(s):\n")
     for i, doc in enumerate(chain, 1):
         try:
@@ -627,7 +627,7 @@ def _cmd_update(data_dir: Path) -> str:
     repo_owner = "cornreform"
     repo_name = "baw-agent-platform"
 
-    lines = ["🔄 **BAW Update — Standardized Flow**\n"]
+    lines = ["🔄 <b>BAW Update — Standardized Flow</b>\n"]
 
     # ── Step 1: Fetch ──
     try:
@@ -682,7 +682,7 @@ def _cmd_update(data_dir: Path) -> str:
     lines.append(f"✅ Step 2/6 — {current_tag} → {latest_tag} ({behind} commits behind)")
 
     # ── Step 3: Fetch release notes ──
-    lines.append(f"\n📋 **Step 3/6 — Changelog:**\n")
+    lines.append(f"\n📋 <b>Step 3/6 — Changelog:</b>\n")
     try:
         # Get new commits
         r = subprocess.run(
@@ -715,20 +715,20 @@ def _cmd_update(data_dir: Path) -> str:
                     other.append(f"  • {short.strip()}")
 
             if feat:
-                lines.append("**Features:**\n" + "\n".join(feat))
+                lines.append("<b>Features:</b>\n" + "\n".join(feat))
             if fix:
-                lines.append("\n**Fixes:**\n" + "\n".join(fix))
+                lines.append("\n<b>Fixes:</b>\n" + "\n".join(fix))
             if perf:
-                lines.append("\n**Performance:**\n" + "\n".join(perf))
+                lines.append("\n<b>Performance:</b>\n" + "\n".join(perf))
             if docs:
-                lines.append("\n**Docs:**\n" + "\n".join(docs))
+                lines.append("\n<b>Docs:</b>\n" + "\n".join(docs))
             if other:
-                lines.append("\n**Other:**\n" + "\n".join(other[:5]))
+                lines.append("\n<b>Other:</b>\n" + "\n".join(other[:5]))
     except Exception as e:
         lines.append(f"⚠️ Could not fetch changelog: {e}")
 
     # ── Step 4: Pull ──
-    lines.append(f"\n⏳ **Step 4/6 — Pulling updates...**")
+    lines.append(f"\n⏳ <b>Step 4/6 — Pulling updates...</b>")
     try:
         r = subprocess.run(
             ["git", "pull", "origin", "main"],
@@ -756,7 +756,7 @@ def _cmd_update(data_dir: Path) -> str:
     lines.append(f"🏷️ Now at: {new_tag}")
 
     # ── Step 5: Post-update hooks ──
-    lines.append(f"\n⏳ **Step 5/6 — Post-update checks...**")
+    lines.append(f"\n⏳ <b>Step 5/6 — Post-update checks...</b>")
     hooks_run = []
 
     # Check for requirements changes
@@ -791,7 +791,7 @@ def _cmd_update(data_dir: Path) -> str:
         lines.append("  ✅ No migration needed")
 
     # ── Step 6: Restart ──
-    lines.append(f"\n⏳ **Step 6/6 — Restarting bot...**")
+    lines.append(f"\n⏳ <b>Step 6/6 — Restarting bot...</b>")
     try:
         subprocess.run(
             ["sudo", "systemctl", "restart", "baw-telegram"],
@@ -810,7 +810,7 @@ def _cmd_aux_models(config: dict) -> str:
     caps = config.get("capabilities", {})
     exec_cfg = config.get("executor", {})
 
-    parts = ["**Auxiliary Models**", ""]
+    parts = ["<b>Auxiliary Models</b>", ""]
     parts.append(f"Executor: `{exec_cfg.get('model', '?')}`")
 
     def _fmt(name: str, cfg: dict) -> str:

@@ -172,9 +172,9 @@ def session_search(query: str, limit: int = 5, data_dir: str | None = None) -> s
 
     output = []
     if indexed_count:
-        output.append(f"**Session Search: `{query}`** ({len(results)} hits, {indexed_count} new indexed)")
+        output.append(f"<b>Session Search: `{query}`</b> ({len(results)} hits, {indexed_count} new indexed)")
     else:
-        output.append(f"**Session Search: `{query}`** ({len(results)} hits)")
+        output.append(f"<b>Session Search: `{query}`</b> ({len(results)} hits)")
 
     for sid, snippet in results:
         output.append(f"  • `{sid[:12]}…` — {snippet}")

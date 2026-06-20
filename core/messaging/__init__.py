@@ -397,14 +397,14 @@ class BaseConnector(ABC):
         self._load_session_index()
         if not self._session_index:
             return "No saved tasks."
-        lines = ["[PLAN] **Saved Tasks:**"]
+        lines = ["[PLAN] <b>Saved Tasks:</b>"]
         for sid, s in sorted(self._session_index.items(),
                              key=lambda x: x[1]["updated"], reverse=True):
             import datetime
             dt = datetime.datetime.fromtimestamp(s["updated"]).strftime("%m-%d %H:%M")
             msg_count = "(active)" if sid in [ses["id"] for ses in self._sessions.values()] else ""
             lines.append(
-                f"  `{sid[:12]}` — **{s['name']}** "
+                f"  `{sid[:12]}` — <b>{s['name']}</b> "
                 f"({dt}) {msg_count}"
             )
         return "\n".join(lines)
@@ -584,7 +584,7 @@ class BaseConnector(ABC):
                         bks = list_backups()
                         if not bks:
                             return "[PKG] 暫無備份。\n用 `/backup now` 建立第一個備份。"
-                        lines = [f"[PKG] **備份列表** ({len(bks)} 個)"]
+                        lines = [f"[PKG] <b>備份列表</b> ({len(bks)} 個)"]
                         for b in bks[:7]:
                             lines.append(f"  • `{b['name']}` — {b['size_mb']}MB ({b['created'][:16]})")
                         return "\n".join(lines)
@@ -612,7 +612,7 @@ class BaseConnector(ABC):
                         health = get_health_score_history(days=1)
                         avg = round(sum(h['score'] for h in health) / len(health), 1) if health else 0
                         return (
-                            f"[STATS] **過去 24 小時**\n"
+                            f"[STATS] <b>過去 24 小時</b>\n"
                             f"  錯誤: {errors['total']} ({errors['rate_per_hour']}/hr)\n"
                             f"  健康度: {avg}/10"
                         )
@@ -629,7 +629,7 @@ class BaseConnector(ABC):
                     active_chats = list(self._active_chats)
                 if q_len == 0 and active_count == 0:
                     return "Queue empty — no pending tasks."
-                lines = [f"**Message Queue**"]
+                lines = [f"<b>Message Queue</b>"]
                 lines.append(f"  Pending: {q_len} message(s)")
                 lines.append(f"  Active slots: {active_count}/{self._max_concurrency}")
                 if active_chats:
@@ -805,7 +805,7 @@ class BaseConnector(ABC):
                 # Return role-first model selector
                 return (
                     f"[MODEL_ROLE_SELECT]\n"
-                    f"**Select Model Role:**\n"
+                    f"<b>Select Model Role:</b>\n"
                     f"{current}\n"
                 )
 
@@ -1241,7 +1241,7 @@ class BaseConnector(ABC):
                 "messages": [], "created": time.time(), "updated": time.time(),
             }
             self._save_session_to_disk(self._sessions[chat_id])
-            return f"[OK] New task started: **{name}** (`{new_sid[:12]}`)"
+            return f"[OK] New task started: <b>{name}</b> (`{new_sid[:12]}`)"
 
         elif action == "list" or action == "ls":
             return self._list_saved_sessions()
@@ -1261,7 +1261,7 @@ class BaseConnector(ABC):
             }
             msg_count = len(self._sessions[chat_id]["messages"])
             return (
-                f"📂 Resumed task: **{data.get('name', 'untitled')}** "
+                f"📂 Resumed task: <b>{data.get('name', 'untitled')}</b> "
                 f"(`{data['id'][:12]}`)\n"
                 f"Conversation has {msg_count} messages. "
                 f"Continue chatting to pick up where you left off."
@@ -1273,7 +1273,7 @@ class BaseConnector(ABC):
                 ses["name"] = arg
             ses["updated"] = time.time()
             self._save_session_to_disk(ses)
-            return f"[SAVE] Task saved: **{ses['name']}** (`{ses['id'][:12]}`)"
+            return f"[SAVE] Task saved: <b>{ses['name']}</b> (`{ses['id'][:12]}`)"
 
         elif action in ("forget", "delete", "rm"):
             sid = arg or ""
@@ -1286,16 +1286,16 @@ class BaseConnector(ABC):
         elif action in ("info", "show"):
             ses = self._get_or_create_session(chat_id)
             return (
-                f"[TODO] **Current Task**\n"
+                f"[TODO] <b>Current Task</b>\n"
                 f"  ID: `{ses['id'][:12]}`\n"
-                f"  Name: **{ses['name']}**\n"
+                f"  Name: <b>{ses['name']}</b>\n"
                 f"  Messages: {len(ses['messages'])}\n"
                 f"  Created: {time.strftime('%m-%d %H:%M', time.localtime(ses['created']))}"
             )
 
         else:
             return (
-                "**Task commands:**\n"
+                "<b>Task commands:</b>\n"
                 "  `/task list` — Show saved tasks\n"
                 "  `/task new [name]` — Save current & start fresh\n"
                 "  `/task resume <id>` — Resume a saved task\n"
@@ -1333,7 +1333,7 @@ class BaseConnector(ABC):
                 mode="quick",
                 fresh_start=True,
             )
-            return f"[PLAN] **Session Summary** (`{ses['id'][:12]}`)\n\n{response}"
+            return f"[PLAN] <b>Session Summary</b> (`{ses['id'][:12]}`)\n\n{response}"
         except Exception as e:
             return f"[FAIL] Summarization failed: {e}"
 
@@ -1446,9 +1446,9 @@ class BaseConnector(ABC):
         updated_dt = _dt.datetime.fromtimestamp(target["updated"]).strftime("%m-%d %H:%M")
 
         return (
-            f"📂 **Picked Up:** `{data['id'][:12]}` — {data.get('name', 'untitled')}\n"
+            f"📂 <b>Picked Up:</b> `{data['id'][:12]}` — {data.get('name', 'untitled')}\n"
             f"   ({len(msgs)} msgs, last activity: {updated_dt})\n\n"
-            f"**Last context:**\n{context}\n\n"
+            f"<b>Last context:</b>\n{context}\n\n"
             f"Continue chatting to pick up where you left off. [GO]"
         )
 
@@ -1800,15 +1800,15 @@ class BaseConnector(ABC):
                         other.append(f"  • {short.strip()}")
 
                 if feat:
-                    changelog_parts.append("**Features:**\n" + "\n".join(feat))
+                    changelog_parts.append("<b>Features:</b>\n" + "\n".join(feat))
                 if fix:
-                    changelog_parts.append("**Fixes:**\n" + "\n".join(fix))
+                    changelog_parts.append("<b>Fixes:</b>\n" + "\n".join(fix))
                 if perf:
-                    changelog_parts.append("**Performance:**\n" + "\n".join(perf))
+                    changelog_parts.append("<b>Performance:</b>\n" + "\n".join(perf))
                 if docs:
-                    changelog_parts.append("**Docs:**\n" + "\n".join(docs))
+                    changelog_parts.append("<b>Docs:</b>\n" + "\n".join(docs))
                 if other:
-                    changelog_parts.append("**Other:**\n" + "\n".join(other[:5]))
+                    changelog_parts.append("<b>Other:</b>\n" + "\n".join(other[:5]))
             _done(f"{len(commits.split(chr(10))) if commits else 0} commits grouped")
         except Exception as e:
             _warn(f"Changelog unavailable: {e}")
@@ -1840,7 +1840,7 @@ class BaseConnector(ABC):
                 cwd=str(repo_dir),
             )
             new_tag = r.stdout.strip()
-            self.send(chat_id, f"🏷️ Now at: **{new_tag}**")
+            self.send(chat_id, f"🏷️ Now at: <b>{new_tag}</b>")
         except Exception:
             pass
 
@@ -2100,7 +2100,7 @@ class BaseConnector(ABC):
                         if name == "delegate_task" and chat_id:
                             _sa_goal = (args or {}).get("goal", "")[:150]
                             _sa_model = (args or {}).get("model_id", "") or ""
-                            _sa_info = f"🔄 **子任務**"
+                            _sa_info = f"🔄 <b>子任務</b>"
                             if _sa_model:
                                 _sa_info += f" · `{_sa_model}`"
                             _sa_info += f"\n{_sa_goal}"
@@ -2177,7 +2177,7 @@ class BaseConnector(ABC):
                 if chat_id and not _is_focus_mode:
                     try:
                         _bg_msg = (
-                            "⏳ **Detected complex task** — running in background.\n"
+                            "⏳ <b>Detected complex task</b> — running in background.\n"
                             "Estimated: multiple rounds, multiple tools.\n"
                             "I will send the full result when ready.\n"
                             "You can send new messages — they will queue."
@@ -2399,18 +2399,18 @@ class BaseConnector(ABC):
                                     _result_parts.append(_content)
                         _result_text = '\n'.join(_result_parts[:5])[:300]
                         if _result_text:
-                            _update = "✅ **子任務完成**"
+                            _update = "✅ <b>子任務完成</b>"
                             if _footer:
                                 _update += f" · {_footer}"
                             _update += f"\n{_result_text}"
                             self.send(chat_id, _update, edit_msg_id=_sa_id)
                         elif _footer:
-                            self.send(chat_id, f"✅ **子任務完成** · {_footer}", edit_msg_id=_sa_id)
+                            self.send(chat_id, f"✅ <b>子任務完成</b> · {_footer}", edit_msg_id=_sa_id)
                         else:
-                            self.send(chat_id, "✅ **子任務完成**", edit_msg_id=_sa_id)
+                            self.send(chat_id, "✅ <b>子任務完成</b>", edit_msg_id=_sa_id)
                     else:
                         # ── Fallback: no box pattern matched → still mark as completed ──
-                        self.send(chat_id, "✅ **子任務完成**", edit_msg_id=_sa_id)
+                        self.send(chat_id, "✅ <b>子任務完成</b>", edit_msg_id=_sa_id)
 
             # ── Append failure report if any (proactive, not waiting for next request) ──
             if all_failure_reasons:
@@ -2643,7 +2643,7 @@ class BaseConnector(ABC):
         for pname, model, content, latency in results:
             is_error = content.startswith("ERROR:") or content.startswith("TIMEOUT:")
             tag = "⚠️" if is_error else "✅"
-            report_lines.append(f"║ {tag} **{pname}** (`{model}`) · {latency:.0f}ms")
+            report_lines.append(f"║ {tag} <b>{pname}</b> (`{model}`) · {latency:.0f}ms")
             if not is_error:
                 success_count += 1
                 # Truncate content for display
@@ -2672,7 +2672,7 @@ class BaseConnector(ABC):
         3. Execute relentlessly until goal achieved — no human questions
         """
         # ── Phase 1: Model Council ──
-        self.send(chat_id, "🏛️ **Model Council** · 集結中...")
+        self.send(chat_id, "🏛️ <b>Model Council</b> · 集結中...")
         council_result = self._run_model_council(goal)
         self.send(chat_id, council_result)
 
@@ -2699,9 +2699,9 @@ class BaseConnector(ABC):
     @staticmethod
     def _help_text() -> str:
         return (
-            "[BOT] **BAW Bot** — Multi-platform Agent Interface\n\n"
+            "[BOT] <b>BAW Bot</b> — Multi-platform Agent Interface\n\n"
             "Simply type anything and BAW will process it.\n\n"
-            "**💬 Core:**\n"
+            "<b>💬 Core:</b>\n"
             "/help — This message\n"
             "/status — BAW system status + sessions\n"
             "/btw `<text>` — Quick answer (no court, no plan)\n"
@@ -2713,7 +2713,7 @@ class BaseConnector(ABC):
             "/court live — 訂閱逐步推送 (M3 wire-in)\n"
             "/stop — Cancel running request\n"
             "/restart — Restart BAW engine\n\n"
-            "**[PLAN] Sessions:**\n"
+            "<b>[PLAN] Sessions:</b>\n"
             "/task new [name] — Save current & start fresh\n"
             "/task list, /list — List saved sessions\n"
             "/task resume <id>, /resume <id> — Resume a saved session\n"
@@ -2722,7 +2722,7 @@ class BaseConnector(ABC):
             "/task info — Show current session details\n"
             "/summarize — LLM summary of current session\n"
             "/pickup — Resume last interrupted session\n\n"
-            "**⚙️ Config:**\n"
+            "<b>⚙️ Config:</b>\n"
             "/model — Model selector (or /model `<id>` to switch directly)\n"
             "/models — Show all auxiliary models (STT, TTS, vision, etc.)\n"
             "/mode `quick|hybrid|tight` — Switch execution mode\n"
@@ -2731,7 +2731,7 @@ class BaseConnector(ABC):
             "/set `<key>` `<value>` — Persist config to config.yaml\n"
             "/reload — Hot-reload tools & config (no restart)\n"
             "/capability `<cmd>` — Manage capabilities\n\n"
-            "**[TEST] Validate (REAL tests):**\n"
+            "<b>[TEST] Validate (REAL tests):</b>\n"
             "/validate — Run all real-world validations\n"
             "/validate api — DeepSeek + MiniMax live API calls\n"
             "/validate evolve — Evolve logging (real write + read)\n"
@@ -2739,24 +2739,24 @@ class BaseConnector(ABC):
             "/validate telegram — Bot connectivity\n"
             "/validate disk — Disk space check\n"
             "/validate git — Git status\n\n"
-            "**🏥 Health & Ops:**\n"
+            "<b>🏥 Health & Ops:</b>\n"
             "/doctor, /dr — 10-point system health check\n"
             "/watchdog, /wd — Same as /doctor\n"
             "/backup, /bk — Create backup (or /backup list, /backup restore)\n"
             "/monitor, /mon — 24h error rate (or /monitor weekly)\n\n"
-            "**🏛️ Tribunal (multi-model consensus):**\n"
+            "<b>🏛️ Tribunal (multi-model consensus):</b>\n"
             "/tribunal <question> — Ask multiple judges, get unified verdict\n"
             "/tribunal bench — Show current judge configuration\n"
             "(Customise judges in ~/.baw/config.yaml tribunal section)\n\n"
-            "**[MODEL] Memory:**\n"
+            "<b>[MODEL] Memory:</b>\n"
             "/memory `<text>` — Save a memory\n"
             "/search `<query>` — Search memories\n"
             "/evolve — Self-evolution stats\n\n"
-            "**🛠 Tools:**\n"
+            "<b>🛠 Tools:</b>\n"
             "/board — Generate HTML dashboard\n"
             "/version — BAW version\n"
             "/cron — List/manage scheduled tasks\n\n"
-            "**[FIX] System:**\n"
+            "<b>[FIX] System:</b>\n"
             "/update — Git pull + changelog + restart\n"
             "/tts on|off|status — Toggle text-to-speech"
         )
