@@ -238,12 +238,11 @@ def _summarize_providers(config: dict) -> str:
 
 
 def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
-                        fresh_start: bool = False,
-                        quick_mode: bool = False) -> str:
+                        fresh_start: bool = False) -> str:
     """Build system prompt from SOUL.md + dynamic context.
 
-    quick_mode=True: loads only core identity, skips heavy court/tool rules.
-    fresh_start=True: returns a minimal prompt with no SOUL.md or memories.
+    Unified prompt (no quick/full mode split): the LLM self-judges
+    task complexity and matches response depth accordingly.
     
     Structure (cache-aware): [STATIC SOUL CORE] + [DYNAMIC CONFIG]
     Static prefix stays identical across turns → DeepSeek prefix cache hit.
@@ -342,62 +341,18 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
     if soul_path.exists():
         soul_text = soul_path.read_text(encoding="utf-8")
-        if quick_mode:
-            lines = soul_text.splitlines()
-            trimmed = []
-            for line in lines:
-                trimmed.append(line)
-                if "## 核心靈魂" in line:
-                    for inner in lines[lines.index(line)+1:]:
-                        if inner.startswith("## "):
-                            break
-                        trimmed.append(inner)
-                    break
-            system_prompt = "\n".join(trimmed)
-            system_prompt = evidence_rule + execution_protocol + system_prompt
-            system_prompt += (
-                "\n## Quick mode\n"
-                "- CRITICAL: Do NOT ask 'should I continue?' or 'what next?'. Execute silently.\n"
-                "- [TARGET] Output: NEVER dump raw JSON. Extract key info -> 1 sentence summary.\n"
-                "\n## LANGUAGE RULE\n"
-                "Match user's language. User speaks Cantonese/Traditional Chinese → respond in same.\n"
-                "User speaks English → respond in English. Technical terms keep original form.\n"
-            )
-            if not config.get("display", {}).get("show_reasoning"):
-                system_prompt += (
-                    "\n## HARD GATE: No thinking leakage\n"
-                    "YOUR ENTIRE OUTPUT IS VISIBLE TO THE USER. There is no hidden thinking space.\n"
-                    "The first word you send is the first word the user sees.\n"
-                    "NEVER start with: 'Let me...' 'I will...' 'I need to...' 'I have...'\n"
-                    "  'First...' 'Now let...' 'Based on the...' 'After checking...'\n"
-                    "Instead, START DIRECTLY with the answer/result/action.\n"
-                    "  GOOD: 'DeepSeek V3 is available. Key: ✓'\n"
-                    "  BAD:  'Let me check if DeepSeek V3 is available...'\n"
-                    "  GOOD: 'The config has 3 providers. Missing: xAI key.'\n"
-                    "  BAD:  'I have enough data. Let me synthesize and report. Current status:...'\n"
-                    "HARD VIOLATION: Any sentence that starts with 'Let me', 'I will', 'I need',\n"
-                    "  'I have', 'Now let', 'First, let', 'After reviewing', 'Let's check'.\n"
-                    "\n"
-                    "## HARD GATE: No hallucinated config/state claims\n"
-                    "Before claiming a config value or env state, you MUST call the relevant tool\n"
-                    "(config, system, self_diagnose) to verify. Do NOT infer or guess.\n"
-                    "If no tool was called, the claim is unsupported — do not make it.\n"
-                )
-            system_prompt += output_structure
-
-            system_prompt += delegation_block
-            system_prompt += (
-                "\n\n## CONFIG COMMAND RULES (quick mode)\n"
-                "When user sends config params (method=X mode=Y base_url=Z):\n"
-                "- Use ONLY the `config` tool. MAX 3 steps: get → set → verify.\n"
-                "- NEVER delegate to sub-agents. NEVER use execute_code/bash/write_file.\n"
-                "- NEVER say 'I will follow up.' DO IT NOW, report result.\n"
-                "- After setting, read back with config(action=get) to confirm.\n"
-            )
-        else:
-            system_prompt = evidence_rule + execution_protocol + soul_text
-            system_prompt += output_structure
-            system_prompt += delegation_block
+        system_prompt = evidence_rule + execution_protocol + soul_text
+        system_prompt += (
+            "\n\n## COMPLEXITY SELF-JUDGMENT\n"
+            "Self-judge task complexity. Match your processing depth to the task:\n"
+            "- Simple Q&A (greeting, quick question, yes/no) → reply directly. No tools needed.\n"
+            "- Quick fact-check → single tool call, direct answer.\n"
+            "- Multi-step task → use tools as needed, but be proportionate.\n"
+            "You ALREADY know the difference between 'hi' and 'analyze this codebase'. Trust that judgment.\n"
+            "Do NOT over-process simple requests. Do NOT under-process complex ones.\n"
+        )
+        system_prompt += output_structure
+        system_prompt += delegation_block
     else:
         system_prompt = (
             "You are BAW (Black And White), your agent platform.\n"
@@ -479,13 +434,12 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     # Dynamic context below (models, config, todo, etc.) changes per turn.
     # Cache is automatic at provider level — no special headers needed.
 
-    if not quick_mode:
-        orch_path = base_path / "ORCHESTRATOR.md"
-        if orch_path.exists():
-            orch_text = orch_path.read_text(encoding="utf-8")
-            system_prompt += f"\n\n{orch_text}"
+    orch_path = base_path / "ORCHESTRATOR.md"
+    if orch_path.exists():
+        orch_text = orch_path.read_text(encoding="utf-8")
+        system_prompt += f"\n\n{orch_text}"
 
-        # Dynamic context (per-turn: models, tools, config may change)
+    # Dynamic context (per-turn: models, tools, config may change)
         tone = config.get("tone", {}).get("default", "casual")
         fact_mode = config.get("fact_check", {}).get("mode", "normal")
         tools_list = "bash, read_file, write_file, web_search, patch, search_files, memory, config, mmx, tts, image_generate, git, docker, todo, install, system, background, delegate_task, knowledge_graph, execute_code"
@@ -1343,16 +1297,11 @@ def run_agent(
     _delegation_results = []
     _synthesis_results = []
 
-    # ── Resolve execution mode ──
-    # Smart default: quick for simple messages, tight for complex ones
-    _configured_mode = (mode or config.get("mode", "quick")).lower()
-    if _configured_mode not in ("quick", "hybrid", "tight"):
-        _configured_mode = "quick"
-    
-    # ── Natural language mode detection ──
-    # The LLM determines complexity through its understanding of the task.
-    # No rigid keyword matching — mode is driven by user preference and context.
-    _mode = _configured_mode
+    # ── Unified execution — no hardcoded mode ──
+    # The LLM self-judges complexity via system prompt.
+    # Always skip pre-filtering (court/plan/adversarial) — the LLM
+    # decides what tools to use and how deeply to process.
+    _mode = "quick"  # always quick: LLM handles depth judgment
 
     # ── Task classification (Layer 1) ──
     _classification = _classify_task_type(prompt)
@@ -1360,8 +1309,7 @@ def run_agent(
     logger.info(f"[classify] {_classification['reason']}")
 
     # ── Build system prompt ──
-    _is_quick = (_mode == "quick")
-    system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start, quick_mode=_is_quick)
+    system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
 
     # ── Phase 1: Build context ──
     ctx = Context(system_prompt=system_prompt, temperature=model_temperature)
