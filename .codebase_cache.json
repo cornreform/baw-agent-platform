@@ -5308,7 +5308,7 @@
     "core/loop.py": {
       "path": "core/loop.py",
       "module_name": "core.loop",
-      "size_lines": 2162,
+      "size_lines": 2067,
       "docstring": "BAW — Agent Loop: Debate-first, Execute-second\n\nFlow per user turn:\n  Phase 1 — Court (independent analysis)\n    Devil and Angel analyze the SAME input independently.\n    Both give scores. BAW synthesizes neutrally.\n    [WARN] NEITHER voice has execution power during court.\n\n  Phase 2 — Neutral response & debate (interactive only)\n    BAW responds from neutral perspective.\n    NOT trying to please the user — WILLING to disagree.\n    User ↔ Agent back and forth until conclusion.\n\n  Phase 3 — Exec",
       "functions": [
         {
@@ -5326,7 +5326,7 @@
         },
         {
           "name": "_classify_task_type",
-          "docstring": "Classify user task into TYPE_A–TYPE_E BEFORE execution.\n\nTYPE_A: read-only / informational → safe, no audit needed\nTYPE_B: write/modify system/config → needs permission gate\nTYPE_C: download/install third-party → MUST audit with code_scan\nTYPE_D: execute external code → MUST scan + audit\nTYPE_E: fil",
+          "docstring": "Natural-language-first classification — always safe default.\nThe LLM itself determines task safety through the permission engine\nat tool-call time. No rigid keyword/pattern matching required.",
           "args": [
             {
               "name": "prompt",
@@ -5334,7 +5334,7 @@
             }
           ],
           "return_type": "dict",
-          "lineno": 112,
+          "lineno": 80,
           "decorators": []
         },
         {
@@ -5355,7 +5355,7 @@
             }
           ],
           "return_type": "",
-          "lineno": 154,
+          "lineno": 96,
           "decorators": []
         },
         {
@@ -5363,7 +5363,7 @@
           "docstring": "Return one-line context window status.",
           "args": [],
           "return_type": "str",
-          "lineno": 161,
+          "lineno": 103,
           "decorators": []
         },
         {
@@ -5376,7 +5376,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 172,
+          "lineno": 114,
           "decorators": []
         },
         {
@@ -5384,7 +5384,7 @@
           "docstring": "",
           "args": [],
           "return_type": "CostTracker",
-          "lineno": 263,
+          "lineno": 205,
           "decorators": []
         },
         {
@@ -5409,7 +5409,7 @@
             }
           ],
           "return_type": "",
-          "lineno": 270,
+          "lineno": 212,
           "decorators": []
         },
         {
@@ -5417,7 +5417,7 @@
           "docstring": "",
           "args": [],
           "return_type": "str",
-          "lineno": 274,
+          "lineno": 216,
           "decorators": []
         },
         {
@@ -5425,7 +5425,7 @@
           "docstring": "",
           "args": [],
           "return_type": "str",
-          "lineno": 278,
+          "lineno": 220,
           "decorators": []
         },
         {
@@ -5433,7 +5433,7 @@
           "docstring": "",
           "args": [],
           "return_type": "",
-          "lineno": 282,
+          "lineno": 224,
           "decorators": []
         },
         {
@@ -5446,7 +5446,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 288,
+          "lineno": 230,
           "decorators": []
         },
         {
@@ -5471,7 +5471,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 298,
+          "lineno": 240,
           "decorators": []
         },
         {
@@ -5484,7 +5484,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 805,
+          "lineno": 751,
           "decorators": []
         },
         {
@@ -5501,7 +5501,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 898,
+          "lineno": 844,
           "decorators": []
         },
         {
@@ -5526,7 +5526,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 1039,
+          "lineno": 985,
           "decorators": []
         },
         {
@@ -5579,7 +5579,7 @@
             }
           ],
           "return_type": "tuple[str, dict]",
-          "lineno": 1125,
+          "lineno": 1071,
           "decorators": []
         }
       ],
@@ -5598,7 +5598,7 @@
                 }
               ],
               "return_type": "",
-              "lineno": 184,
+              "lineno": 126,
               "decorators": []
             },
             {
@@ -5611,7 +5611,7 @@
                 }
               ],
               "return_type": "bool",
-              "lineno": 191,
+              "lineno": 133,
               "decorators": []
             },
             {
@@ -5640,7 +5640,7 @@
                 }
               ],
               "return_type": "",
-              "lineno": 196,
+              "lineno": 138,
               "decorators": []
             },
             {
@@ -5653,7 +5653,7 @@
                 }
               ],
               "return_type": "str",
-              "lineno": 224,
+              "lineno": 166,
               "decorators": []
             },
             {
@@ -5666,7 +5666,7 @@
                 }
               ],
               "return_type": "str",
-              "lineno": 238,
+              "lineno": 180,
               "decorators": []
             },
             {
@@ -5679,11 +5679,11 @@
                 }
               ],
               "return_type": "",
-              "lineno": 252,
+              "lineno": 194,
               "decorators": []
             }
           ],
-          "lineno": 179
+          "lineno": 121
         }
       ],
       "baw_imports": [
@@ -15341,7 +15341,7 @@
     "tools/delegate_task.py": {
       "path": "tools/delegate_task.py",
       "module_name": "tools.delegate_task",
-      "size_lines": 528,
+      "size_lines": 515,
       "docstring": "BAW built-in: delegate a task to a sub-agent (MiniMax executor).\n\nSub-agent runs in an isolated context — no parent conversation history,\nno parent memories. It receives only the goal + optional context.\n\nUse this for:\n- Parallel subtasks (e.g. \"search the web while I process local files\")\n- Complex research tasks that benefit from independent reasoning\n- Mechanical sub-tasks that don't need the full BAW court/plan pipeline",
       "functions": [
         {
@@ -15354,7 +15354,7 @@
         },
         {
           "name": "_resolve_executor_model",
-          "docstring": "Resolve which model to use for a delegated task.\n\nPriority:\n1. model.task_rules — keyword match on goal (first match wins)\n2. executor.model — configured executor model\n3. model.fallback or model.default — final fallback",
+          "docstring": "Resolve which model to use for a delegated task.\n\nNatural language first: model selection is driven by the parent LLM's\nunderstanding of the task, not keyword/regex rules. Falls back to\nconfigured executor model then default.",
           "args": [
             {
               "name": "cfg",
@@ -15371,7 +15371,7 @@
         },
         {
           "name": "_get_minimax_config",
-          "docstring": "Load config and resolve the executor model (per-task routing support).\nFalls back gracefully if resolved model is not in providers list.\n\nArgs:\n    goal: Used to match model.task_rules for keyword-based routing.\n    model_override: If non-empty, forces this model (P0-1 fix — respects\n               ",
+          "docstring": "Load config and resolve the executor model (per-task routing support).\nFalls back gracefully if resolved model is not in providers list.\n\nArgs:\n    goal: Natural language task description — model resolved by fallback chain, not keyword matching.\n    model_override: If non-empty, forces this model (P",
           "args": [
             {
               "name": "goal",
@@ -15383,7 +15383,7 @@
             }
           ],
           "return_type": "dict",
-          "lineno": 122,
+          "lineno": 110,
           "decorators": []
         },
         {
@@ -15408,7 +15408,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 165,
+          "lineno": 153,
           "decorators": []
         }
       ],
@@ -15441,7 +15441,6 @@
         "json",
         "logging",
         "pathlib",
-        "re",
         "sys"
       ],
       "exports": [
@@ -20541,9 +20540,9 @@
   "circular_dependencies": [],
   "stats": {
     "modules_scanned": 121,
-    "total_lines": 40364,
+    "total_lines": 40256,
     "dependencies_tracked": 81,
     "circular_dep_count": 0,
-    "scanned_at": "2026-06-20 17:27:53.990553"
+    "scanned_at": "2026-06-20 09:37:24.381883"
   }
 }

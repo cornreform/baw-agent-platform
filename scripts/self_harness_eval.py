@@ -29,20 +29,20 @@ def run_step(name: str, fn) -> dict:
 
 def scan_codebase() -> str:
     """Run codebase_doc scan."""
-    from tools.codebase_doc import scan_ast, gen_report, INDEX_FILE
-    scan_ast()
-    report = gen_report()
-    idx_exists = INDEX_FILE.exists()
-    return f"Modules scanned: {report.get('total_modules', 0)}, INDEX.md: {'yes' if idx_exists else 'no'}"
+    from tools.codebase_doc import scan, _INDEX_FILE
+    scan()
+    idx_exists = _INDEX_FILE.exists()
+    return f"Modules scanned, INDEX.md: {'yes' if idx_exists else 'no'}"
 
 
 def run_diagnose() -> str:
     """Run self_diagnose."""
-    from tools.self_diagnose import all_checks
-    results = all_checks()
-    ok_count = sum(1 for r in results.values() if r.get("ok"))
-    total = len(results)
-    return f"Health: {ok_count}/{total} checks passed"
+    from tools.self_diagnose import _handler
+    result = _handler()
+    lines = result.strip().split("\n")
+    ok_count = sum(1 for l in lines if l.strip().startswith("✅"))
+    total = sum(1 for l in lines if l.strip().startswith(("✅", "❌", "⚠️")))
+    return f"Health: {ok_count}/{total} checks passed" if total else result[:200]
 
 
 def check_harness_layers() -> list[dict]:
