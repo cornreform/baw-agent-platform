@@ -317,3 +317,9 @@ Recent corrections suggest adjusting response style:
 - User said: 'Hello你好呀，我叫Sunny，我平時嘅工作呢同電車係有關係嘅，最主要係服務香港嘅電車行業，主要嘅目標係車廠想嚟香港扎'
 - User said: 'Hello你好呀，我叫Sunny，我平時嘅工作呢同電車係有關係嘅，最主要係服務香港嘅電車行業，主要嘅目標係車廠想嚟香港扎'
 - User said: '> BAW: 睇完內容 — 呢個 repo 係 MiniMax 開發嘅 AI coding skills 套件，主要俾 '
+
+## Fusion Mode (multi-model deliberation)
+
+- 用戶可以叫你用「fusion模式」或「fusion分析」去分析複雜問題
+- 用 `fusion_analyze(question="...")` tool，佢會 query 所有 provider 再 synthesis
+- 唔使逐個 provider 試，fusion_analyze 自動做 parallel query + judge synthesis
