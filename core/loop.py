@@ -1279,16 +1279,73 @@ def run_agent(
     _should_search = (
         len(_search_prompt) > 15
         and _search_prompt.lower().strip() not in _greetings
-        and not all(c in _search_prompt for c in _search_prompt if c in ".,!? \n\t")
+        and not all(c in _search_prompt for c in _search_prompt if c in ".,!? \\n\\t")
     )
     memories = []
     mem_text = ""
     if _should_search:
+        # 1. Memory store search (existing)
         memories = mem.search(_search_prompt, limit=3)
+        mem_parts = []
         if memories:
-            mem_text = "\n".join(
-                f"- [{m['score']:.2f}] {m['content']}" for m in memories
-            )
+            for m in memories:
+                mem_parts.append(f"- [MEM:{m['score']:.2f}] {m['content']}")
+
+        # 2. Weighted KG search — signal > noise
+        try:
+            import json as _kg_json
+            from pathlib import Path as _P
+            _kg_path = _P(data_dir or _P.home() / ".baw") / "knowledge_graph.json"
+            if _kg_path.exists():
+                _kg_data = _kg_json.loads(_kg_path.read_text(encoding="utf-8"))
+                _triples = _kg_data.get("triples", [])
+                _noise_rels = {"mentioned_in", "tagged"}
+                _query_lower = _search_prompt.lower()
+                _query_words = set(w for w in _query_lower.split() if len(w) > 2)
+
+                # Score each triple by relevance to query
+                _kg_hits: list[tuple[str, float, str]] = []  # (display, weight, relation)
+                for _t in _triples:
+                    _s = (_t.get("s", "") or "").lower()
+                    _o = (_t.get("o", "") or "").lower()
+                    _r = _t.get("r", "")
+                    _is_noise = _r in _noise_rels
+
+                    # Match: subject or object contains query keyword
+                    _kw_match = any(kw in _s or kw in _o for kw in _query_words)
+                    if not _kw_match:
+                        # Also try full query substring
+                        if _query_lower not in _s and _query_lower not in _o:
+                            continue
+
+                    # Weight: signal gets 3x priority over noise
+                    _base_weight = 0.2 if _is_noise else 1.0
+                    _match_bonus = 0.3 if _query_lower in _s or _query_lower in _o else 0.0
+                    _weight = _base_weight + _match_bonus
+                    _tag = "[SIG]" if not _is_noise else "[REF]"
+                    _display = f"- {_tag}:{_weight:.2f} {_t.get('s','')} --{_r}-> {_t.get('o','')}"
+                    _kg_hits.append((_display, _weight, _r))
+
+                # Sort by weight descending, take top 5
+                _kg_hits.sort(key=lambda x: -x[1])
+                # Cap noise per entity: max 3 mentions per subject
+                _seen_subjects: dict[str, int] = {}
+                for _disp, _w, _r in _kg_hits:
+                    if _r in _noise_rels:
+                        _subj = _disp.split("'s'")[1] if "'s'" in _disp else ""
+                        _cnt = _seen_subjects.get(_subj, 0)
+                        if _cnt >= 3:
+                            continue
+                        _seen_subjects[_subj] = _cnt + 1
+                    mem_parts.append(_disp)
+                    if len(mem_parts) >= 8:  # cap total results
+                        break
+
+        except Exception:
+            pass  # KG search is additive; silence on error
+
+        if mem_parts:
+            mem_text = "\n".join(mem_parts)
 
     reset_cost()
     session_cost = 0.0
