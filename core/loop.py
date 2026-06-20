@@ -1512,7 +1512,7 @@ def run_agent(
                 output = f"[THOUGHT] {_reasoning}\n\n---\n\n{output}"
 
         output += final_content
-        output += f"\n\n{format_cost_summary()}"
+        output += f"\n{format_cost_summary()}"
         output = output.strip()
         
         # ── Context compaction: summarize old turns before returning ──
@@ -1910,11 +1910,11 @@ def run_agent(
         output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
     output += (_resp.content or "")
     # Append cost summary BEFORE length trim so it's counted
-    output += f"\\n\\n{format_cost_summary()}"
+    output += f"\\n{format_cost_summary()}"
     output = output.strip()
     # ── Output token budget: post-generation length enforcement ──
     if _was_truncated:
-        output += "\n\n*(Response truncated to ~800 words for readability)*"
+        output += "\\n\\n*(Response truncated to ~800 words for readability)*"
     if len(output) > OUTPUT_MAX_CHARS:
         logger.warning(f"[Loop] Output too long ({len(output)} chars > {OUTPUT_MAX_CHARS}), force-trimming")
         output = output[:OUTPUT_MAX_CHARS] + "\n\n*(Response trimmed to fit length limit)*"
