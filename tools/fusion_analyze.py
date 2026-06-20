@@ -145,10 +145,10 @@ def _synthesize(config: dict, question: str, raw_results: list[dict]) -> str:
     except Exception as e:
         logger.error(f"[Fusion] Judge synthesis failed: {e}")
         # Fallback: return raw results
-        fallback = ["## Fusion Results (judge failed — raw responses)"]
+        fallback = ["[FUSION] Judge synthesis failed — raw responses:"]
         for r in raw_results:
-            status_icon = "✅" if r["status"] == "ok" else "❌"
-            fallback.append(f"\n### {status_icon} {r['provider']}/{r['model']}")
+            status_tag = "[OK]" if r["status"] == "ok" else "[FAIL]"
+            fallback.append(f"\n### {status_tag} {r['provider']}/{r['model']}")
             if r["response"]:
                 fallback.append(r["response"][:2000])
             else:
@@ -216,16 +216,16 @@ def fusion_analyze(question: str) -> str:
 
     # Build raw report
     raw_lines = [
-        f"🔀 **Fusion Analysis**",
-        f"   Question: {question[:100]}{'...' if len(question) > 100 else ''}",
-        f"   Models queried: {len(targets)} across {len(providers)} providers",
-        f"   Successful: {sum(1 for r in results if r['status'] == 'ok')}",
-        f"   Failed: {sum(1 for r in results if r['status'] == 'error')}",
-        f"   Time: {elapsed:.1f}s",
+        f"[FUSION ANALYSIS]",
+        f"  Question: {question[:100]}{'...' if len(question) > 100 else ''}",
+        f"  Models queried: {len(targets)} across {len(providers)} providers",
+        f"  Successful: {sum(1 for r in results if r['status'] == 'ok')}",
+        f"  Failed: {sum(1 for r in results if r['status'] == 'error')}",
+        f"  Time: {elapsed:.1f}s",
         "",
     ]
     for r in results:
-        icon = "✅" if r["status"] == "ok" else "❌"
+        icon = "[OK]" if r["status"] == "ok" else "[FAIL]"
         raw_lines.append(f"  {icon} {r['provider']}/{r['model']}")
         if r["error"]:
             raw_lines.append(f"     Error: {r['error']}")
