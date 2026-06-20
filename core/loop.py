@@ -423,10 +423,13 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             )
             if not config.get("display", {}).get("show_reasoning"):
                 system_prompt += (
-                    "\\n## NO THINKING PREAMBLE\\n"
-                    "Do not start with 'I checked...' 'I analyzed...' 'Based on...' etc.\\n"
-                    "Lead with the result directly. After giving it, you may ask the user\\n"
-                    "if they need more or offer next steps.\\n"
+                    "\\n## OUTPUT RULE: show analysis, hide reasoning\\n"
+                    "The user WANTS your analysis, findings, opinions and conclusions.\\n"
+                    "Do NOT show internal monologue or reasoning steps:\\n"
+                    "  NO: 'Let me think...' 'I will check...' 'First I consider...'\\n"
+                    "  The user needs your analysis result, not the process.\\n"
+                    "Lead with: 'Based on spec...' 'Analysis shows...' 'Conclusion:...'\\n"
+                    "After giving the result, you may ask if they need more or offer next steps.\\n"
                 )
             system_prompt += output_structure
 
@@ -449,7 +452,7 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "Match user's language. Speak what the user speaks.\n"
             "Be concise, lead with results.\n"
             "Never ask the user what to do — figure it out yourself.\n"
-            "Do NOT show reasoning, analysis, or intermediate steps.\n"
+            "Show analysis results and conclusions, not internal reasoning steps.\n"
             "\n"
             "## Self-configuration (when no SOUL.md found)\n"
             "- Your config lives at ~/.baw/config.yaml\n"
