@@ -96,15 +96,32 @@ def check_config_write_guard(path: str) -> None:
     """Raise PermissionError if writing to a protected path without user approval.
 
     Checks:
-      1. Managed scope — managed keys are ALWAYS blocked (even with user approval)
-      2. Thread-local write-allow flag + protected-prefix list
-      3. endpoint/base_url keys anywhere in the dotted path
+      1. Managed scope — checks user permission, defaults to blocked
+      2. Thread-local write-allow flag (user-initiated via slash command)
+      3. User-granted permission (via /permit command — even for LLM-initiated)
+      4. endpoint/base_url keys anywhere in the dotted path
     """
-    # Layer 1: Managed scope — always blocked, even user-initiated
+    # Layer 1: Managed scope — check user permission (defaults to ask)
     refuse_write(path)
 
     if getattr(_write_guard, 'allowed', False):
         return  # User-initiated write — allowed
+
+    # Check user-granted permission (allows LLM to write when user approved)
+    try:
+        from .permissions import check as _perm_check
+        pfx = f"config:{path}"
+        if _perm_check(pfx) == "granted":
+            return  # User pre-approved via /permit
+        # Also check broader scope like config:providers.
+        parts = path.split(".")
+        for i in range(len(parts) - 1, 0, -1):
+            broad = f"config:{'.'.join(parts[:i])}."
+            if _perm_check(broad) == "granted":
+                return
+    except ImportError:
+        pass
+
     path_lower = path.lower()
     for prefix in PROTECTED_PREFIXES:
         if path_lower.startswith(prefix):
@@ -112,7 +129,7 @@ def check_config_write_guard(path: str) -> None:
                 f"[HARD GATE] Cannot write to protected path '{path}'. "
                 f"BAW is not allowed to autonomously change model/provider/endpoint "
                 f"settings.  Use request_config_change() to propose this change to "
-                f"the user."
+                f"the user, or ask them to /permit this change."
             )
     # Catch endpoint/base_url keys anywhere in the dotted path
     if "endpoint" in path_lower or "base_url" in path_lower:
