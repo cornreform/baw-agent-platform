@@ -1347,6 +1347,38 @@ def run_agent(
         if mem_parts:
             mem_text = "\n".join(mem_parts)
 
+    # ── Auto-deliver cron reports if fresh (last 24h, undelivered) ──
+    from pathlib import Path as _PDir
+    _reports_dir = _PDir(data_dir or _PDir.home() / ".baw") / "reports"
+    if _reports_dir.exists() and not fresh_start:
+        _delivered_mark = _reports_dir / ".delivered_at"
+        _last_delivered = 0.0
+        if _delivered_mark.exists():
+            try:
+                _last_delivered = float(_delivered_mark.read_text().strip())
+            except (ValueError, OSError):
+                _last_delivered = 0.0
+        _now_ts = time.time()
+        _all_reports = sorted(_reports_dir.glob("*.txt"), key=lambda f: f.stat().st_mtime, reverse=True)
+        _fresh_reports = [f for f in _all_reports if f.stat().st_mtime > _last_delivered]
+        if _fresh_reports:
+            _report_header = "\n[WEEKLY_REPORT] Recent maintenance reports (auto-delivered):"
+            _report_lines = [_report_header]
+            for _f in _fresh_reports[:3]:
+                _age_h = (_now_ts - _f.stat().st_mtime) / 3600
+                if _age_h > 48:
+                    continue  # skip stale
+                _content = _f.read_text(encoding="utf-8").strip()
+                _short = _content[:500]
+                _report_lines.append(f"--- {_f.stem} ({_age_h:.0f}h old) ---")
+                _report_lines.append(_short)
+            if len(_report_lines) > 1:
+                mem_parts = [mem_text] if mem_text else []
+                mem_parts.append("\n".join(_report_lines))
+                mem_text = "\n".join(mem_parts)
+                # Mark delivered
+                _delivered_mark.write_text(str(_now_ts))
+
     reset_cost()
     session_cost = 0.0
     court_result = None

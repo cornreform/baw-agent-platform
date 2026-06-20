@@ -3,8 +3,8 @@
 # ⚠️ All times in HKT (Asia/Hong_Kong) — set cron.timezone in config.yaml
 #
 # Nightly maintenance window: 02:00-05:00 HKT (45-min gaps)
-# These run silently — check ~/.baw/daily_reports/ for outputs
-# Morning report is DISABLED by default — enable via /cron enable daily-self-report
+# Weekly maintenance: Mon 05:00-06:00
+# Reports auto-delivered on next user interaction via startup hook
 
 - name: daily-backup
   cron: "0 2 * * *"
@@ -42,26 +42,26 @@
   description: "Sun 03:00 HKT — Full self-evolution: analyze memory, apply SOUL.md patches"
   enabled: true
 
-- name: daily-self-report
-  cron: "0 10 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.scheduler import Scheduler; from pathlib import Path; s=Scheduler(Path.home() / '.baw'); print(s.status_report()); print(); print(s.cron_status_report())\""
-  description: "10:00 HKT — Morning report: scheduled tasks + recent failures (DISABLED — enable via /cron enable daily-self-report)"
-  enabled: false
-
 - name: weekly-kg-curation
   cron: "0 5 * * 1"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.kg_curator import curate; r=curate(action='curate',dry_run=False); print(r); print(); from tools.kg_curator import stats; print(stats())\""
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.kg_curator import curate; r=curate(action='curate',dry_run=False); from pathlib import Path; report=Path.home()/'.baw'/'reports'/'weekly_kg_report.txt'; report.parent.mkdir(exist_ok=True); report.write_text(r); print(r)\""
   description: "Mon 05:00 HKT — Weekly KG curation: consolidate noise, remove orphans"
   enabled: true
 
 - name: weekly-memory-quality
   cron: "15 5 * * 1"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.memory_quality import _handler; print(_handler({'action': 'both'}))\""
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.memory_quality import _handler; from pathlib import Path; r=_handler({'action':'both'}); report=Path.home()/'.baw'/'reports'/'weekly_quality_report.txt'; report.parent.mkdir(exist_ok=True); report.write_text(r); print(r)\""
   description: "Mon 05:15 HKT — Weekly memory quality report (loss score)"
   enabled: true
 
 - name: weekly-session-synthesis
   cron: "30 5 * * 1"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.session_synthesis import synthesize; print(synthesize(days_back=7, store=True))\""
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.session_synthesis import synthesize; from pathlib import Path; r=synthesize(days_back=7,store=True); report=Path.home()/'.baw'/'reports'/'weekly_synthesis_report.txt'; report.parent.mkdir(exist_ok=True); report.write_text(r); print(r)\""
   description: "Mon 05:30 HKT — Weekly cross-session pattern synthesis"
+  enabled: true
+
+- name: daily-self-report
+  cron: "0 10 * * *"
+  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.scheduler import Scheduler; from pathlib import Path; s=Scheduler(Path.home() / '.baw'); r=s.status_report()+chr(10)+s.cron_status_report(); report=Path.home()/'.baw'/'reports'/'daily_health_report.txt'; report.parent.mkdir(exist_ok=True); report.write_text(r); print(r)\""
+  description: "10:00 HKT — Morning report: scheduled tasks + recent failures"
   enabled: true
