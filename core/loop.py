@@ -420,12 +420,15 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
                 "\\n## LANGUAGE RULE\\n"
                 "Match user's language. User speaks Cantonese/Traditional Chinese → respond in same.\\n"
                 "User speaks English → respond in English. Technical terms keep original form.\\n"
-                "\\n## THINKING BAN (HARD GATE)\\n"
-                "User does NOT need to see your reasoning process.\\n"
-                "NEVER output analysis, research notes, intermediate steps, or tool results.\\n"
-                "No 'I checked...' 'I analyzed...' 'Based on...' preamble.\\n"
-                "Direct answer only — lead with result.\\n"
             )
+            if not config.get("display", {}).get("show_reasoning"):
+                system_prompt += (
+                    "\\n## THINKING BAN (HARD GATE)\\n"
+                    "User does NOT need to see your reasoning process.\\n"
+                    "NEVER output analysis, research notes, intermediate steps, or tool results.\\n"
+                    "No 'I checked...' 'I analyzed...' 'Based on...' preamble.\\n"
+                    "Direct answer only — lead with result.\\n"
+                )
             system_prompt += output_structure
 
             system_prompt += delegation_block
