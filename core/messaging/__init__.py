@@ -1359,7 +1359,7 @@ class BaseConnector(ABC):
                     _tmp_ctx.add_assistant(_content, m.get("tool_calls"))
                 elif _role == "tool":
                     _tmp_ctx.add_tool_result(m.get("tool_call_id", ""), m.get("name", ""), _content)
-            _compacted, _, _compact_text = _tmp_ctx.compact(threshold_chars=5000, keep_recent_turns=0)
+            _compacted, _, _compact_text = _tmp_ctx.compact(threshold_chars=30000, keep_recent_turns=3)
             if _compacted > 0 and _compact_text:
                 _summary = _compact_text[:500]
         except Exception as e:
@@ -1499,9 +1499,10 @@ class BaseConnector(ABC):
         from core.tools import register as _reg, clear as _clear
         _clear()
 
-        # Load config FIRST — so we can check tool enablement
+        # Load config via load_config (applies managed layer)
+        from core.config import load_config as _load_baw_config
+        config = _load_baw_config(reload=True)
         data_dir = Path.home() / ".baw"
-        config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
 
         # Check which stub tools are enabled
         tools_cfg = config.get("tools", {})
@@ -1568,10 +1569,11 @@ class BaseConnector(ABC):
         from core.tools import register as _reg, clear as _clear
         _clear()
 
-        # Read config first to check tool enablement
+        # Read config via load_config (applies managed layer)
         data_dir = Path.home() / ".baw"
         try:
-            config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
+            from core.config import load_config as _load_baw_config
+            config = _load_baw_config(reload=True)
         except Exception as e:
             return f"[FAIL] Reload failed: config error: {e}"
 
@@ -1603,10 +1605,11 @@ class BaseConnector(ABC):
             except Exception as e:
                 errors.append(f"{name}: {e}")
 
-        # Re-read config
+        # Re-read config via load_config (applies managed layer)
         data_dir = Path.home() / ".baw"
         try:
-            config = yaml.safe_load((data_dir / "config.yaml").read_text(encoding="utf-8"))
+            from core.config import load_config as _load_baw_config
+            config = _load_baw_config(reload=True)
         except Exception as e:
             return f"[FAIL] Reload failed: config error: {e}"
 

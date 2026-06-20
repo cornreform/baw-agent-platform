@@ -124,7 +124,10 @@ def backup():
     VAULT_FILE.write_text(json.dumps(vault_data, indent=2), encoding="utf-8")
     VAULT_FILE.chmod(0o600)
 
-    # Write emergency .env copy (readable by shell/env loader)
+    # Write emergency .env copy — make writable first in case it's still
+    # chmod 400 from the previous backup() call
+    if EMERGENCY_FILE.exists():
+        EMERGENCY_FILE.chmod(0o600)
     _write_env(EMERGENCY_FILE, env_data)
     EMERGENCY_FILE.chmod(0o400)  # read-only by owner
 
