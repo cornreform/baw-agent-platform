@@ -29,7 +29,7 @@ _MEDIA_TOOLS = [
 _UTILITY_TOOLS = [
     "git", "docker", "system", "todo", "install", "background",
     "cronjob", "list_files", "resource_monitor", "execute_code",
-    "session_search", "self_diagnose",
+    "session_search", "self_diagnose", "codebase_doc",
 ]
 
 # -- SPECIALIZED TOOLS (task-specific, less common) --
