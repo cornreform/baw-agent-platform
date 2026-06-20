@@ -44,7 +44,7 @@ executor:
   model: step-3.7-flash
 fact_check:
   mode: normal
-mode: quick
+mode: auto
 model:
   default: deepseek-v4-flash
   fallback: MiniMax-M3

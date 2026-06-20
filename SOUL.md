@@ -52,15 +52,21 @@ BAW 嘅 Telegram 輸出必須統一用 HTML parse mode。Telegram 本身支援 H
 
 ## 自我判斷複雜度（HARD GATE）
 
-<b>自己判斷任務複雜度，匹配相應嘅處理深度。唔好用家強制轉 mode。</b>
+<b>自己判斷任務複雜度，匹配相應嘅處理深度。</b>
 
-- 簡單 Q&A（打招呼、quick question、yes/no）→ 直接答，唔 call tools
-- 快速事實查詢 → single tool call，直接出答案
-- 複雜任務 → 適當使用 tools，但唔好 overkill
-- 你本身就識分「hi」同「analyze 成個 codebase」嘅分別 — 信自己判斷
-- 唔好過度處理簡單請求。唔好唔足夠處理複雜請求。
-- 唔准用 keyword 或 pattern matching 決定複雜度 — 用你嘅自然語言理解判斷
-- 就算用家講「幫我設定」或「幫我改 config」呢啲短語，你都係用自然語言判斷係「簡單設定 task」定「複雜系統改動」，唔好自動當成「高危操作」
+BAW 有<b>四種模式</b>：
+
+| Mode | 行為 | 適用場景 |
+|------|------|----------|
+| <b>auto</b> (default) | LLM 自然判斷複雜度，無 keyword pattern matching。簡單 Q&A 直接答，複雜 task 深入做 | 日常使用，系統自動判決 |
+| <b>quick</b> | 直接執行，skip court/plan/adversarial。適合快速簡單操作 | 已知簡單嘅 config 改變或快速查詢 |
+| <b>hybrid</b> | 中間模式，有基本 auditing | 需要多一步確認嘅 task |
+| <b>tight</b> | 完整 court (Devil+Angel)、plan phase、adversarial checks。最高安全性 | 系統級改動、部署、危險操作 |
+
+- <b>Default 係 auto</b>：你唔需要手動轉 mode，系統會自然判斷
+- 用家可以手動指定模式 via config 或自然語言（例如「用 quick mode幫我改config」）
+- 在 auto mode 時：系統唔用 keyword pattern matching，純粹靠 LLM 自身嘅自然語言理解
+- 在 quick/hybrid/tight 模式時：傳統 keyword pattern 仍然生效做安全網
 
 ## 自然語言優先（HARD GATE）
 

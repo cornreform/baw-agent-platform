@@ -350,28 +350,136 @@ def compress_tool_output(name: str, raw_output: str, args: dict | None = None) -
 # ─── Utility: task complexity detection ──────────────────────────
 
 # ─── Court Activation Logic ──────────────────────────────────────
-# Natural language first: the LLM self-judges whether a task needs
-# adversarial court review via the system prompt instruction.
-# No hardcoded keyword patterns needed.
+# In AUTO mode (default): LLM self-judges complexity via system prompt.
+# In explicit mode (quick/tight/hybrid): keyword patterns still apply
+# for safety when the user explicitly selected a processing mode.
 
-COURT_ACTIVATE_PATTERNS: list[str] = []
-COURT_BYPASS_PATTERNS: list[str] = []
+# Actions that SHOULD trigger the adversarial court (Devil+Angel review)
+COURT_ACTIVATE_PATTERNS = [
+    # ── System modification ──
+    "write_file", "patch", "delete", "remove", "rm ",
+    "install", "uninstall", "pip install", "apt ", "brew ",
+    "config", ".env", "systemd", "systemctl",
+    "docker compose", "docker build", "docker run",
+    "git push", "git commit", "git merge", "git rebase",
+    "deploy", "publish", "release",
+    "migrate", "upgrade", "downgrade",
+    # ── Irreversible / dangerous ──
+    "rm -rf", "drop table", "format", "truncate",
+    "purge", "reset --hard", "clean -df",
+    "chmod 777", "chown",
+    "overwrite", "force push",
+    # ── Architectural / design decisions ──
+    "refactor", "restructure", "redesign", "rearchitect",
+    "架構", "重構", "重新設計",
+    # ── Financial / cost decisions ──
+    "buy", "purchase", "subscribe",
+    "deploy to production", "production deploy",
+    "charge", "bill",
+    # ── Physical/electrical safety (sensor tap, wiring modification) ──
+    "接線", "並聯", "串聯", "直插", "T-tap", "tap", "parallel tap",
+    "駁線", "駁電", "駁 sensor", "飛線", "跳線",
+    "剝皮", "剪斷", "剪線", "cut wire", "splice",
+    "高壓", "電源線", "接地線", "signal wire",
+    "sensor pin", "sensor 腳", "pin assignment",
+    "直接串", "直接並", "直接接", "直駁",
+    "chassis ground", "firewall grommet",
+]
+
+# Actions that are ALWAYS safe to bypass court
+COURT_BYPASS_PATTERNS = [
+    # ── Pure information gathering ──
+    "what is", "how do i", "explain", "show me",
+    "list", "check", "status", "query",
+    "search", "find", "lookup",
+    "read", "cat", "view",
+    "列出", "顯示", "查詢", "搵", "睇", "點樣",
+    "什麼是", "幫我查", "幫我搵",
+    # ── Simple descriptive tasks ──
+    "describe", "summarize", "translate",
+    "what does", "how does", "why is",
+    "分析", "解釋", "翻譯",
+    # ── User explicitly wants quick mode ──
+    "[quick]", "[btw]", "/btw", "/quick",
+]
 
 
-def should_activate_court(prompt: str) -> bool:
-    """Natural language first: always allow the LLM to self-judge.
-    
-    The system prompt instructs the LLM to self-judge complexity.
-    For simple Q&A it replies directly. For complex/risky tasks it
-    uses appropriate tools. No hardcoded keyword matching needed.
+def should_activate_court(prompt: str, mode: str = "auto") -> bool:
+    """Determine if the adversarial court should run.
+
+    In AUTO mode (default): the LLM self-judges complexity via the
+    system prompt. No hardcoded keyword pattern matching.
+
+    In explicit mode (quick/tight/hybrid): apply traditional keyword
+    patterns for safety, since the user explicitly selected a mode.
     """
-    return False
+    if mode == "auto":
+        return False  # LLM self-judges
 
-
-def estimate_task_complexity(prompt: str) -> str:
-    """Natural language first: always return 'simple'.
+    prompt_lower = prompt.lower()
+    prompt_len = len(prompt)
     
-    Tool cap stays at the default (25). The LLM self-regulates
-    how many tool calls it needs — no hardcoded complexity estimation.
+    # ── Explicit bypass: user signals quick mode ──
+    for bp in ["[quick]", "[btw]", "/btw", "/quick", "[fast]", "/fast"]:
+        if bp in prompt_lower:
+            return False
+    
+    # ── Very short prompts (≤100 chars): too simple for court ──
+    if prompt_len < 100:
+        return False
+    
+    # ── Check for court-activating actions ──
+    for pat in COURT_ACTIVATE_PATTERNS:
+        if pat in prompt_lower:
+            return True
+    
+    # ── Check for bypass patterns (pure information) ──
+    for pat in COURT_BYPASS_PATTERNS:
+        if pat in prompt_lower:
+            return False
+    
+    # ── Default: short questions safe, longer ambiguous tasks activate
+    if prompt_len < 400 and "?" in prompt:
+        return False
+    
+    return True  # default: court as safety net in explicit mode
+
+
+def estimate_task_complexity(prompt: str, mode: str = "auto") -> str:
+    """Estimate task complexity.
+
+    In AUTO mode: always return 'simple' — LLM self-regulates tool use.
+
+    In explicit mode: use traditional keyword/pattern estimation.
     """
-    return "simple"
+    if mode == "auto":
+        return "simple"
+
+    prompt_lower = prompt.lower()
+    prompt_len = len(prompt)
+
+    complex_indicators = ["build", "deploy", "refactor", "migrate",
+                          "implement", "架構", "重構", "部署", "設計",
+                          "multi-step", "pipeline", "workflow",
+                          "audit", "審計", "cleanup", "清理",
+                          "優化", "optimize", "診斷", "diagnose",
+                          "修復", "repair", "fix all", "全部",
+                          "系統審計", "system audit", "全面", "comprehensive",
+                          "逐個", "檢查所有", "check all", "each",
+                          "everything", "所有", "全部provider"]
+
+    # Complex: multi-step explicit instructions
+    import re
+    _numbered = re.findall(r'(?:^|\n)\s*\d+[\.\)、]\s', prompt)
+    if len(_numbered) >= 3:
+        return "complex"
+
+    # Complex: modification + multi-step
+    if prompt_len > 500 and any(ind in prompt_lower for ind in complex_indicators):
+        return "complex"
+
+    # Check court activation — if court not needed, task is simpler
+    if not should_activate_court(prompt, mode=mode):
+        return "simple"
+
+    return "moderate"
