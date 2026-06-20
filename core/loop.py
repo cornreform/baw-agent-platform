@@ -1377,10 +1377,20 @@ def run_agent(
         skip_adversarial = True
         skip_plan = True
         max_recovery = 1
-        fb = call_llm_with_fallback(
-            config, ctx.to_openai_messages(),
-            tools=get_openai_tools(), temperature=model_temperature,
-        )
+        try:
+            fb = call_llm_with_fallback(
+                config, ctx.to_openai_messages(),
+                tools=get_openai_tools(), temperature=model_temperature,
+            )
+        except RuntimeError as _llm_err:
+            return f"{_llm_err}", {
+                "cost": round(session_cost, 4),
+                "model": f"{model.provider}/{model.id}",
+                "iterations": 0,
+                "steps": 0,
+                "mode": "quick",
+                "error": str(_llm_err)[:200],
+            }
         quick_resp = fb.response
         q_cost = calculate_cost(model, quick_resp.input_tokens, quick_resp.output_tokens)
         session_cost += q_cost

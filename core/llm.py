@@ -848,11 +848,14 @@ def call_llm_with_fallback(
                 continue
 
     # Only when EVERY chat-capable model across ALL providers has failed
-    # Build a user-friendly summary of what went wrong
+    # Don't crash — return an error result so the caller can handle gracefully
     _provider_status = []
+    _any_key = False
     for _pname, _pcfg in _providers.items():
         _key_env = _pcfg.get("api_key_env", "")
         _has_key = bool(os.environ.get(_key_env, ""))
+        if _has_key and not _is_provider_blacklisted(_pname):
+            _any_key = True
         _models = [m.get("id", "") for m in _pcfg.get("models", [])]
         if _is_provider_blacklisted(_pname):
             _status = "🚫 blacklisted (auth error)"
@@ -861,6 +864,30 @@ def call_llm_with_fallback(
         else:
             _status = "❌ no key"
         _provider_status.append(f"  {_pname}: {_status} (模型: {', '.join(_models[:2])})")
+
+    # If there ARE providers with keys, their models just failed transiently
+    # Try ONE more time with the very first provider that has a key
+    if _any_key:
+        for _pn, _pc in _providers.items():
+            if _is_provider_blacklisted(_pn):
+                continue
+            if bool(os.environ.get(_pc.get("api_key_env", ""), "")):
+                for _m in _pc.get("models", []):
+                    _mid = _m.get("id", "")
+                    if not _mid or not _m.get("id", ""):
+                        continue
+                    _try_model = _m["id"]
+                    try:
+                        _fb4 = get_model(config, _try_model)
+                        _resp = _call_with_timeout(_fb4, messages, tools, _fb4.temperature, max_tokens)
+                        _record_circuit_success(_pn)
+                        return FallbackResult(
+                            response=_resp,
+                            model_used=f"auto-recovery:{_try_model}",
+                            primary_model=primary_id,
+                        )
+                    except Exception:
+                        continue
 
     _friendly = (
         f"<b>無可用的 AI 服務</b>\n\n"
