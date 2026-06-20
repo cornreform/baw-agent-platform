@@ -82,11 +82,35 @@ def _write_env(path: Path, data: dict):
     path.chmod(0o600)  # owner read/write only
 
 
+def _load_vault() -> dict:
+    """Load keys from vault storage. Returns {} if nothing available."""
+    if VAULT_FILE.exists():
+        try:
+            return json.loads(VAULT_FILE.read_text(encoding="utf-8")).get("keys", {})
+        except Exception:
+            pass
+    if EMERGENCY_FILE.exists():
+        return _read_env(EMERGENCY_FILE)
+    return {}
+
+
 def backup():
-    """Sync .env keys to vault storage."""
+    """Sync .env keys to vault storage.
+
+    If .env is empty, auto-restore from vault.
+    If vault is also empty, warn and skip.
+    """
     env_data = _read_env(ENV_FILE)
     if not env_data:
-        logger.info("[KeyVault] .env empty — skipping backup")
+        logger.warning("[KeyVault] .env is EMPTY — vault will still restore from last backup")
+        vault_data = _load_vault()
+        if vault_data:
+            logger.warning("[KeyVault] .env was empty, but vault has keys. Attempting restore.")
+            _write_env(ENV_FILE, vault_data)
+            # Reload into current process env
+            for k, v in vault_data.items():
+                os.environ.setdefault(k, v)
+            return
         return
 
     _ensure_vault_dir()
@@ -155,26 +179,53 @@ def restore() -> int:
 
 
 def verify() -> dict:
-    """Check health of all key sources. Returns status dict."""
+    """Check health of all key sources. Returns status dict.
+
+    Keys are healthy when present in BOTH .env AND vault/emergency.
+    If .env is missing keys but vault has them, restore is possible.
+    """
     env_data = _read_env(ENV_FILE)
-    vault_data = {}
+    vault_data = _load_vault()
     emerg_data = {}
 
-    if VAULT_FILE.exists():
-        try:
-            vault_data = json.loads(VAULT_FILE.read_text(encoding="utf-8")).get("keys", {})
-        except Exception:
-            pass
-
-    if EMERGENCY_FILE.exists():
+    if not vault_data and EMERGENCY_FILE.exists():
         emerg_data = _read_env(EMERGENCY_FILE)
 
     status = {}
     for k in REQUIRED_KEYS:
+        in_env = k in env_data
         status[k] = {
-            "env": k in env_data,
-            "vault": k in vault_data,
-            "emergency": k in emerg_data,
+            "env": in_env,
+            "vault": k in vault_data or k in emerg_data,
             "process": bool(os.environ.get(k, "")),
         }
     return status
+
+
+def cron_health_check() -> str:
+    """Run by cron job: check .env integrity, auto-restore if needed.
+
+    Returns a report string (empty if healthy).
+    """
+    env_data = _read_env(ENV_FILE)
+    missing = [k for k in REQUIRED_KEYS if k not in env_data]
+    if not missing:
+        # Sync vault on every check
+        backup()
+        return ""
+
+    # Try restore
+    vault_data = _load_vault()
+    restored = 0
+    for k in missing:
+        if k in vault_data:
+            env_data[k] = vault_data[k]
+            restored += 1
+
+    if restored > 0:
+        _write_env(ENV_FILE, env_data)
+        for k, v in env_data.items():
+            os.environ.setdefault(k, v)
+        return f"[KeyVault] Restored {restored}/{len(missing)} missing keys"
+
+    return f"[ALERT] {len(missing)} keys missing from .env AND vault"

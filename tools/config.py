@@ -352,22 +352,29 @@ def config_restore(backup_name: str = "") -> str:
 
 
 def config_set_key(key: str, value: str) -> str:
-    """Set an API key in ~/.baw/.env. Read-merge-write (never overwrites other keys)."""
+    """Set an API key in ~/.baw/.env. Read-merge-write (never overwrites other keys).
+
+    HARD GATE: Rejects empty values. Use config_delete_key() to remove a key.
+    """
+    if not key.strip():
+        return "[FAIL] Key name is required"
+    if not value.strip():
+        return f"[FAIL] Cannot set empty value for {key}. Use config_delete_key() to remove a key."
     env_path = Path.home() / ".baw" / ".env"
-    
+
     lines = []
     if env_path.exists():
         lines = env_path.read_text(encoding="utf-8").splitlines()
-    
+
     key_prefix = f"{key}="
     lines = [l for l in lines if not l.startswith(key_prefix)]
-    
+
     lines.append(f"{key}={value}")
-    
+
     env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    
+
     os.environ[key] = value
-    
+
     return f"[OK] {key} saved to .env (len={len(value)})"
 
 
