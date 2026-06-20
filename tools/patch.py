@@ -2,9 +2,38 @@
 
 Like targeted find-and-replace: targeted edits without rewriting the entire file.
 Uses fuzzy matching to handle minor whitespace/indentation differences.
+Auto-backups before modifying BAW's own files.
 """
+import os
 import re
 from pathlib import Path
+
+
+# ── Detect BAW paths from environment ────────────────────────
+_BAW_HOME = Path("/app")
+_BAW_DATA = Path.home() / ".baw"
+
+_home_env = os.environ.get("BAW_HOME", "")
+if _home_env:
+    _BAW_HOME = Path(_home_env)
+_data_env = os.environ.get("BAW_RUNTIME_HOME", "")
+if _data_env:
+    _BAW_DATA = Path(_data_env)
+
+
+def _should_auto_backup(path: Path) -> bool:
+    """Check if path is within BAW's own code or data dirs."""
+    try:
+        path.relative_to(_BAW_HOME)
+        return True
+    except ValueError:
+        pass
+    try:
+        path.relative_to(_BAW_DATA)
+        return True
+    except ValueError:
+        pass
+    return False
 
 
 def patch_file(path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
@@ -20,6 +49,15 @@ def patch_file(path: str, old_string: str, new_string: str, replace_all: bool = 
         Result message with line counts or error.
     """
     p = Path(path).expanduser().resolve()
+
+    # ── Auto-backup before self-modification ──
+    if _should_auto_backup(p):
+        try:
+            from core.backup import auto_pre_mod_backup
+            bkp = auto_pre_mod_backup()
+        except Exception:
+            pass  # non-fatal — proceed even if backup fails
+
     if not p.exists():
         return f"Error: file not found: {p}"
     if p.is_dir():
@@ -65,7 +103,8 @@ TOOL_DEF = {
         "Use this for targeted edits without rewriting the entire file. "
         "old_string must be unique in the file (include surrounding context to ensure uniqueness). "
         "Use replace_all=true to replace ALL occurrences. "
-        "Use new_string='' to delete the matched text."
+        "Use new_string='' to delete the matched text. "
+        "Auto-backups before modifying BAW's own files."
     ),
     "handler": patch_file,
     "parameters": {

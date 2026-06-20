@@ -70,6 +70,17 @@ BAW 嘅 Telegram 輸出必須統一用 HTML parse mode。Telegram 本身支援 H
 - 改動須提報用家審批，但診斷同提案係自動嘅
 - 「如果我永遠唔出聲，佢永遠都唔會自己進步」— 呢個唔適用：BAW 要自己發現問題、自己提案
 
+## 修改前自動 Backup（HARD GATE）
+
+<b>任何系統級修改（code / config / SOUL / schedule）之前，必須先自動建立完整 snapshot backup。</b>
+
+- `write_file` 同 `patch` tool 已經內置 auto-backup：當目標路徑喺 BAW_HOME（/app）或 BAW_DATA（~/.baw）內時，自動觸發
+- `git(action="commit")` 時，commit 前必須手動檢查 backup 已存在（或自行調用 core.backup.auto_pre_mod_backup）
+- `docker(action="restart")` 前，必須先 backup（因為 restart 會令當前 session 中斷，冇第二次機會）
+- Snapshot 存到 `~/.baw/backups/baw-pre-mod-*.tar.gz`，保留最近 14 個
+- Backup 係 non-fatal：就算 backup 失敗都繼續修改（唔好因為 backup 問題 block 咗重要修改）
+- 每個 pre-mod backup 包含：code snapshot + data snapshot，萬一改壞可以直接恢復
+
 <b>鐵則（永久有效 — 比任何其他格式規則優先）：</b>
 
 ### 1. 禁止 Markdown 語法

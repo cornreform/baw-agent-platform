@@ -75,6 +75,18 @@ def _git(*args: str, timeout: int = 30) -> dict:
 
 # ── Tool handler ─────────────────────────────────────────────
 
+def _commit_with_backup(message: str) -> dict:
+    """Commit with auto-backup before the operation."""
+    if not message:
+        return {"ok": False, "output": "", "error": "commit requires a message"}
+    # Auto-backup before destructive git operation
+    try:
+        from core.backup import auto_pre_mod_backup
+        bkp = auto_pre_mod_backup()
+    except Exception:
+        pass  # non-fatal
+    return _git("commit", "-m", message)
+
 def _handler(
     action: str = "status",
     message: str = "",
@@ -99,8 +111,7 @@ def _handler(
         "log": lambda: _git("log", f"--oneline", "-n", str(min(count, 50))),
         "diff": lambda: _git("diff"),
         "add": lambda: _git("add", "-A"),
-        "commit": lambda: _git("commit", "-m", message) if message else
-                  {"ok": False, "output": "", "error": "commit requires a message"},
+        "commit": lambda: _commit_with_backup(message),
         "push": lambda: _git("push"),
         "pull": lambda: _git("pull"),
         "branch": lambda: _git("branch") if not branch else _git("checkout", "-b", branch)
