@@ -35,7 +35,7 @@ _UTILITY_TOOLS = [
 # -- SPECIALIZED TOOLS (task-specific, less common) --
 _SPECIALIZED_TOOLS = [
     "delegate_task", "knowledge_graph", "http_fetch",
-    "self_capabilities", "self_migrate",
+    "self_capabilities", "self_migrate", "fusion_analyze",
 ]
 
 # -- RARELY-USED / DEBUG TOOLS --
