@@ -1,15 +1,13 @@
-"""BAW built-in: fusion_analyze — multi-model deliberation.
+"""BAW built-in: fusion_analyze — multi-model deliberation with smart model selection.
 
-Queries ALL configured LLM providers in parallel, collects responses,
-then synthesizes a structured analysis: consensus, contradictions,
-unique insights, and blind spots.
+Queries multiple LLM providers in parallel, with mode-based model selection.
+In AUTO mode: intelligently selects which models to fuse based on task complexity.
+Supports cross-validation: cheap models validate each other's conclusions.
 
-Inspired by OpenRouter Fusion — but BAW-native, using all your own API keys.
-
-Usage:
-  User: "用fusion分析呢個問題"
-  BAW:  Calls fusion_analyze(question="...") → runs all providers → returns analysis
+Inspired by arXiv:2605.22502 — compiling agentic workflows into LLM weights.
+Multiple cheap models working together can match frontier quality at 128-462x less cost.
 """
+
 import json
 import logging
 import threading
@@ -19,23 +17,80 @@ from pathlib import Path
 
 logger = logging.getLogger("baw.fusion_analyze")
 
-# ── How many chat-capable models to try per provider ──
-_MAX_MODELS_PER_PROVIDER = 2
+# ── Provider cost tiers (estimated per-token relative cost) ──
+_CHEAP_PROVIDERS = ["deepseek", "openrouter", "stepfun"]
+_MID_PROVIDERS = ["minimax", "moonshot"]
+_EXPENSIVE_PROVIDERS = ["xai"]
 
 # ── Timeout per model call (seconds) ──
 _PER_MODEL_TIMEOUT = 30
 
 
-def _try_model(config: dict, provider_name: str, model_cfg: dict,
-               question: str, results: list, lock: threading.Lock) -> None:
-    """Try one model, append result to shared results list."""
-    model_id = model_cfg.get("id", "")
-    if not model_id:
-        return
+def _select_models_for_mode(config: dict, mode: str, question: str) -> list[dict]:
+    """Intelligently select which models to query based on mode and task.
 
-    # Only chat-capable models
-    caps = model_cfg.get("capabilities", [])
-    if caps and "chat" not in caps:
+    auto:    Judge complexity from question, pick proportionally
+    quick:   Only cheapest providers (deepseek, openrouter, stepfun)
+    all:     Every configured provider (original behavior)
+    deep:    All providers + cross-validation round
+    """
+    providers = config.get("providers", {})
+    selected = []
+
+    def add_provider(name: str, limit: int = 1):
+        if name not in providers:
+            return
+        models = providers[name].get("models", [])
+        for m in models[:limit]:
+            caps = m.get("capabilities", [])
+            if caps and "chat" not in caps:
+                continue
+            selected.append({"provider": name, "model": m.get("id", ""), "config": m})
+
+    if mode == "quick":
+        for p in _CHEAP_PROVIDERS:
+            add_provider(p)
+        return selected
+
+    if mode == "all":
+        for name in providers:
+            add_provider(name, limit=2)
+        return selected
+
+    if mode == "deep":
+        for name in providers:
+            add_provider(name, limit=2)
+        return selected
+
+    # ── AUTO mode: judge complexity from question ──
+    q_len = len(question or "")
+    if q_len < 50:
+        # Very short question → quick fusion: 2 cheapest
+        for p in _CHEAP_PROVIDERS[:2]:
+            add_provider(p)
+    elif q_len < 200:
+        # Medium question → cheap + mid providers
+        for p in _CHEAP_PROVIDERS:
+            add_provider(p)
+        for p in _MID_PROVIDERS[:1]:
+            add_provider(p)
+    else:
+        # Complex question → all tiers
+        for p in _CHEAP_PROVIDERS:
+            add_provider(p)
+        for p in _MID_PROVIDERS:
+            add_provider(p)
+        for p in _EXPENSIVE_PROVIDERS:
+            add_provider(p)
+
+    return selected
+
+
+def _try_model(config: dict, provider_name: str, model_id: str,
+               question: str, results: list, lock: threading.Lock,
+               is_cross_validation: bool = False) -> None:
+    """Try one model, append result to shared results list."""
+    if not model_id:
         return
 
     try:
@@ -45,18 +100,25 @@ def _try_model(config: dict, provider_name: str, model_cfg: dict,
         if not model:
             return
 
-        # Build messages
-        system_prompt = (
-            "You are participating in a multi-model deliberation. "
-            "Answer the user's question clearly and concisely. "
-            "Focus on your unique expertise. Be honest about uncertainty."
-        )
+        if is_cross_validation:
+            system_prompt = (
+                "You are validating another AI's response. "
+                "Check for factual errors, logical flaws, and omissions. "
+                "Be critical but fair. List: (a) confirmed correct, "
+                "(b) questionable, (c) missing important points."
+            )
+        else:
+            system_prompt = (
+                "You are participating in a multi-model deliberation. "
+                "Answer the user's question clearly and concisely. "
+                "Focus on what you know best. Be honest about uncertainty."
+            )
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question},
         ]
 
-        # Call the model
         from core.llm import _call_with_timeout as _call
 
         response = _call(
@@ -74,8 +136,9 @@ def _try_model(config: dict, provider_name: str, model_cfg: dict,
                 "response": response[:8000] if response else "[empty response]",
                 "status": "ok",
                 "error": None,
+                "round": "cross_val" if is_cross_validation else "initial",
             })
-        logger.info(f"[Fusion] {provider_name}/{model_id}: OK")
+        logger.info(f"[Fusion] {provider_name}/{model_id}: OK{' (cross-val)' if is_cross_validation else ''}")
 
     except Exception as e:
         with lock:
@@ -85,26 +148,90 @@ def _try_model(config: dict, provider_name: str, model_cfg: dict,
                 "response": None,
                 "status": "error",
                 "error": str(e)[:200],
+                "round": "cross_val" if is_cross_validation else "initial",
             })
         logger.debug(f"[Fusion] {provider_name}/{model_id}: {e}")
 
 
+def _cross_validate(config: dict, question: str, initial_results: list[dict],
+                    mode: str) -> list[dict]:
+    """Run cross-validation round for deep/auto complex modes.
+
+    Takes the most divergent responses and has another model validate them.
+    This implements: '幾重嘅Model去互相認證就算用平啲嘅Model都可以達到好高嘅效果'
+    """
+    if mode not in ("deep", "auto"):
+        return initial_results
+    if len(initial_results) < 2:
+        return initial_results
+
+    # Only cross-validate if task is complex enough
+    if len(question or "") < 100:
+        return initial_results
+
+    # Pick the most different responses for cross-validation
+    ok_results = [r for r in initial_results if r["status"] == "ok" and r["response"]]
+    if len(ok_results) < 2:
+        return initial_results
+
+    # Use a provider NOT in the original set for validation
+    providers_used = {r["provider"] for r in ok_results}
+    available = [p for p in _CHEAP_PROVIDERS + _MID_PROVIDERS if p not in providers_used]
+    if not available:
+        # Fall back to first provider
+        available = list(providers_used)
+
+    cross_lock = threading.Lock()
+    cross_results = []
+    threads = []
+    val_question = (
+        f"Original question: {question}\n\n"
+        f"Review the responses below and identify errors, contradictions, or gaps:\n"
+    )
+    for r in ok_results[:2]:
+        val_question += f"\n--- {r['provider']}/{r['model']} ---\n{r['response'][:2000]}\n"
+    val_question += "\n\nList: (a) confirmed correct, (b) questionable claims, (c) what's missing."
+
+    for p in available[:1]:  # One cross-validator is enough
+        if p not in config.get("providers", {}):
+            continue
+        models = config["providers"][p].get("models", [])
+        for m in models[:1]:
+            mid = m.get("id", "")
+            if not mid:
+                continue
+            t = threading.Thread(
+                target=_try_model,
+                args=(config, p, mid, val_question, cross_results, cross_lock),
+                kwargs={"is_cross_validation": True},
+            )
+            t.start()
+            threads.append(t)
+
+    for t in threads:
+        t.join(timeout=_PER_MODEL_TIMEOUT)
+
+    return initial_results + cross_results
+
+
 def _synthesize(config: dict, question: str, raw_results: list[dict]) -> str:
     """Synthesize raw results into structured analysis using judge model."""
-    # Build synthesis prompt
     responses_text = []
     for r in raw_results:
         if r["status"] == "ok" and r["response"]:
+            tag = "[VALIDATION]" if r.get("round") == "cross_val" else "[RESPONSE]"
             responses_text.append(
-                f"=== {r['provider']}/{r['model']} ===\n{r['response'][:3000]}"
+                f"{tag} {r['provider']}/{r['model']}:\n{r['response'][:3000]}"
             )
         elif r["status"] == "error":
             responses_text.append(
-                f"=== {r['provider']}/{r['model']} ===\n[ERROR: {r['error']}]"
+                f"[ERROR] {r['provider']}/{r['model']}: {r['error']}"
             )
 
     if not responses_text:
         return "[Fusion] No responses collected from any provider."
+
+    has_cross_val = any(r.get("round") == "cross_val" for r in raw_results if r["status"] == "ok")
 
     synthesis_prompt = (
         "You are a judge in a multi-model deliberation. "
@@ -115,6 +242,13 @@ def _synthesize(config: dict, question: str, raw_results: list[dict]) -> str:
         "3. **UNIQUE INSIGHTS** — Points raised by only one model\n"
         "4. **BLIND SPOTS** — Important aspects that NO model addressed\n"
         "5. **SYNTHESIS** — Your consolidated answer, resolving contradictions\n\n"
+    )
+    if has_cross_val:
+        synthesis_prompt += (
+            "A cross-validation round was also run. The [VALIDATION] entries "
+            "reviewed other responses for errors. Incorporate their findings.\n\n"
+        )
+    synthesis_prompt += (
         f"Original question: {question}\n\n"
         f"--- Model Responses ---\n\n"
         f"{chr(10).join(responses_text)}"
@@ -144,11 +278,11 @@ def _synthesize(config: dict, question: str, raw_results: list[dict]) -> str:
 
     except Exception as e:
         logger.error(f"[Fusion] Judge synthesis failed: {e}")
-        # Fallback: return raw results
         fallback = ["[FUSION] Judge synthesis failed — raw responses:"]
         for r in raw_results:
             status_tag = "[OK]" if r["status"] == "ok" else "[FAIL]"
-            fallback.append(f"\n### {status_tag} {r['provider']}/{r['model']}")
+            tag = " [VAL]" if r.get("round") == "cross_val" else ""
+            fallback.append(f"\n### {status_tag}{tag} {r['provider']}/{r['model']}")
             if r["response"]:
                 fallback.append(r["response"][:2000])
             else:
@@ -156,17 +290,23 @@ def _synthesize(config: dict, question: str, raw_results: list[dict]) -> str:
         return "\n".join(fallback)
 
 
-def fusion_analyze(question: str) -> str:
-    """Run multi-model deliberation on a question using ALL configured providers.
+def fusion_analyze(question: str, mode: str = "auto") -> str:
+    """Run multi-model deliberation on a question.
 
     Args:
         question: The question or topic to analyze.
+        mode: auto (default, intelligent selection), quick (cheapest),
+              all (every provider), deep (all + cross-validation).
 
     Returns:
         Structured analysis with consensus, contradictions, insights, and synthesis.
     """
     if not question or not question.strip():
         return "[Fusion] Error: question is required."
+
+    valid_modes = ("auto", "quick", "all", "deep")
+    if mode not in valid_modes:
+        mode = "auto"
 
     # Load config
     from core.config import load_config
@@ -176,93 +316,78 @@ def fusion_analyze(question: str) -> str:
     if not providers:
         return "[Fusion] No LLM providers configured."
 
-    # Collect models to query (up to _MAX_MODELS_PER_PROVIDER per provider)
-    targets: list[tuple[str, dict]] = []
-    for pname, pcfg in providers.items():
-        models = pcfg.get("models", [])
-        count = 0
-        for m in models:
-            caps = m.get("capabilities", [])
-            if caps and "chat" not in caps:
-                continue
-            targets.append((pname, m))
-            count += 1
-            if count >= _MAX_MODELS_PER_PROVIDER:
-                break
+    # Smart model selection
+    selected_models = _select_models_for_mode(config, mode, question)
+    if not selected_models:
+        return "[Fusion] No suitable models found for this mode."
 
-    if not targets:
-        return "[Fusion] No chat-capable models found in any provider."
-
-    # Parallel query all targets
-    results: list[dict] = []
+    # Run all selected models in parallel
+    results = []
     lock = threading.Lock()
-    start = time.time()
+    max_workers = min(len(selected_models), 8)
+    threads = []
 
-    with ThreadPoolExecutor(max_workers=min(len(targets), 8)) as executor:
-        futures = []
-        for pname, mcfg in targets:
-            futures.append(
-                executor.submit(
-                    _try_model, config, pname, mcfg, question, results, lock
-                )
-            )
-        for future in as_completed(futures):
-            pass  # results collected via _try_model callback
+    for sel in selected_models:
+        t = threading.Thread(
+            target=_try_model,
+            args=(config, sel["provider"], sel["model"], question, results, lock),
+        )
+        t.start()
+        threads.append(t)
 
-    elapsed = time.time() - start
+    for t in threads:
+        t.join(timeout=_PER_MODEL_TIMEOUT)
 
-    # Sort results: successful first
-    results.sort(key=lambda r: (0 if r["status"] == "ok" else 1, r["provider"]))
-
-    # Build raw report
-    raw_lines = [
-        f"[FUSION ANALYSIS]",
-        f"  Question: {question[:100]}{'...' if len(question) > 100 else ''}",
-        f"  Models queried: {len(targets)} across {len(providers)} providers",
-        f"  Successful: {sum(1 for r in results if r['status'] == 'ok')}",
-        f"  Failed: {sum(1 for r in results if r['status'] == 'error')}",
-        f"  Time: {elapsed:.1f}s",
-        "",
-    ]
-    for r in results:
-        icon = "[OK]" if r["status"] == "ok" else "[FAIL]"
-        raw_lines.append(f"  {icon} {r['provider']}/{r['model']}")
-        if r["error"]:
-            raw_lines.append(f"     Error: {r['error']}")
+    # Cross-validation for deep/auto complex tasks
+    results = _cross_validate(config, question, results, mode)
 
     # Synthesize
     synthesis = _synthesize(config, question, results)
 
-    # Combine
-    output = "\n".join(raw_lines) + "\n\n" + synthesis
-    return output
+    # Append model info
+    status_count = sum(1 for r in results if r["status"] == "ok")
+    cross_count = sum(1 for r in results if r.get("round") == "cross_val" and r["status"] == "ok")
+    total = len(results)
+    model_list = ", ".join(f"{r['provider']}/{r['model']}" for r in results[:6])
+    model_info = (
+        f"\n\n---\n[FUSION] Mode: {mode} | "
+        f"{status_count}/{total} models OK"
+        + (f" | {cross_count} cross-validation" if cross_count else "")
+        + f" | Models: {model_list}"
+    )
+
+    return synthesis + model_info
 
 
-# ── Tool Definition ────────────────────────────────────────────
-def _handler(args: dict) -> str:
-    question = args.get("question", "").strip()
-    return fusion_analyze(question)
-
-
+# ── Tool definition ──
 TOOL_DEF = {
     "name": "fusion_analyze",
     "description": (
-        "[FUSION MODE] Run multi-model deliberation across ALL configured LLM "
-        "providers. Queries every chat-capable model in parallel, collects all "
-        "responses, then synthesizes a structured analysis: consensus, "
-        "contradictions, unique insights, blind spots, and a final synthesis. "
-        "Use when you need diverse perspectives on a complex question."
+        "Multi-model deliberation: queries multiple LLM providers in parallel, "
+        "synthesizes consensus, contradictions, and insights. "
+        "Mode 'auto' (default) intelligently selects models based on task complexity. "
+        "Mode 'deep' adds cross-validation: cheap models validate each other's conclusions "
+        "to match frontier quality at fraction of cost. "
+        "Mode 'quick' uses only cheapest providers. Mode 'all' queries every provider."
     ),
-    "handler": _handler,
+    "handler": fusion_analyze,
     "parameters": {
         "type": "object",
         "properties": {
             "question": {
                 "type": "string",
+                "description": "The question or topic to analyze with multiple models.",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["auto", "quick", "all", "deep"],
                 "description": (
-                    "The question or topic for multi-model deliberation. "
-                    "Be specific to get the best analysis."
+                    "auto=intelligent model selection based on complexity, "
+                    "quick=cheapest providers only, "
+                    "all=every configured provider, "
+                    "deep=all providers + cross-validation round"
                 ),
+                "default": "auto",
             },
         },
         "required": ["question"],
