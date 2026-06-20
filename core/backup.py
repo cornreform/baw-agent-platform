@@ -17,6 +17,9 @@ from datetime import datetime, timezone
 BACKUP_DIR = Path.home() / ".baw" / "backups"
 MAX_BACKUPS = 7
 
+# BAW source code path (auto-detected for backup)
+BAW_HOME = Path(os.environ.get("BAW_HOME", "/app"))
+
 # ── Directories/files to EXCLUDE from backup (large, reproducible, or temp) ──
 _EXCLUDE_NAMES = {
     "backups",         # don't backup backups
@@ -181,3 +184,67 @@ def _cleanup_old_backups():
     while len(backups) > MAX_BACKUPS:
         oldest = backups.pop(0)
         oldest.unlink()
+
+    # Also clean up pre-modification snapshots older than 7 days
+    snapshots = sorted(BACKUP_DIR.glob("baw-pre-mod-*.tar.gz"))
+    while len(snapshots) > MAX_BACKUPS * 2:
+        oldest = snapshots.pop(0)
+        oldest.unlink()
+
+
+def auto_pre_mod_backup() -> dict:
+    """Auto-backup triggered before ANY system-level modification.
+
+    Backs up both BAW source code (BAW_HOME) and BAW runtime data (~/.baw).
+    Stored as pre-modification snapshots, distinct from daily backups.
+    Keeps last 14 snapshots.
+    """
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    backup_name = f"baw-pre-mod-{ts}.tar.gz"
+    backup_path = BACKUP_DIR / backup_name
+
+    file_count = 0
+
+    with tarfile.open(backup_path, "w:gz", compresslevel=1) as tar:
+        # 1. Backup BAW code (source files)
+        if BAW_HOME.exists():
+            for item in sorted(BAW_HOME.iterdir()):
+                name = item.name
+                # Skip large/generated dirs
+                if name in (".git", "__pycache__", ".pytest_cache",
+                            ".mypy_cache", "node_modules", ".venv"):
+                    continue
+                if name.startswith("."):
+                    continue
+                tar.add(item, arcname=f"code/{name}")
+                if item.is_file():
+                    file_count += 1
+                elif item.is_dir():
+                    file_count += sum(1 for _ in item.rglob("*") if _.is_file())
+
+        # 2. Backup BAW runtime data
+        baw_dir = Path.home() / ".baw"
+        for item in sorted(baw_dir.iterdir()):
+            name = item.name
+            if name in _EXCLUDE_NAMES:
+                continue
+            if name.startswith(".") and name not in _CRITICAL_FILES:
+                continue
+            if item.is_file() and item.stat().st_size > 10_000_000:
+                continue
+            tar.add(item, arcname=f"data/{name}")
+            if item.is_file():
+                file_count += 1
+            elif item.is_dir():
+                file_count += sum(1 for _ in item.rglob("*") if _.is_file())
+
+    size_bytes = backup_path.stat().st_size
+    _cleanup_old_backups()
+
+    return {
+        "path": str(backup_path),
+        "size_mb": round(size_bytes / (1024 * 1024), 2),
+        "files": file_count,
+        "timestamp": ts,
+    }
