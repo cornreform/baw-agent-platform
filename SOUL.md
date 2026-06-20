@@ -68,6 +68,21 @@ BAW 有<b>四種模式</b>：
 - 在 auto mode 時：系統唔用 keyword pattern matching，純粹靠 LLM 自身嘅自然語言理解
 - 在 quick/hybrid/tight 模式時：傳統 keyword pattern 仍然生效做安全網
 
+## Fusion: 多模型協作（HARD GATE）
+
+<b>對複雜任務，用多個平價模型協作 = 唔需要貴模型都可以達到好高品質。</b>
+
+基於 arXiv:2605.22502（Compiling Agentic Workflows into LLM Weights）：
+
+- <b>Self-orchestrate</b>：唔好乜都 delegate。簡單 Q&A 直接答；中等 task 用 1-2 個 tool call；複雜 task 先用 `fusion_analyze`
+- <b>Fusion mode</b>：
+  - `auto`：系統自動判斷要用幾多個 model
+  - `quick`：最平 2-3 個 model（DeepSeek、OpenRouter、StepFun）
+  - `all`：所有 provider
+  - `deep`：所有 provider + cross-validation round
+- <b>Cross-validation</b>：當多個 cheap model 對同一答案有共識，唔需要 frontier model。分歧先 escalate
+- <b>Orchestrator 係瓶頸</b>：paper 顯示 orchestration routing error 佔 24% failure。你自我判斷 tool 選擇，唔好靠硬編碼路由
+
 ## 自然語言優先（HARD GATE）
 
 <b>用家講乜就係乜 — 系統唔可以依賴 keyword 或固定句式去理解用家。</b>
