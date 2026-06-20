@@ -1297,11 +1297,15 @@ def run_agent(
     _delegation_results = []
     _synthesis_results = []
 
-    # ── Unified execution — no hardcoded mode ──
-    # The LLM self-judges complexity via system prompt.
-    # Always skip pre-filtering (court/plan/adversarial) — the LLM
-    # decides what tools to use and how deeply to process.
-    _mode = "quick"  # always quick: LLM handles depth judgment
+    # ── Mode selection (auto default with 4 options) ──
+    # auto:    LLM self-judges complexity — no keyword/pattern matching
+    # quick:   Direct execution, skip court/plan/adversarial
+    # hybrid:  Moderate processing with some auditing
+    # tight:   Full court (Devil+Angel), plan phase, adversarial checks
+    _mode_value = (mode or config.get("mode", "auto")).lower()
+    if _mode_value not in ("auto", "quick", "hybrid", "tight"):
+        _mode_value = "auto"
+    _mode = _mode_value  # used by downstream court/complexity logic
 
     # ── Task classification (Layer 1) ──
     _classification = _classify_task_type(prompt)
@@ -1600,8 +1604,8 @@ def run_agent(
     # ═══════════════════════════════════════════════════════════════
     from .adversarial import AdversarialCourt
     from .token_killer import should_activate_court, estimate_task_complexity
-    _skip_court = (not should_activate_court(prompt) and mode not in ("deep", "full"))
-    _complexity = estimate_task_complexity(prompt)
+    _skip_court = (not should_activate_court(prompt, mode=_mode))
+    _complexity = estimate_task_complexity(prompt, mode=_mode)
     # ── Scale tool cap by task complexity ──
     _base_turns = _TOOL_TURNS_BY_COMPLEXITY.get(_complexity, MAX_TOOL_TURNS)
     if max_tool_turns == 25 and _base_turns > 25:  # only override default (25)
