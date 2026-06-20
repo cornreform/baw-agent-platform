@@ -1919,7 +1919,7 @@ def run_agent(
         output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
     output += (_resp.content or "")
     # Append cost summary BEFORE length trim so it's counted
-    output += f"\\n{format_cost_summary()}"
+    output += f"\n{format_cost_summary()}"
     output = output.strip()
     # ── Output token budget: post-generation length enforcement ──
     if _was_truncated:
