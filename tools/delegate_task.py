@@ -94,24 +94,12 @@ def _import_baw():
 def _resolve_executor_model(cfg: dict, goal: str = "") -> str:
     """Resolve which model to use for a delegated task.
 
-    Priority:
-    1. model.task_rules — keyword match on goal (first match wins)
-    2. executor.model — configured executor model
-    3. model.fallback or model.default — final fallback
+    Natural language first: model selection is driven by the parent LLM's
+    understanding of the task, not keyword/regex rules. Falls back to
+    configured executor model then default.
     """
-    import re
     model_cfg = cfg.get("model", {})
 
-    # ── Check per-task rules ──
-    if goal:
-        for rule in model_cfg.get("task_rules", []) or []:
-            pattern = rule.get("match", "")
-            if pattern and re.search(pattern, goal, re.IGNORECASE):
-                matched_model = rule.get("model", "")
-                if matched_model:
-                    return matched_model
-
-    # ── Fall back to executor.model → fallback → default ──
     return (
         cfg.get("executor", {}).get("model") or
         model_cfg.get("fallback") or
@@ -124,7 +112,7 @@ def _get_minimax_config(goal: str = "", model_override: str = "") -> dict:
     Falls back gracefully if resolved model is not in providers list.
 
     Args:
-        goal: Used to match model.task_rules for keyword-based routing.
+        goal: Natural language task description — model resolved by fallback chain, not keyword matching.
         model_override: If non-empty, forces this model (P0-1 fix — respects
                         caller/router decision instead of silently dropping it).
 
@@ -179,8 +167,7 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: st
                  Leave empty for all tools (bash, read_file, write_file, web_search).
         model_id: P0-1 fix — if non-empty, override model selection with this model.
                   Lets the caller (e.g. router) force a specific tier model.
-                  Without this, the router's tier_preferences decision is silently
-                  dropped because _resolve_executor_model re-runs task_rules.
+                  Without this, the router's tier_preferences decision is silently dropped.
     """
     # ── Resolve model pool for auto-fallback ──
     _base_config = _get_minimax_config(goal, model_override=model_id)

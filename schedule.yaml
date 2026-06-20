@@ -37,9 +37,9 @@
   enabled: true
 
 - name: weekly-self-evolution
-  cron: "0 3 * * 0"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.evolve import auto_optimize, flush_behavior; flush_behavior(); r=auto_optimize(); pf=r.get('patterns_found',0); sp='soul_patched' if r.get('soul_patched') else 'no changes'; print(f'Weekly evolve: {pf} patterns, {sp}')\""
-  description: "Sun 03:00 HKT — Full self-evolution: analyze memory, apply SOUL.md patches"
+  cron: "0 5 * * 0"
+  command: "!python3 /app/scripts/self_harness_eval.py"
+  description: "Sun 05:00 HKT — Full self-harness evaluation: codebase scan, health check, improvement proposals"
   enabled: true
 
 - name: weekly-kg-curation
