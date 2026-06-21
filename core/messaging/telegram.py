@@ -40,6 +40,7 @@ class TelegramConnector(BaseConnector):
         self._allowed = [str(u) for u in self.config.get("allowed_users", [])]
         self._offset = 0
         self._client: httpx.Client | None = None
+        self._poll_client: httpx.Client | None = None  # dedicated client for poll loop
         self._api_base = API_BASE.format(token=self._token) if self._token else ""
         self._debounce_until = 0.0
         self._restart_chat_id: str | None = None
@@ -85,6 +86,7 @@ class TelegramConnector(BaseConnector):
             return False
         try:
             self._client = httpx.Client(timeout=10)
+            self._poll_client = httpx.Client(timeout=POLL_TIMEOUT + 10)  # dedicated poll client
             r = self._client.get(f"{self._api_base}/getMe")
             if r.status_code == 200:
                 info = r.json()
@@ -268,6 +270,9 @@ class TelegramConnector(BaseConnector):
         if self._client:
             self._client.close()
             self._client = None
+        if self._poll_client:
+            self._poll_client.close()
+            self._poll_client = None
 
     def send(self, chat_id: str, text: str, edit_msg_id: str = "") -> str:
         """Send or edit a message. Returns message_id if successful, empty string if failed.
@@ -1403,13 +1408,14 @@ class TelegramConnector(BaseConnector):
 
     def _poll_loop(self):
         """Long-polling loop. Auto-restart on crash."""
+        _local_client = self._poll_client  # use dedicated client, NOT shared _client
         while self._running:
             try:
-                if not self._client:
-                    logger.error("[Telegram] No client — can't poll")
+                if not _local_client:
+                    logger.error("[Telegram] No poll client — can't poll")
                     time.sleep(POLL_RETRY_DELAY)
-                    continue  # don't exit, wait for reconnect
-                r = self._client.post(
+                    continue
+                r = _local_client.post(
                     f"{self._api_base}/getUpdates",
                     json={
                         "offset": self._offset,
@@ -2214,3 +2220,11 @@ class TelegramConnector(BaseConnector):
                 json={"callback_query_id": cb_id, "text": "Unknown"},
                 timeout=5,
             )
+
+
+# ── Async transport patch ───────────────────────────────────────────────
+# Apply the async transport layer at import time.
+# This replaces start()/stop() with async versions.
+# Core processing (route, send, _handle_update) stays unchanged.
+from .telegram_async import patch_connector
+patch_connector(TelegramConnector)

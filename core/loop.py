@@ -2026,9 +2026,28 @@ def run_agent(
         output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
     output += (_resp.content or "")
 
-    # ── Mandatory synthesis guard: if output is empty or meaningless, force text-only retry ──
-    if not output.strip() or len(output.strip()) < 30:
-        logger.warning(f"[Loop] Empty/trivial output ({len(output.strip())} chars) — forcing synthesis retry")
+    # ── Mandatory synthesis guard: if output is empty, meaningless, or intention-only, force text-only retry ──
+    _is_intention_only = False
+    _stripped_out = output.strip()
+    if _stripped_out and len(_stripped_out) < 500:
+        _intention_patterns = [
+            r"^(Let me\s|I will\s|I need to\s|I have to\s|I'm going to\s|I am going to\s)",
+            r"^(Now|Next),?\s*(let|I|we)\s",
+            r"^I have (enough|the|all|sufficient).*?(to\s|that)",
+            r"(compile|synthesize|write|prepare|gather|collect).*(review|answer|response|report)",
+            r"^Here's what I\s",
+            r"(let me search|let me look|let me check|let me try)",
+        ]
+        _match_count = sum(
+            1 for p in _intention_patterns
+            if re.search(p, _stripped_out, re.IGNORECASE)
+        )
+        # 2+ intention signals → output is planning, not content
+        if _match_count >= 2:
+            _is_intention_only = True
+            logger.warning(f"[Loop] Intention-only output ({len(output.strip())} chars, {_match_count} signals) — forcing synthesis retry")
+    if not output.strip() or len(output.strip()) < 30 or _is_intention_only:
+        logger.warning(f"[Loop] Empty/trivial/intention output ({len(output.strip())} chars) — forcing synthesis retry")
         ctx.add_user(
             "[SYSTEM] Your previous response was empty. You must now answer the user's question directly. "
             "You have all the data you need. Write a clear answer in Cantonese. No tools available."
