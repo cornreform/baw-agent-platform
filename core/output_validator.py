@@ -266,7 +266,12 @@ def _strip_narration(text: str) -> str:
     for line in lines:
         stripped = line.strip()
         # Remove standalone execution trace lines
+        # BUT keep lines that look like cost summaries (contains "total:")
         if _nar_re.match(r'^(📊|✅|🔧|⬜|🔍|📝|⚙️|🔄|⏳)\s', stripped):
+            # Keep cost footer lines (📊 N calls — total: X tokens)
+            if stripped.startswith("📊") and "total:" in stripped:
+                filtered.append(line)
+                continue
             continue
         # Remove "Let me..." "I will..." "I need to..." narrations
         if _nar_re.match(
