@@ -259,21 +259,43 @@ def _resolve_models_for_tier(config: dict, tier: CourtTier, caller_model_id: str
 # ── State machine: tier 0 (fast lane) ─────────────────────────────
 
 async def _run_fast_lane(case: CourtCase) -> CourtCase:
-    """Tier 0: no court, just execute inline.
+    """Tier 0: lightweight execution with basic tool support.
 
-    The whole point of tier 0 is to be invisible to the user. We skip
-    prosecution, skip judge review, just hand the goal to the defendant's
-    model and return whatever it says.
+    No court overhead (no prosecution, no judge review). Just execute
+    the goal with a single round of tool calls and return the result.
     """
     case.transition(CourtState.FAST_LANE)
-    # Inline LLM call (no delegate_task overhead)
     from .llm import call_llm_with_fallback
+    from .tools import execute_tool, get_openai_tools
     config = load_config()
+    
+    # Get tools for basic execution
+    tools = get_openai_tools()
     messages = [{"role": "user", "content": case.goal}]
-    fb = call_llm_with_fallback(config, messages, tools=[], temperature=0.5)
-    response = fb.response.content or ""
-    case.final_summary = response[:500]
-    case.add_evidence("DEFENDANT_FAST", response)
+    fb = call_llm_with_fallback(config, messages, tools=tools, temperature=0.5)
+    response = fb.response
+    
+    # Execute any tool calls in the response
+    tool_results = []
+    if response.tool_calls:
+        for tc in response.tool_calls:
+            func = tc.get("function", {})
+            name = func.get("name", "")
+            raw_args = func.get("arguments", "{}")
+            try:
+                import json as _j
+                args = _j.loads(raw_args)
+            except Exception:
+                args = {}
+            result = execute_tool(name, args)
+            tool_results.append({"tool": name, "result": result[:500]})
+    
+    result_text = response.content or ""
+    if tool_results:
+        result_text += "\n\n[Tools executed: " + ", ".join(t["tool"] for t in tool_results) + "]"
+    
+    case.final_summary = result_text[:500]
+    case.add_evidence("DEFENDANT_FAST", result_text[:2000])
     case.score = 10
     case.verdict = Verdict.APPROVED
     case.transition(CourtState.VERDICT)
@@ -421,14 +443,97 @@ async def _run_major_court(case: CourtCase) -> CourtCase:
 # ── State machine: tier 3 (supreme court) ─────────────────────────
 
 async def _run_supreme_court(case: CourtCase) -> CourtCase:
-    """Tier 3: all roles + batched multi-step execution.
+    """Tier 3: all roles + multi-model appellate review.
 
-    For M1, this delegates to tier-2 logic with a multi-step loop. Future
-    milestones (M3, M4) will add parallel sub-defendants and verdict caching.
+    Stage 1 — Major court (Devil critique + Angel plan + defendant + judge).
+    If judge scores < 7, escalate to stronger model (appellate).
+
+    Stage 2 — Appellate review: stronger model re-evaluates the case,
+    can override the original judge's verdict. Only one appeal allowed.
+
+    Stage 3 — If appellate also scores < 7 after retries, DISMISSED.
     """
-    # For now, treat as major court but with more retry budget.
-    case.max_retries = 3
-    return await _run_major_court(case)
+    # Stage 1: Standard tier 2
+    case.max_retries = 2
+    case = await _run_major_court(case)
+
+    # Stage 2: If score < 7 after retries, escalate to appellate
+    if case.verdict in (Verdict.RETRY, Verdict.DISMISSED) and case.appeal_count < case.max_appeals:
+        case.transition(CourtState.REVIEW)
+        case.appeal_count += 1
+
+        from .llm import call_llm_with_fallback, get_model, calculate_cost
+
+        # Find a stronger model for appeal
+        appellate_model = case.judge_model
+        config = load_config()
+        # Try to find a better model from config
+        _models_cfg = config.get("models", {})
+        _appeal_candidates = [_models_cfg.get("chat"), _models_cfg.get("default")]
+        for _candidate in _appeal_candidates:
+            if _candidate and _candidate != case.judge_model:
+                from .config import model_exists
+                if model_exists(config, _candidate):
+                    appellate_model = _candidate
+                    break
+
+        logger.info(
+            f"[court {case.case_id}] appellate review: "
+            f"original={case.judge_model} appellate={appellate_model} "
+            f"original_score={case.score} retries={case.retry_count}"
+        )
+        case.add_evidence("APPELLATE", (
+            f"escalating from {case.judge_model} to {appellate_model} "
+            f"(original score={case.score})"
+        ))
+
+        # Run appellate judge
+        from .verifier import verify_step
+        _evidence = "\n".join(
+            f"[{e.get('role', '?')}] {e.get('content', '')[:300]}"
+            for e in (case.evidence or [])
+        )
+        _appeal_prompt = (
+            f"Original goal: {case.goal}\n\n"
+            f"Court evidence:\n{_evidence}\n\n"
+            f"Original judge scored {case.score}/10 ({case.reason}).\n"
+            f"As appellate judge, re-evaluate. Provide your score (0-10) and reasoning."
+        )
+        verdict = verify_step(
+            goal=_appeal_prompt,
+            tool_name="appeal",
+            tool_args={"prompt": _appeal_prompt},
+            tool_result=case.final_summary,
+            config=config,
+            model_id=appellate_model,
+        )
+        _appeal_score = int(verdict.get("score", case.score))
+        case.add_evidence("APPELLATE_JUDGE",
+            f"score={_appeal_score} reason={verdict.get('reason', '')[:300]}"
+        )
+
+        if _appeal_score >= 7:
+            # Appellate overrides
+            case.score = _appeal_score
+            case.verdict = Verdict.APPROVED
+            case.reason = verdict.get("reason", "Appellate override — case approved")
+            case.add_evidence("APPELLATE", f"OVERRIDE: score {case.score} → {_appeal_score}")
+        else:
+            # Appellate agrees — give one more retry at defendant level
+            if case.retry_count < case.max_retries:
+                case.verdict = Verdict.RETRY
+                case.retry_count += 1
+                # Retry via minor court (defendant re-executes with appellate context)
+                case = await _run_minor_court(case)
+            else:
+                case.verdict = Verdict.DISMISSED
+                case.reason = verdict.get("reason",
+                    "Appellate judge also scored < 7 after maximum retries"
+                )
+
+    case.transition(CourtState.CLOSED)
+    case.elapsed_sec = time.time() - case.created_at
+    return case
 
 
 # ── Helper: defendant execution ──────────────────────────────────

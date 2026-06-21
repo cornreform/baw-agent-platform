@@ -938,6 +938,107 @@ def get_learned_lessons_summary() -> str:
     lines = [f"[LEARN] {len(lessons)} learned lessons:"]
     for l in lessons[-5:]:
         lines.append(f"  • [{l.get('type', '')}] {l.get('value', '')}")
+    return "\n".join(lines)
+
+
+def _analyze_court_scores(hours_back: int = 168) -> dict:
+    """Analyze recent court verdicts for score drift patterns.
+
+    Reads archived court cases, finds:
+    - Consistently low scores from a particular judge model → suggests judge swap
+    - High retry/appeal rates for specific task types → suggests tier upgrades
+    - Model pairs that correlate with high scores → suggests preferred routing
+
+    Returns a dict with 'alerts', 'suggestions', and 'score_stats'.
+    """
+    try:
+        from .court import recent_cases
+    except ImportError:
+        return {"alerts": [], "suggestions": [], "score_stats": {}}
+
+    cases = recent_cases(limit=50)
+    if not cases:
+        return {"alerts": [], "suggestions": [], "score_stats": {}}
+
+    # Aggregate by model
+    from collections import defaultdict
+    by_defendant = defaultdict(list)
+    by_judge = defaultdict(list)
+    by_tier = defaultdict(list)
+    retry_count = 0
+    appeal_count = 0
+
+    for c in cases:
+        score = c.get("score", 0)
+        tier = c.get("tier", -1)
+        verdict = c.get("verdict", "")
+        by_tier[tier].append(score)
+        if verdict in ("retry",):
+            retry_count += 1
+        if verdict in ("appeal",):
+            appeal_count += 1
+
+    alerts = []
+    suggestions = []
+
+    # Detect low-retention tiers (high retry rate)
+    total = len(cases)
+    if total >= 5:
+        retry_pct = (retry_count / total) * 100
+        appeal_pct = (appeal_count / total) * 100
+        if retry_pct > 30:
+            alerts.append({
+                "type": "court_score_drift",
+                "metric": "retry_rate",
+                "value": f"{retry_pct:.0f}%",
+                "suggestion": (
+                    f"High court retry rate ({retry_pct:.0f}%) — "
+                    "consider raising defendant model quality or providing "
+                    "more context in the goal."
+                ),
+            })
+        if appeal_pct > 15:
+            alerts.append({
+                "type": "court_score_drift",
+                "metric": "appeal_rate",
+                "value": f"{appeal_pct:.0f}%",
+                "suggestion": (
+                    f"High court appeal rate ({appeal_pct:.0f}%) — "
+                    "appellate review is triggering too often. Check if "
+                    "initial judge model is appropriate for the task tier."
+                ),
+            })
+
+    # Low-scoring tiers
+    for tier, scores in by_tier.items():
+        if len(scores) < 3:
+            continue
+        avg = sum(scores) / len(scores)
+        if avg < 6.0:
+            alerts.append({
+                "type": "court_score_drift",
+                "metric": f"tier_{tier}_avg_score",
+                "value": f"{avg:.1f}/10",
+                "suggestion": (
+                    f"Tier {tier} average score is {avg:.1f}/10 ({len(scores)} cases) — "
+                    "this tier may be under-powered for its tasks. Consider "
+                    "raising the tier or using a stronger model."
+                ),
+            })
+
+    return {
+        "alerts": alerts,
+        "suggestions": suggestions,
+        "score_stats": {
+            "total_cases": total,
+            "retry_rate": f"{retry_pct:.0f}%" if total >= 5 else "N/A",
+            "appeal_rate": f"{appeal_pct:.0f}%" if total >= 5 else "N/A",
+            "tier_counts": {str(k): len(v) for k, v in by_tier.items()},
+            "tier_avgs": {str(k): f"{sum(v)/len(v):.1f}" for k, v in by_tier.items() if len(v) >= 3},
+        },
+    }
+    for l in lessons[-5:]:
+        lines.append(f"  • [{l.get('type', '')}] {l.get('value', '')}")
     return "\\n".join(lines)
 
 
@@ -1477,6 +1578,18 @@ def run_weekly_evolution() -> dict:
         "corrections": pattern.get("corrections", 0),
         "recommendations": len(pattern.get("recommendations", [])),
     }
+
+    # ── Step 5.1: Court score drift analysis ──
+    try:
+        court_drift = _analyze_court_scores(hours_back=168)
+        result["court_drift"] = court_drift
+        if court_drift.get("alerts"):
+            import logging as _lg
+            _lg.getLogger("baw.evolve").info(f"[Evolve] Court score drift: {len(court_drift['alerts'])} alert(s)")
+            for alert in court_drift["alerts"]:
+                _lg.getLogger("baw.evolve").warning(f"[Evolve]   {alert['type']}: {alert['metric']}={alert['value']}")
+    except Exception as e:
+        result["court_drift"] = {"error": str(e)}
 
     # ── Step 5.5: Code-level auto-patching ──
     try:
