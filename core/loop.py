@@ -1701,12 +1701,11 @@ def run_agent(
         court = None
     court_enabled = config.get("adversarial", {}).get("enabled", True) and _mode in ("tight", "quick", "hybrid")
 
-    # M5-D7: opt-in court v2 path. When enabled in config, run the
-    # black-and-white court (file_case_sync) BEFORE Phase 1 and inject
-    # its prosecutor critique + angel plan + verdict into the context.
+    # M5-D7: court v2 path. Uses the black-and-white court (file_case_sync)
+    # for hybrid/tight modes. Auto-enables when mode >= hybrid.
     # Falls through to the legacy AdversarialCourt path on any failure
     # (so existing behavior is preserved).
-    use_court_v2 = config.get("court", {}).get("v2_enabled", False) and _mode == "tight"
+    use_court_v2 = config.get("court", {}).get("v2_enabled", _mode in ("hybrid", "tight"))
     if _skip_court:
         use_court_v2 = False
     court_v2_briefing = None
