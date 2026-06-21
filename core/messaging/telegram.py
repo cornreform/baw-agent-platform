@@ -832,6 +832,31 @@ class TelegramConnector(BaseConnector):
 
             self.send(chat_id, "🤔 Analyzing with BAW...", edit_msg_id=status_id)
             response = self._run_baw(prompt, chat_id=chat_id)
+            
+            # ── Inject vision result into session so future text messages know about this photo ──
+            try:
+                session = self._get_or_create_session(chat_id) if chat_id else None
+                if session:
+                    session["messages"].append({
+                        "role": "user",
+                        "content": f"[User sent a photo — vision analysis follows]"
+                    })
+                    session["messages"].append({
+                        "role": "assistant",
+                        "content": (
+                            f"[Vision analysis of the latest photo — {provider_used}]\n"
+                            f"File: {file_name}\n"
+                            f"Description: {vision_result[:500]}"
+                        )
+                    })
+                    if len(session["messages"]) > self._MAX_SESSION_MSGS:
+                        session["messages"] = session["messages"][-self._MAX_SESSION_MSGS:]
+                    session["updated"] = __import__('time').time()
+                    self._save_session_to_disk(session)
+                    logger.info(f"[Telegram] Vision result injected into session for chat {chat_id}")
+            except Exception as _ve:
+                logger.warning(f"[Telegram] Could not inject vision into session: {_ve}")
+            
             try:
                 self._client.post(
                     f"{self._api_base}/deleteMessage",
