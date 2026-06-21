@@ -1967,6 +1967,21 @@ def run_agent(
                         pass
             if _saved > 0:
                 logger.info(f"[Loop] Auto-saved {_saved} compacted summaries to memory")
+        # ── Force synthesis after N turns of read-only tools with no text ──
+        _READ_ONLY_TOOLS = {"read_file", "search_files", "web_search", "web_extract", "browser_navigate", "browser_snapshot", "browser_scroll", "grep", "session_search"}
+        _has_text = bool(_resp.content and _resp.content.strip())
+        if not _has_text and _tool_turns >= 3:
+            _all_read = all(
+                func.get("name", "") in _READ_ONLY_TOOLS
+                for tc in _resp.tool_calls
+                for func in [tc.get("function", {})]
+            )
+            if _all_read:
+                logger.info(f"[Loop] Force synthesis: {_tool_turns} turns of read-only tools with no text")
+                ctx.add_user(
+                    "[SYSTEM] You have done enough reading. Synthesise what you have into an answer for the user now. "
+                    "Do NOT call more tools. If you need to explain what you found, do it in text."
+                )
         # ── Pre-call budget check: if context already too big, stop before burning more ──
         _ctx_tokens = _get_tracker().total_tokens_in + _get_tracker().total_tokens_out
         if _get_tracker().over_budget() or _ctx_tokens > CostTracker.MAX_SESSION_TOKENS * 0.8:
