@@ -77,7 +77,10 @@ def validate_output(output: str, *, prompt: str = "") -> str:
     result = re.sub(r'<\s+', '<', result)
     result = re.sub(r'\s+>', '>', result)
 
-    # Phase 0b: Strip standalone <b> / </b> that are NOT part of markdown conversion
+    # Phase 0b: Strip AI narration that leaks into user-facing output
+    result = _strip_narration(result)
+
+    # Phase 0c: Strip standalone <b> / </b> that are NOT part of markdown conversion
 
     # Phase 1: Strip HTML tags that escaped through (safety net, will be re-applied below)
     result = _strip_html(result)
@@ -246,6 +249,55 @@ def _strip_stale_lines(text: str) -> str:
 def _enforce_length(text: str) -> str:
     # No practical limit — user prefers complete answers
     return text
+
+
+def _strip_narration(text: str) -> str:
+    """Strip AI narration lines that leak into user-facing output.
+    
+    Removes lines that are AI internal monologue rather than answers:
+    - "Let me check..." "I will now..." "First, let me..."
+    - "Based on the..." "After checking..." "I have reviewed"
+    - Raw execution traces like "📊 N calls..." "✅ Done..."
+    - Lines that only describe tool activity without answering the user.
+    """
+    import re as _nar_re
+    lines = text.split('\n')
+    filtered = []
+    for line in lines:
+        stripped = line.strip()
+        # Remove standalone execution trace lines
+        if _nar_re.match(r'^(📊|✅|🔧|⬜|🔍|📝|⚙️|🔄|⏳)\s', stripped):
+            continue
+        # Remove "Let me..." "I will..." "I need to..." narrations
+        if _nar_re.match(
+            r'^(Let me\s|I will\s|I need to\s|I have to\s|'
+            r'I\'?(m|am) going to\s|'
+            r'First,?\s*(let|I|we)\s|'
+            r'Now,?\s*(let|I|we)\s|'
+            r'Next,?\s*(let|I|we)\s|'
+            r'Based on (the|my|this|our|your)\s|'
+            r'After\s+(checking|reviewing|reading|looking|examining)\s|'
+            r'Before I\s|'
+            r'I have\s+(checked|reviewed|read|looked|examined)\s|'
+            r'I\'?(ve| have)\s+(checked|reviewed|read|looked)\s|'
+            r'To (check|verify|confirm|see|understand|answer)\s|'
+            r'Here\'?s\s+(what|my|the|a)\s|'
+            r'This is what I\s|'
+            r'So,?\s+(let|here|to|I)\s|'
+            r'OK,?\s*(let|I|here)\s)',
+            stripped, _nar_re.IGNORECASE
+        ):
+            continue
+        # Remove lines that are just tool names or file paths
+        if _nar_re.match(r'^[📁📄]/[/\w.-]+$', stripped):
+            continue
+        # Remove empty progress/status lines
+        if _nar_re.match(r'^[✅❌⬜🔧📊]\s*$', stripped):
+            continue
+        filtered.append(line)
+    result = '\n'.join(filtered).strip()
+    # If stripping removed everything, return the original (better than empty)
+    return result if result else text
 
 
 _BALANCE_TAGS = {'b', 'i', 'u', 's', 'code', 'a'}
