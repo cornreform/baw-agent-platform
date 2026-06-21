@@ -157,9 +157,16 @@ fi
 if [ "$DOCKER_AVAILABLE" = true ]; then
     echo ""
     echo -e "${CYAN}🐳 Docker deployment${NC}"
-    echo -e "   Edit ${BOLD}$BAW_DIR/docker-compose.yml${NC}"
-    echo -e "   Replace ${YELLOW}\$USER_HOME${NC} with your home path (currently ${YELLOW}$HOME${NC})"
-    echo -e "   Then run: ${BOLD}cd $BAW_DIR && docker compose up -d${NC}"
+    # Auto-detect Docker group GID and fix in docker-compose.yml
+    DOCKER_GID=$(getent group docker | cut -d: -f3 2>/dev/null || echo "")
+    if [ -n "$DOCKER_GID" ] && [ "$DOCKER_GID" != "988" ]; then
+        echo -e "   ${YELLOW}🔧 Docker GID is $DOCKER_GID (template has 988)${NC}"
+        if [ -f "$BAW_DIR/docker-compose.yml" ]; then
+            sed -i "s/\"988\"/\"$DOCKER_GID\"/" "$BAW_DIR/docker-compose.yml"
+            echo -e "   ${GREEN}✅${NC} docker-compose.yml GID updated to $DOCKER_GID"
+        fi
+    fi
+    echo -e "   Run: ${BOLD}cd $BAW_DIR && docker compose up -d${NC}"
 elif [ "$BARE_METAL_READY" = true ]; then
     echo ""
     echo -e "${CYAN}🖥️  Bare-metal deployment${NC}"
@@ -167,8 +174,7 @@ elif [ "$BARE_METAL_READY" = true ]; then
     SERVICE_FILE="$BAW_DIR/deploy/baw.service"
     if [ -f "$SERVICE_FILE" ]; then
         sudo cp "$SERVICE_FILE" /etc/systemd/system/baw.service
-        sudo sed -i "s|%HOME%|$HOME|g" /etc/systemd/system/baw.service
-        sudo sed -i "s|%USER%|$USER|g" /etc/systemd/system/baw.service
+        # baw.service uses systemd specifiers %h/%u (resolved natively)
         sudo systemctl daemon-reload
         sudo systemctl enable baw
         echo -e "   ${GREEN}✅${NC} baw.service installed + enabled"
@@ -192,7 +198,7 @@ fi
 # ── Done ──
 echo ""
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
-echo -e "${GREEN}${BOLD}  ✅  BAW v1.1.0 installed successfully!${NC}"
+echo -e "${GREEN}${BOLD}  ✅  BAW v1.12.1 installed successfully!${NC}"
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
 echo ""
 echo -e "  ${BOLD}Next steps:${NC}"

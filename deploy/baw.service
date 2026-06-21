@@ -5,13 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=%USER%
-WorkingDirectory=%HOME%/baw
-Environment="BAW_HOME=%HOME%/baw"
-Environment="BAW_RUNTIME_HOME=%HOME%/.baw"
+User=%u
+WorkingDirectory=%h/baw
+Environment="BAW_HOME=%h/baw"
+Environment="BAW_RUNTIME_HOME=%h/.baw"
 Environment="BAW_SERVICE=baw"
 Environment="BAW_RUNTIME=bare"
-ExecStart=%HOME%/baw/.venv/bin/python3 -m baw
+ExecStart=%h/baw/baw
 Restart=always
 RestartSec=5
 StandardOutput=journal
