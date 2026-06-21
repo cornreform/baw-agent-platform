@@ -157,6 +157,35 @@ class Scheduler:
         self._thread: threading.Thread | None = None
         self._cron_tz_name: str | None = None
         self._load()
+        self._clean_orphaned_tasks()
+
+    # ── Orphaned task cleanup (prevents stale state after restart) ──
+
+    def _clean_orphaned_tasks(self):
+        """Remove stale/failed task directories that survive container restarts.
+
+        After a restart, subprocess PIDs are lost and any task marked
+        'running', 'failed', 'stale', or 'queued' becomes orphaned —
+        it will never complete. We purge these so cron_status_report()
+        only reflects current-system state.
+        """
+        tasks_dir = self.data_dir / TASKS_DIR
+        if not tasks_dir.exists():
+            return
+        removed = 0
+        for entry in list(tasks_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            status_file = entry / "status.txt"
+            if not status_file.exists():
+                continue
+            status = status_file.read_text(encoding="utf-8").strip()
+            if status in ("running", "stale", "queued") or status.startswith("failed"):
+                import shutil
+                shutil.rmtree(entry)
+                removed += 1
+        if removed:
+            logger.info(f"Cleaned {removed} orphaned task dir(s) on startup")
 
     # ── File I/O ──
 
@@ -505,15 +534,16 @@ class Scheduler:
         def _run_agent():
             try:
                 _result = sp.run(
-                    ["baw", "--mode", "hybrid", "--task-id", task_id, prompt or task.name],
+                    ["python3", "-m", "bawrun", str(task_dir), prompt or task.name],
                     capture_output=True, text=True, timeout=600,
                     cwd=str(self.data_dir.parent),
                     env=_sanitized_env(),
                 )
                 (task_dir / "stdout.txt").write_text(_result.stdout or "", encoding="utf-8")
-                (task_dir / "stderr.txt").write_text(_result.stderr or "", encoding="utf-8")
+                if _result.stderr:
+                    (task_dir / "stderr.txt").write_text(_result.stderr, encoding="utf-8")
                 if _result.returncode == 0:
-                    (task_dir / "status.txt").write_text("completed", encoding="utf-8")
+                    print(f"[BAW-SCHED] ✅ {task.name} completed")
                 else:
                     (task_dir / "status.txt").write_text(f"failed({_result.returncode})", encoding="utf-8")
                     err_preview = (_result.stderr or "")[:200]
