@@ -4,20 +4,17 @@ Requires=docker.service
 After=docker.service network-online.target
 
 # ── SETUP INSTRUCTIONS ──
-# 1. Edit WorkingDirectory below to match your BAW repo path
-# 2. Edit User to match your username
-# 3. Copy: sudo cp deploy/baw-docker.service /etc/systemd/system/
-# 4. Run: sudo systemctl daemon-reload && sudo systemctl enable --now baw-docker
+# 1. Edit User below to match your username
+# 2. Copy: sudo cp deploy/baw-docker.service /etc/systemd/system/
+# 3. Run: sudo systemctl daemon-reload && sudo systemctl enable --now baw-docker
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# Replace /home/YOUR_USERNAME/baw with your actual BAW repo path
-WorkingDirectory=/home/YOUR_USERNAME/baw
+WorkingDirectory=%h/baw
 ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down
-# Replace YOUR_USERNAME with your actual username
-User=YOUR_USERNAME
+User=%u
 
 [Install]
 WantedBy=multi-user.target

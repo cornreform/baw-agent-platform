@@ -52,7 +52,7 @@ BAW_ROOT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(BAW_ROOT))
 sys.path.insert(0, str(BAW_ROOT.parent.resolve()))
 
-BAW_VERSION = "0.22.0"
+BAW_VERSION = "1.12.1"
 
 
 def main():

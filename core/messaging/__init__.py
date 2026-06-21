@@ -509,6 +509,14 @@ class BaseConnector(ABC):
             if cmd == "fusion" and arg:
                 return self._handle_fusion(arg, chat_id=msg.chat_id)
 
+            # ── Fresh start (raw model — no soul, no memories) ──
+            if cmd in ("fresh", "fr", "raw"):
+                if not arg:
+                    return "Usage: /fresh <prompt>\\nRuns a raw model call with no SOUL.md, no memories."
+                from ..commands import _cmd_fresh
+                baw = self._baw_ensure()
+                return _cmd_fresh([arg], baw["config"], baw["data_dir"], verbose=False)
+
             if cmd in ("court", "ct"):
                 # M2 (Fable 5 spec): 4 sub-commands:
                 #   /court              → recent 5
@@ -575,7 +583,7 @@ class BaseConnector(ABC):
                     return f"[FAIL] Self-test error: {e}"
 
             # ── Real-World Validator ──
-            if cmd in ("validate", "val", "v"):
+            if cmd in ("validate", "val"):
                 try:
                     from core.validator import validate_command
                     return validate_command(arg)
@@ -827,11 +835,20 @@ class BaseConnector(ABC):
             if cmd in ("model", "models"):
                 cc = self._chat_config.get(msg.chat_id, {})
                 current = cc.get("model") or "deepseek-v4-flash"
-                # Return role-first model selector
+                # Show current model and auxiliary model roles
+                baw = self._baw_ensure()
+                caps = baw.get("config", {}).get("capabilities", {})
+                aux_lines = []
+                for role, cap in caps.items():
+                    if isinstance(cap, dict) and cap.get("model"):
+                        aux_lines.append(f"  {role}: <code>{cap['model']}</code>")
+                nl = "\n"
+                aux_section = nl + "<i>Auxiliary models:</i>" + nl + nl.join(aux_lines) if aux_lines else ""
                 return (
-                    f"[MODEL_ROLE_SELECT]\n"
-                    f"<b>Select Model Role:</b>\n"
-                    f"{current}\n"
+                    f"<b>Current model:</b> <code>{current}</code>{nl}"
+                    f"<b>Chat override:</b> {cc.get('model', '(none)')}{nl}"
+                    f"{aux_section}{nl}{nl}"
+                    f"Use <code>/model &lt;name&gt;</code> to switch"
                 )
 
 
@@ -846,6 +863,8 @@ class BaseConnector(ABC):
                 task_action = sub_cmd[0].lower() if sub_cmd else ""
                 task_arg = sub_cmd[1] if len(sub_cmd) > 1 else ""
                 return self._handle_task_command(msg.chat_id, task_action, task_arg)
+            if cmd == "task":
+                return "Usage: /task <action> [args]\\nActions: new, list, resume, cancel, delete, status"
 
         # ── Unified task dispatch (recursive multi-split → chat → agent loop) ──
         try:

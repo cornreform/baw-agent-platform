@@ -27,7 +27,7 @@ services:
       - ~/.baw/.env
     network_mode: bridge
     group_add:
-      - "988"  # docker group GID — BAW needs this to talk to docker.sock
+      - "988"  # docker group GID — install.sh auto-detects this; change if your Docker GID differs (run: getent group docker | cut -d: -f3)
     environment:
       - BAW_HOME=/app
       - BAW_RUNTIME_HOME=/home/baw/.baw
