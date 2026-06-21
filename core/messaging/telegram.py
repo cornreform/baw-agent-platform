@@ -868,15 +868,26 @@ class TelegramConnector(BaseConnector):
             )
 
             self.send(chat_id, "🤔 Analyzing with BAW...", edit_msg_id=status_id)
-            response = self._run_baw(prompt, chat_id=chat_id)
-            
-            # ── Inject vision result into session so future text messages know about this photo ──
+
+            # ── Inject vision result into session BEFORE _run_baw ──
+            # This ensures BAW sees the new photo's analysis in conversation history
+            # when processing the user's subsequent text messages.
+            # Also strip OLD vision entries to prevent confusion between photos.
             try:
                 session = self._get_or_create_session(chat_id) if chat_id else None
                 if session:
+                    # Remove old vision analysis entries (both user and assistant markers)
+                    session["messages"] = [
+                        m for m in session["messages"]
+                        if not any(
+                            tag in (m.get("content", "") or "")
+                            for tag in ["[Vision analysis of the latest photo", "[User sent a photo — vision analysis follows]"]
+                        )
+                    ]
+                    # Inject new photo context
                     session["messages"].append({
                         "role": "user",
-                        "content": f"[User sent a photo — vision analysis follows]"
+                        "content": f"[NEW PHOTO SENT — vision analysis follows. Ignore any previous photo analysis.]"
                     })
                     session["messages"].append({
                         "role": "assistant",
@@ -886,13 +897,13 @@ class TelegramConnector(BaseConnector):
                             f"Description: {vision_result[:500]}"
                         )
                     })
-                    if len(session["messages"]) > self._MAX_SESSION_MSGS:
-                        session["messages"] = session["messages"][-self._MAX_SESSION_MSGS:]
                     session["updated"] = __import__('time').time()
                     self._save_session_to_disk(session)
                     logger.info(f"[Telegram] Vision result injected into session for chat {chat_id}")
             except Exception as _ve:
                 logger.warning(f"[Telegram] Could not inject vision into session: {_ve}")
+
+            response = self._run_baw(prompt, chat_id=chat_id)
             
             try:
                 self._client.post(
