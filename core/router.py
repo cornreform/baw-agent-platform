@@ -33,7 +33,9 @@ from typing import Tuple
 _DEEP_KEYWORDS = (
     r"\b(分析|比較|評估|architect|design|debug|debugging|"
     r"設計|架構|複雜|深入|原因|root cause|trace|"
-    r"compare|evaluate|analyze|reason|explain why|"
+    r"睇|check|檢查|確認|調查|review|audit|"
+    r"config|配置|設定|provider|model|tier|"
+    r"系統|system|status|狀態|報告|report|"
     r"完整|comprehensive|deep dive|策略|strategy|"
     r"troubleshoot|診斷|diagnose|拆解|reverse.?engineer|"
     r"研究|research|explore|"
@@ -43,6 +45,7 @@ _DEEP_KEYWORDS = (
 # Multi-step / verification (+3)
 _MULTISTEP_KEYWORDS = (
     r"\b(然後|之後|跟住|第一步|step 1|first.*then|"
+    r"第一|第二|第三|"
     r"step[ -]by[ -]step|iteratively|多步|流程|workflow|"
     r"verify|check.*then|再|之後|plan|規劃|"
     r"deploy.*then|build.*then|"
