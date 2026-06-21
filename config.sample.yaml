@@ -63,19 +63,21 @@ model:
   # See SOUL.md "Cost-Aware Model Routing" section.
   cost_tiers:
     subscription:
-      - step-3.7-flash       # $0.5/$2.0 per 1M — StepFun flash
-      - deepseek-v4-flash    # $0.3/$1.2 per 1M — DeepSeek flash
-      - MiniMax-M2.5         # MiniMax medium tier
-      - MiniMax-M2.7         # MiniMax more capable
+      - step-3.7-flash       # $0.5/$2.0 per 1M — StepFun flash（月費任用）
+      - MiniMax-M2.5         # MiniMax 中階（月費任用）
+      - MiniMax-M2.7         # MiniMax 更強（月費任用）
+      - MiniMax-M3           # MiniMax 旗艦（月費任用）
     pay_per_use:
-      - deepseek-v4-pro      # DeepSeek Pro — costs more
-      - MiniMax-M3           # MiniMax flagship
+      - deepseek-v4-flash    # $0.3/$1.2 per 1M — DeepSeek Flash（極平按量）
+      - deepseek-v4-pro      # DeepSeek Pro（較貴）
       - openrouter/anthropic/claude-opus-4.8   # Premium
       - openrouter/openai/gpt-5.5-pro          # Premium
   preferential:
-    - deepseek-v4-flash     # Cheapest, use first
-    - step-3.7-flash        # Cheap, good fallback
-    - MiniMax-M2.5          # Free tier priority
+    - step-3.7-flash         # 月費優先，唔燒錢
+    - MiniMax-M2.5           # 月費 fallback
+    - MiniMax-M2.7
+    - MiniMax-M3
+    - deepseek-v4-flash      # 極平但按量，最後先用
 permissions:
   risk_levels:
     high:
