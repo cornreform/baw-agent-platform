@@ -44,6 +44,9 @@ class TelegramConnector(BaseConnector):
         self._debounce_until = 0.0
         self._restart_chat_id: str | None = None
         self._tts_enabled = self.config.get("tts_enabled", False)
+        self._offset_file = Path.home() / ".baw" / ".telegram_offset"
+        self._load_offset()
+        self._client_lock = threading.Lock()  # protects shared _client
         self._tts_voice = self.config.get("tts_voice", "male-tone-1")
         self._selector_msg_id: int | None = None
         self._selector_role: dict[str, str] = {}  # {chat_id: role} for 3-layer model selector
@@ -51,6 +54,29 @@ class TelegramConnector(BaseConnector):
         self._media_group_buffers: dict[str, dict[str, list]] = {}  # {chat_id: {group_id: [msgs]}}
         self._media_group_timers: dict[str, threading.Timer] = {}
         self._media_group_wait = 2.5  # seconds to wait for all media in a group
+
+    def _load_offset(self):
+        """Load Telegram update offset from disk (survives restarts)."""
+        try:
+            if self._offset_file.exists():
+                self._offset = int(self._offset_file.read_text().strip())
+                logger.info(f"[Telegram] Restored offset={self._offset}")
+        except (ValueError, OSError):
+            pass
+
+    def _save_offset(self):
+        """Persist Telegram update offset to disk."""
+        try:
+            self._offset_file.write_text(str(self._offset))
+        except OSError:
+            pass
+
+    def _background_client(self) -> httpx.Client:
+        """Create a separate httpx client for background thread operations.
+        The main _client is shared between poll loop and sends, but
+        background threads (photo/voice processing) must not share it
+        to avoid httpx connection pool corruption."""
+        return httpx.Client(timeout=120)
 
     def connect(self) -> bool:
         """Test connection by fetching bot info."""
@@ -248,7 +274,13 @@ class TelegramConnector(BaseConnector):
         If edit_msg_id is provided, edits that message instead of sending new one.
         
         Long messages (>2000 chars) are auto-truncated to the first section + summary.
-        Set display.output_mode: full in config to disable truncation."""
+        Set display.output_mode: full in config to disable truncation.
+        
+        Thread-safe: uses _client_lock to serialize access to httpx.Client."""
+        with self._client_lock:
+            return self._send(chat_id, text, edit_msg_id)
+
+    def _send(self, chat_id: str, text: str, edit_msg_id: str = "") -> str:
         if not self._client or not self._token:
             return ""
         # ── Intercept model selector ——
@@ -300,7 +332,6 @@ class TelegramConnector(BaseConnector):
             return msg_id or ""
         except Exception as e:
             logger.error(f"[Telegram] send error: {e}")
-            return ""
 
     def _resolve_media_path(self, fpath: str) -> str:
         """Resolve a MEDIA file path. Verifies the file actually exists
@@ -451,54 +482,60 @@ class TelegramConnector(BaseConnector):
     # ── File processing ─────────────────────────────────────────
 
     def _download_file(self, file_id: str, file_name: str = "file") -> str:
-        """Download a file from Telegram Bot API. Returns local path."""
+        """Download a file from Telegram Bot API. Returns local path.
+        Uses a dedicated httpx client (not self._client) to avoid
+        thread-safety issues with the shared poll loop client."""
         import os
         from pathlib import Path
 
-        # Get file path from Telegram
-        r = self._client.post(
-            f"{self._api_base}/getFile",
-            json={"file_id": file_id},
-            timeout=10,
-        )
-        if r.status_code != 200:
-            err_text = r.text[:300]
-            if "file is too big" in err_text.lower():
-                raise RuntimeError(
-                    f"📁 檔案太大，Telegram Bot API 限制 20MB。請用其他方式傳送（如壓縮、分割、或改用雲端連結）"
-                )
-            raise RuntimeError(f"getFile failed: {err_text}")
-        data = r.json()
-        if not data.get("ok"):
-            err_desc = str(data.get("description", ""))
-            if "file is too big" in err_desc.lower():
-                raise RuntimeError(
-                    f"📁 檔案太大，Telegram Bot API 限制 20MB。請用其他方式傳送（如壓縮、分割、或改用雲端連結）"
-                )
-            raise RuntimeError(f"getFile returned error: {data}")
-        tg_path = data["result"]["file_path"]
+        client = self._background_client()
+        try:
+            # Get file path from Telegram
+            r = client.post(
+                f"{self._api_base}/getFile",
+                json={"file_id": file_id},
+                timeout=10,
+            )
+            if r.status_code != 200:
+                err_text = r.text[:300]
+                if "file is too big" in err_text.lower():
+                    raise RuntimeError(
+                        f"📁 檔案太大，Telegram Bot API 限制 20MB。請用其他方式傳送（如壓縮、分割、或改用雲端連結）"
+                    )
+                raise RuntimeError(f"getFile failed: {err_text}")
+            data = r.json()
+            if not data.get("ok"):
+                err_desc = str(data.get("description", ""))
+                if "file is too big" in err_desc.lower():
+                    raise RuntimeError(
+                        f"📁 檔案太大，Telegram Bot API 限制 20MB。請用其他方式傳送（如壓縮、分割、或改用雲端連結）"
+                    )
+                raise RuntimeError(f"getFile returned error: {data}")
+            tg_path = data["result"]["file_path"]
 
-        # Download file
-        dl_url = f"https://api.telegram.org/file/bot{self._token}/{tg_path}"
-        dl_r = self._client.get(dl_url, timeout=120)
-        if dl_r.status_code != 200:
-            raise RuntimeError(f"File download failed: {dl_r.status_code}")
+            # Download file
+            dl_url = f"https://api.telegram.org/file/bot{self._token}/{tg_path}"
+            dl_r = client.get(dl_url, timeout=120)
+            if dl_r.status_code != 200:
+                raise RuntimeError(f"File download failed: {dl_r.status_code}")
 
-        # Save to temp
-        tmp_dir = Path.home() / ".baw" / "downloads"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-        local_path = tmp_dir / file_name
-        # Avoid collisions
-        if local_path.exists():
-            base = local_path.stem
-            ext = local_path.suffix
-            i = 1
-            while local_path.exists():
-                local_path = tmp_dir / f"{base}_{i}{ext}"
-                i += 1
-        local_path.write_bytes(dl_r.content)
-        logger.info(f"[Telegram] Downloaded: {tg_path} → {local_path} ({len(dl_r.content)} bytes)")
-        return str(local_path)
+            # Save to temp
+            tmp_dir = Path.home() / ".baw" / "downloads"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            local_path = tmp_dir / file_name
+            # Avoid collisions
+            if local_path.exists():
+                base = local_path.stem
+                ext = local_path.suffix
+                i = 1
+                while local_path.exists():
+                    local_path = tmp_dir / f"{base}_{i}{ext}"
+                    i += 1
+            local_path.write_bytes(dl_r.content)
+            logger.info(f"[Telegram] Downloaded: {tg_path} → {local_path} ({len(dl_r.content)} bytes)")
+            return str(local_path)
+        finally:
+            client.close()
 
     def _extract_file_content(self, file_path: str) -> str:
         """Extract text content from a file based on extension. Returns str."""
@@ -1347,13 +1384,13 @@ class TelegramConnector(BaseConnector):
             logger.error(f"[TTS] send error: {e}")
 
     def _poll_loop(self):
-        """Long-polling loop."""
-        if not self._client:
-            logger.error("[Telegram] No client — can't poll")
-            return
-
+        """Long-polling loop. Auto-restart on crash."""
         while self._running:
             try:
+                if not self._client:
+                    logger.error("[Telegram] No client — can't poll")
+                    time.sleep(POLL_RETRY_DELAY)
+                    continue  # don't exit, wait for reconnect
                 r = self._client.post(
                     f"{self._api_base}/getUpdates",
                     json={
@@ -1376,13 +1413,14 @@ class TelegramConnector(BaseConnector):
 
                 for update in data.get("result", []):
                     self._offset = update["update_id"] + 1
+                    self._save_offset()
                     self._handle_update(update)
 
             except httpx.TimeoutException:
                 # Timeout is normal for long-poll — just retry
                 continue
             except Exception as e:
-                logger.error(f"[Telegram] Poll error: {e}")
+                logger.error(f"[Telegram] Poll error: {e}", exc_info=True)
                 time.sleep(POLL_RETRY_DELAY)
 
     def _handle_update(self, update: dict):
