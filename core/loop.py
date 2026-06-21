@@ -44,6 +44,43 @@ from . import render as html
 OUTPUT_MAX_TOKENS = 100_000  # Effectively unlimited; prevents infinite loops
 OUTPUT_MAX_CHARS = 1_000_000  # Effectively unlimited; safety bound only
 
+# ── Per-mode max tokens (input-side budget for LLM generation) ──
+# Quick mode: rapid research, short answers → 4096 default
+# Hybrid mode: moderate reasoning → 8192
+# Tight mode: deep analysis → 16384
+# Auto: let LLM decide (5120 — comfortable middle ground)
+MODE_MAX_TOKENS = {
+    "quick": 4096,
+    "hybrid": 8192,
+    "tight": 16384,
+    "auto": 5120,
+    "focus": 16384,
+}
+
+# ── Lightweight performance profiler ──
+import time as _perf_time
+_PERF_LOG: list[tuple[str, float]] = []
+
+def perf_start(label: str) -> None:
+    """Start a performance timer."""
+    _PERF_LOG.append((label, _perf_time.time()))
+
+def perf_end(label: str, logger=None) -> float:
+    """End a performance timer and log duration. Returns seconds."""
+    now = _perf_time.time()
+    for i, (l, t) in enumerate(_PERF_LOG):
+        if l == label:
+            elapsed = now - t
+            _PERF_LOG.pop(i)
+            if logger:
+                logger.debug(f"[Perf] {label}: {elapsed:.3f}s")
+            return elapsed
+    return 0.0
+
+def perf_summary() -> str:
+    """Get a summary of all completed perf measurements."""
+    return "\n".join(f"  {l}: {t*1000:.0f}ms" for l, t in _PERF_LOG) if _PERF_LOG else "  (none)"
+
 # ── Cost tracking (thread-safe class) ──────────────────────────
 
 import threading
@@ -1442,6 +1479,7 @@ def run_agent(
             fb = call_llm_with_fallback(
                 config, ctx.to_openai_messages(),
                 tools=get_openai_tools(), temperature=model_temperature,
+                max_tokens=MODE_MAX_TOKENS.get(_mode, 4096),
             )
         except RuntimeError as _llm_err:
             return f"{_llm_err}", {
@@ -1507,6 +1545,7 @@ def run_agent(
             fb = call_llm_with_fallback(
                 config, ctx.to_openai_messages(),
                 tools=get_openai_tools(), temperature=model_temperature,
+                max_tokens=MODE_MAX_TOKENS.get(_mode, 4096),
             )
             quick_resp = fb.response
             q_cost = calculate_cost(model, quick_resp.input_tokens, quick_resp.output_tokens)

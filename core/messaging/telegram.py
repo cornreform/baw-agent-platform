@@ -40,14 +40,13 @@ class TelegramConnector(BaseConnector):
         self._allowed = [str(u) for u in self.config.get("allowed_users", [])]
         self._offset = 0
         self._client: httpx.Client | None = None
-        self._poll_client: httpx.Client | None = None  # dedicated client for poll loop
         self._api_base = API_BASE.format(token=self._token) if self._token else ""
         self._debounce_until = 0.0
         self._restart_chat_id: str | None = None
         self._tts_enabled = self.config.get("tts_enabled", False)
         self._offset_file = Path.home() / ".baw" / ".telegram_offset"
         self._load_offset()
-        self._client_lock = threading.Lock()  # protects shared _client
+        self._client_lock = threading.Lock()  # still needed for send() via executor
         self._tts_voice = self.config.get("tts_voice", "male-tone-1")
         self._selector_msg_id: int | None = None
         self._selector_role: dict[str, str] = {}  # {chat_id: role} for 3-layer model selector
@@ -86,7 +85,6 @@ class TelegramConnector(BaseConnector):
             return False
         try:
             self._client = httpx.Client(timeout=10)
-            self._poll_client = httpx.Client(timeout=POLL_TIMEOUT + 10)  # dedicated poll client
             r = self._client.get(f"{self._api_base}/getMe")
             if r.status_code == 200:
                 info = r.json()
@@ -270,9 +268,6 @@ class TelegramConnector(BaseConnector):
         if self._client:
             self._client.close()
             self._client = None
-        if self._poll_client:
-            self._poll_client.close()
-            self._poll_client = None
 
     def send(self, chat_id: str, text: str, edit_msg_id: str = "") -> str:
         """Send or edit a message. Returns message_id if successful, empty string if failed.
@@ -1407,45 +1402,10 @@ class TelegramConnector(BaseConnector):
             logger.error(f"[TTS] send error: {e}")
 
     def _poll_loop(self):
-        """Long-polling loop. Auto-restart on crash."""
-        _local_client = self._poll_client  # use dedicated client, NOT shared _client
-        while self._running:
-            try:
-                if not _local_client:
-                    logger.error("[Telegram] No poll client — can't poll")
-                    time.sleep(POLL_RETRY_DELAY)
-                    continue
-                r = _local_client.post(
-                    f"{self._api_base}/getUpdates",
-                    json={
-                        "offset": self._offset,
-                        "timeout": POLL_TIMEOUT,
-                        "allowed_updates": ["message", "callback_query"],
-                    },
-                    timeout=POLL_TIMEOUT + 5,
-                )
-                if r.status_code != 200:
-                    logger.warning(f"[Telegram] getUpdates HTTP {r.status_code}")
-                    time.sleep(POLL_RETRY_DELAY)
-                    continue
-
-                data = r.json()
-                if not data.get("ok"):
-                    logger.warning(f"[Telegram] API error: {data}")
-                    time.sleep(POLL_RETRY_DELAY)
-                    continue
-
-                for update in data.get("result", []):
-                    self._offset = update["update_id"] + 1
-                    self._save_offset()
-                    self._handle_update(update)
-
-            except httpx.TimeoutException:
-                # Timeout is normal for long-poll — just retry
-                continue
-            except Exception as e:
-                logger.error(f"[Telegram] Poll error: {e}", exc_info=True)
-                time.sleep(POLL_RETRY_DELAY)
+        """Legacy sync poll loop (not used — kept for abstractmethod compliance)."""
+        # This method is never called — async transport replaces it.
+        # Kept only because BaseConnector requires _poll_loop as abstractmethod.
+        pass
 
     def _handle_update(self, update: dict):
         """Process a single Telegram update (non-blocking, concurrent)."""

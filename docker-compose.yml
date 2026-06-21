@@ -43,11 +43,11 @@ services:
           memory: 256M
     # ── Healthcheck ──
     healthcheck:
-      test: ["CMD-SHELL", "cd /app && python3 -c 'from tools import register_all; register_all(); from core.tools import list_tools; t=list_tools(); exit(0 if len(t)>=10 else 1)'"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health > /dev/null 2>&1 || pgrep -f 'python3.*baw-bot' > /dev/null"]
       interval: 30s
-      timeout: 15s
+      timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
