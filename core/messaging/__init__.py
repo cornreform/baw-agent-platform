@@ -332,6 +332,21 @@ class BaseConnector(ABC):
         self._thread.start()
         logger.info(f"[{self._name}] Started")
 
+        # ── Poll thread watchdog: restart if thread dies ──
+        _original_thread = self._thread
+
+        def _poll_watchdog():
+            while self._running:
+                if not _original_thread.is_alive() and self._running:
+                    logger.warning(f"[{self._name}] Poll thread died — restarting")
+                    new_thread = threading.Thread(target=self._poll_loop, daemon=True)
+                    new_thread.start()
+                    break  # watchdog exits — new thread gets its own watchdog via stop/start
+                time.sleep(30)
+
+        _wd = threading.Thread(target=_poll_watchdog, daemon=True, name=f"poll-wd-{self._name}")
+        _wd.start()
+
     def stop(self):
         """Stop the polling loop."""
         self._running = False
@@ -1935,7 +1950,7 @@ class BaseConnector(ABC):
 
             # mode from per-chat config > global config > default
             cc = self._chat_config.get(chat_id, {}) if chat_id else {}
-            mode = cc.get("mode") or config.get("mode", "quick")
+            mode = cc.get("mode") or config.get("mode", "auto")
             # ── Focus Mode: force full execution (tight), not quick ──
             _is_focus_mode = prompt.startswith("[FOCUS MODE")
             if _is_focus_mode:
@@ -2488,6 +2503,38 @@ class BaseConnector(ABC):
                     output = "❗ 任務未能完成目標，需要跟進。"
                 else:
                     output = "✅ 任務已完成。（無額外輸出）"
+
+            # ── Post-validation result guarantee: catch intention-only output ──
+            # Even after loop.py's synthesis guard, output may still be planning
+            # text ("Let me search more") rather than actual results.
+            # This is the LAST code-level defence before delivery.
+            _final_out = output.strip()
+            if _final_out and len(_final_out) < 800:
+                _intent_pats = [
+                    r"^(Let me\s|I will\s|I need to\s|I'm going to\s|I am going to\s)",
+                    r"^(Now|Next),?\s*(let|I|we)\s",
+                    r"^I have (enough|the|all|sufficient).*?(to\s|that)",
+                    r"(compile|synthesize|write|prepare|gather|collect).*(review|answer|response|report)",
+                    r"(let me search|let me look|let me check|let me try)",
+                    r"(search for|look for|find more|gather more|collect more)",
+                ]
+                _intent_hits = sum(1 for p in _intent_pats if re.search(p, _final_out, re.IGNORECASE))
+                if _intent_hits >= 2:
+                    logger.warning(f"[_run_baw] Post-validation intention-only output ({len(_final_out)} chars, {_intent_hits} signals) — forcing final fallback")
+                    if all_failure_reasons:
+                        lines = ["[FAIL] Task resulted in planning text instead of actual results:"]
+                        for r in all_failure_reasons:
+                            lines.append(f"  • {r[:200]}")
+                        output = "\n".join(lines)
+                    else:
+                        output = (
+                            "❗ 任務執行完成但沒有輸出實際結果。\n\n"
+                            "BAW 搜尋咗資料但最終只出咗 planning 文字，未有合成最終答案。\n"
+                            "你可以：\n"
+                            "• 再 send 一次，BAW 會以全新 context 嘗試\n"
+                            "• 使用 `/mode tight` 強制 full execution\n"
+                            "• 用 `/focus 你的目標` 強制 Focus Mode"
+                        )
 
             # ── Auto-deliver files: detect file paths in output, send as MEDIA ──
             _pending_media = []  # collect MEDIA paths here so trim doesn't lose them
