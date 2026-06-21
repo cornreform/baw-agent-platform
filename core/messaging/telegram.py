@@ -1672,8 +1672,8 @@ class TelegramConnector(BaseConnector):
                 _reaction_stop.set()
                 return
             if not response or not response.strip():
-                logger.warning(f"[Telegram] Empty response from BAW for: {text[:80]}")
-                response = "已完成。如果你看不到預期結果，可能是因為：\n(1) 該操作沒有輸出 (如寫檔、設定配置)\n(2) 系統發生錯誤但未回傳\n\n請嘗試 `/status` 或 `/doctor` 檢查狀態。"
+                logger.warning(f"[Telegram] Empty response from BAW for: {text[:80]} — sending whatever we have")
+                # Don't replace with generic text — let the user see the problem
             if response:
                 logger.info(f"[Telegram] Sending response (len={len(response)}, placeholder={bool(_placeholder_msg_id)})")
                 # M2: edit the placeholder in-place if we sent one, else send fresh.

@@ -2017,6 +2017,29 @@ def run_agent(
     if tone_change:
         output += format_tone_confirmation(old_tone, new_tone) + "\n\n"
     output += (_resp.content or "")
+
+    # ── Mandatory synthesis guard: if output is empty or meaningless, force text-only retry ──
+    if not output.strip() or len(output.strip()) < 30:
+        logger.warning(f"[Loop] Empty/trivial output ({len(output.strip())} chars) — forcing synthesis retry")
+        ctx.add_user(
+            "[SYSTEM] Your previous response was empty. You must now answer the user's question directly. "
+            "You have all the data you need. Write a clear answer in Cantonese. No tools available."
+        )
+        fb2 = call_llm_with_fallback(
+            config, ctx.to_openai_messages(),
+            tools=None,  # NO tools — force text-only response
+            temperature=model_temperature,
+            max_tokens=OUTPUT_MAX_TOKENS,
+        )
+        _resp2 = fb2.response
+        if _resp2.content and _resp2.content.strip():
+            output = _resp2.content.strip()
+            _was_truncated = getattr(_resp2, 'finish_reason', '') == 'length'
+            logger.info(f"[Loop] Synthesis retry produced {len(output)} chars")
+        else:
+            # Final fallback: explain the situation
+            output = "我做咗啲檢查，但未有足夠資訊完整答到你。你可以再具體啲講你想要睇咩嗎？"
+
     # Append cost summary BEFORE length trim so it's counted
     output += f"\n{format_cost_summary()}"
     output = output.strip()
