@@ -1779,6 +1779,28 @@ def run_agent(
                 f"verdict={_v2_case.verdict.value if _v2_case.verdict else '?'} "
                 f"score={_v2_case.score}"
             )
+
+            # ── Inject court verdict into LLM context ──
+            _v2_verdict_icon = {
+                "approved": "✅", "retry": "🔁",
+                "appeal": "📤", "dismissed": "🚫", "stay": "⏸️",
+            }.get(_v2_case.verdict.value if _v2_case.verdict else "", "❓")
+            _v2_tier_names = {0: "Fast Lane", 1: "Minor", 2: "Major", 3: "Supreme"}
+            _v2_tier_name = _v2_tier_names.get(_v2_case.tier.value if _v2_case.tier else -1, "?")
+            _v2_court_info = (
+                f"⚖️ 法庭評審 (#{_v2_case.case_id})\n"
+                f"  Tier: {_v2_tier_name} | 判決: {_v2_verdict_icon} {_v2_case.score}/10\n"
+                f"  Defendant: {_v2_case.defendant_model} | Judge: {_v2_case.judge_model}\n"
+                f"  用時: {getattr(_v2_case, 'elapsed_sec', 0):.1f}s"
+            )
+            if _v2_pros:
+                _v2_court_info += f"\n  🖤 Devil: {_v2_pros[:200]}"
+            if _v2_angel:
+                _v2_court_info += f"\n  🤍 Angel: {_v2_angel[:200]}"
+            if _v2_case.verdict and _v2_case.verdict.value == "dismissed":
+                _v2_court_info += f"\n  🚫 駁回原因: {_v2_case.reason[:200]}"
+            # Inject as system message (not user) so LLM knows verdict without distorting conversation
+            ctx.add_user(f"[COURT VERDICT]\n{_v2_court_info}")
         except Exception as _ce:
             logger.warning(f"[loop] court v2 init failed ({_ce}); falling back to inline path")
             use_court_v2 = False
