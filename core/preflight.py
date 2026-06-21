@@ -87,7 +87,7 @@ def _try_import(mod: str) -> Optional[str]:
 
 
 def _check_web_extract() -> Optional[str]:
-
+    """
     We can't shell into the agent from here, so we report based on the
     local file presence of the tool's import path. If the tool is
     installed, BAW's loop can call it. If not, SPA pages will fail.

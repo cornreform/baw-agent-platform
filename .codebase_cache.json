@@ -326,7 +326,7 @@
     "core/backup.py": {
       "path": "core/backup.py",
       "module_name": "core.backup",
-      "size_lines": 183,
+      "size_lines": 250,
       "docstring": "P4: Backup System — daily auto-backup + restore command.\n\nBacks up critical BAW data (~/.baw/ config, memory, sessions, skills).\nExcludes large/reproducible dirs (py-user, pylib, downloads, fonts).\nKeeps last 7 daily backups.",
       "functions": [
         {
@@ -334,7 +334,7 @@
           "docstring": "Create a timestamped backup of critical ~/.baw/ data.\nExcludes large reproducible dirs (py-user, pylib, downloads, fonts).\nReturns {path, size_bytes, size_mb, timestamp}.",
           "args": [],
           "return_type": "dict",
-          "lineno": 47,
+          "lineno": 50,
           "decorators": []
         },
         {
@@ -347,7 +347,7 @@
             }
           ],
           "return_type": "dict",
-          "lineno": 95,
+          "lineno": 98,
           "decorators": []
         },
         {
@@ -355,7 +355,7 @@
           "docstring": "List all available backups.",
           "args": [],
           "return_type": "list[dict]",
-          "lineno": 138,
+          "lineno": 141,
           "decorators": []
         },
         {
@@ -363,7 +363,7 @@
           "docstring": "Create a special pre-upgrade backup.",
           "args": [],
           "return_type": "dict",
-          "lineno": 154,
+          "lineno": 157,
           "decorators": []
         },
         {
@@ -371,7 +371,15 @@
           "docstring": "Keep only the last MAX_BACKUPS daily backups.",
           "args": [],
           "return_type": "",
-          "lineno": 178,
+          "lineno": 181,
+          "decorators": []
+        },
+        {
+          "name": "auto_pre_mod_backup",
+          "docstring": "Auto-backup triggered before ANY system-level modification.\n\nBacks up both BAW source code (BAW_HOME) and BAW runtime data (~/.baw).\nStored as pre-modification snapshots, distinct from daily backups.\nKeeps last 14 snapshots.",
+          "args": [],
+          "return_type": "dict",
+          "lineno": 195,
           "decorators": []
         }
       ],
@@ -391,7 +399,8 @@
         "restore_backup",
         "list_backups",
         "pre_upgrade_snapshot",
-        "_cleanup_old_backups"
+        "_cleanup_old_backups",
+        "auto_pre_mod_backup"
       ]
     },
     "core/board.py": {
@@ -5308,7 +5317,7 @@
     "core/loop.py": {
       "path": "core/loop.py",
       "module_name": "core.loop",
-      "size_lines": 2067,
+      "size_lines": 2019,
       "docstring": "BAW — Agent Loop: Debate-first, Execute-second\n\nFlow per user turn:\n  Phase 1 — Court (independent analysis)\n    Devil and Angel analyze the SAME input independently.\n    Both give scores. BAW synthesizes neutrally.\n    [WARN] NEITHER voice has execution power during court.\n\n  Phase 2 — Neutral response & debate (interactive only)\n    BAW responds from neutral perspective.\n    NOT trying to please the user — WILLING to disagree.\n    User ↔ Agent back and forth until conclusion.\n\n  Phase 3 — Exec",
       "functions": [
         {
@@ -5451,7 +5460,7 @@
         },
         {
           "name": "build_system_prompt",
-          "docstring": "Build system prompt from SOUL.md + dynamic context.\n\nquick_mode=True: loads only core identity, skips heavy court/tool rules.\nfresh_start=True: returns a minimal prompt with no SOUL.md or memories.\n\nStructure (cache-aware): [STATIC SOUL CORE] + [DYNAMIC CONFIG]\nStatic prefix stays identical across t",
+          "docstring": "Build system prompt from SOUL.md + dynamic context.\n\nUnified prompt (no quick/full mode split): the LLM self-judges\ntask complexity and matches response depth accordingly.\n\nStructure (cache-aware): [STATIC SOUL CORE] + [DYNAMIC CONFIG]\nStatic prefix stays identical across turns → DeepSeek prefix cac",
           "args": [
             {
               "name": "config",
@@ -5463,10 +5472,6 @@
             },
             {
               "name": "fresh_start",
-              "type": "bool"
-            },
-            {
-              "name": "quick_mode",
               "type": "bool"
             }
           ],
@@ -5484,7 +5489,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 751,
+          "lineno": 705,
           "decorators": []
         },
         {
@@ -5501,7 +5506,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 844,
+          "lineno": 798,
           "decorators": []
         },
         {
@@ -5526,7 +5531,7 @@
             }
           ],
           "return_type": "str",
-          "lineno": 985,
+          "lineno": 939,
           "decorators": []
         },
         {
@@ -5579,7 +5584,7 @@
             }
           ],
           "return_type": "tuple[str, dict]",
-          "lineno": 1071,
+          "lineno": 1025,
           "decorators": []
         }
       ],
@@ -7385,12 +7390,157 @@
       "path": "core/preflight.py",
       "module_name": "core.preflight",
       "size_lines": 241,
-      "docstring": "[PARSE ERROR] unterminated string literal (detected at line 91) (preflight.py, line 91)",
-      "functions": [],
-      "classes": [],
+      "docstring": "BAW — Capability Pre-flight Check.\n\nBefore any \"scrape this URL / build me a tool / fetch data\" task, BAW\nMUST run a pre-flight check to verify it has the tools needed. This\nprevents the 2026-06-12 failure mode where a sub-agent tried to fetch\na Next.js SPA with ``urllib`` (returned empty shell) and reported\n\"50/1000 limit, upstream doesn't matter\" — wrong by capability, not\nby luck.\n\nA pre-flight check is a 4-step audit:\n\n  1. **Tool availability** — does the requested task need a tool we\n     ",
+      "functions": [
+        {
+          "name": "check_tool_availability",
+          "docstring": "Verify the core tools BAW needs for self-build tasks are present.",
+          "args": [],
+          "return_type": "Dict[str, Any]",
+          "lineno": 63,
+          "decorators": []
+        },
+        {
+          "name": "_try_import",
+          "docstring": "",
+          "args": [
+            {
+              "name": "mod",
+              "type": "str"
+            }
+          ],
+          "return_type": "Optional[str]",
+          "lineno": 81,
+          "decorators": []
+        },
+        {
+          "name": "_check_web_extract",
+          "docstring": "We can't shell into the agent from here, so we report based on the\nlocal file presence of the tool's import path. If the tool is\ninstalled, BAW's loop can call it. If not, SPA pages will fail.",
+          "args": [],
+          "return_type": "Optional[str]",
+          "lineno": 89,
+          "decorators": []
+        },
+        {
+          "name": "check_network",
+          "docstring": "Quick reachability check. If ``url`` is given, test that host.",
+          "args": [
+            {
+              "name": "url",
+              "type": "Optional[str]"
+            }
+          ],
+          "return_type": "Dict[str, Any]",
+          "lineno": 105,
+          "decorators": []
+        },
+        {
+          "name": "check_disk",
+          "docstring": "Make sure there's room for the mirror file + dataset + tool source.",
+          "args": [
+            {
+              "name": "min_free_mb",
+              "type": "int"
+            }
+          ],
+          "return_type": "Dict[str, Any]",
+          "lineno": 129,
+          "decorators": []
+        },
+        {
+          "name": "check_path_resolution",
+          "docstring": "Verify ``core.paths`` resolves to a real BAW root, not a hardcoded\ntrap. This catches the ``/home/baw/baw`` vs ``~/baw`` confusion.",
+          "args": [],
+          "return_type": "Dict[str, Any]",
+          "lineno": 143,
+          "decorators": []
+        },
+        {
+          "name": "run_preflight",
+          "docstring": "Run all four checks, return an aggregated report.\n\nArgs:\n    url: Optional target URL the user wants to fetch. If given,\n         we test network reachability and warn if the URL is on a\n         known SPA framework (nextjs.org / gatsbyjs.com / vercel.app).",
+          "args": [
+            {
+              "name": "url",
+              "type": "Optional[str]"
+            }
+          ],
+          "return_type": "PreFlightReport",
+          "lineno": 168,
+          "decorators": []
+        },
+        {
+          "name": "_is_known_spa_host",
+          "docstring": "Heuristic list of hosts that are almost always SPAs.",
+          "args": [
+            {
+              "name": "url",
+              "type": "str"
+            }
+          ],
+          "return_type": "bool",
+          "lineno": 219,
+          "decorators": []
+        },
+        {
+          "name": "main",
+          "docstring": "",
+          "args": [
+            {
+              "name": "argv",
+              "type": "Optional[List[str]]"
+            }
+          ],
+          "return_type": "int",
+          "lineno": 231,
+          "decorators": []
+        }
+      ],
+      "classes": [
+        {
+          "name": "PreFlightReport",
+          "docstring": "",
+          "methods": [
+            {
+              "name": "to_dict",
+              "docstring": "",
+              "args": [
+                {
+                  "name": "self",
+                  "type": ""
+                }
+              ],
+              "return_type": "dict",
+              "lineno": 57,
+              "decorators": []
+            }
+          ],
+          "lineno": 50
+        }
+      ],
       "baw_imports": [],
-      "all_imports": [],
-      "exports": []
+      "all_imports": [
+        "__future__",
+        "dataclasses",
+        "json",
+        "pathlib",
+        "shutil",
+        "socket",
+        "sys",
+        "typing",
+        "urllib.parse"
+      ],
+      "exports": [
+        "PreFlightReport",
+        "check_tool_availability",
+        "_try_import",
+        "_check_web_extract",
+        "check_network",
+        "check_disk",
+        "check_path_resolution",
+        "run_preflight",
+        "_is_known_spa_host",
+        "main"
+      ]
     },
     "core/profile.py": {
       "path": "core/profile.py",
@@ -10297,7 +10447,7 @@
     "core/token_killer.py": {
       "path": "core/token_killer.py",
       "module_name": "core.token_killer",
-      "size_lines": 499,
+      "size_lines": 485,
       "docstring": "BAW Token Killer — systemic tool output compression layer.\n\nApplies RTK's four strategies (Filter, Group, Truncate, Deduplicate)\nas a pre-context injection pipeline between tool execution and LLM context.\n\nDesign philosophy:\n  LLMs don't need raw terminal output. They need information.\n  - Filter: strip noise (ANSI, progress bars, boilerplate)\n  - Group: aggregate similar items (lint by file, errors by type)\n  - Truncate: keep head + tail, drop redundant middle\n  - Deduplicate: collapse repeated",
       "functions": [
         {
@@ -10503,28 +10653,36 @@
         },
         {
           "name": "should_activate_court",
-          "docstring": "Determine if the adversarial court (Devil + Angel) should run.\n\nCourt is activated when:\n1. System-modifying actions (write, delete, deploy, config change)\n2. Irreversible or dangerous operations\n3. Architectural / design decisions\n\nCourt is bypassed when:\n1. Pure information gathering (read, search",
+          "docstring": "Determine if the adversarial court should run.\n\nIn AUTO mode (default): the LLM self-judges complexity via the\nsystem prompt. No hardcoded keyword pattern matching.\n\nIn explicit mode (quick/tight/hybrid): apply traditional keyword\npatterns for safety, since the user explicitly selected a mode.",
           "args": [
             {
               "name": "prompt",
+              "type": "str"
+            },
+            {
+              "name": "mode",
               "type": "str"
             }
           ],
           "return_type": "bool",
-          "lineno": 405,
+          "lineno": 407,
           "decorators": []
         },
         {
           "name": "estimate_task_complexity",
-          "docstring": "Estimate task complexity to skip unnecessary overhead.\n\nReturns: 'simple', 'moderate', or 'complex'",
+          "docstring": "Estimate task complexity.\n\nIn AUTO mode: always return 'simple' — LLM self-regulates tool use.\n\nIn explicit mode: use traditional keyword/pattern estimation.",
           "args": [
             {
               "name": "prompt",
               "type": "str"
+            },
+            {
+              "name": "mode",
+              "type": "str"
             }
           ],
           "return_type": "str",
-          "lineno": 467,
+          "lineno": 448,
           "decorators": []
         }
       ],
@@ -15993,9 +16151,30 @@
     "tools/fusion_analyze.py": {
       "path": "tools/fusion_analyze.py",
       "module_name": "tools.fusion_analyze",
-      "size_lines": 271,
-      "docstring": "BAW built-in: fusion_analyze — multi-model deliberation.\n\nQueries ALL configured LLM providers in parallel, collects responses,\nthen synthesizes a structured analysis: consensus, contradictions,\nunique insights, and blind spots.\n\nInspired by OpenRouter Fusion — but BAW-native, using all your own API keys.\n\nUsage:\n  User: \"用fusion分析呢個問題\"\n  BAW:  Calls fusion_analyze(question=\"...\") → runs all providers → returns analysis",
+      "size_lines": 396,
+      "docstring": "BAW built-in: fusion_analyze — multi-model deliberation with smart model selection.\n\nQueries multiple LLM providers in parallel, with mode-based model selection.\nIn AUTO mode: intelligently selects which models to fuse based on task complexity.\nSupports cross-validation: cheap models validate each other's conclusions.\n\nInspired by arXiv:2605.22502 — compiling agentic workflows into LLM weights.\nMultiple cheap models working together can match frontier quality at 128-462x less cost.",
       "functions": [
+        {
+          "name": "_select_models_for_mode",
+          "docstring": "Intelligently select which models to query based on mode and task.\n\nauto:    Judge complexity from question, pick proportionally\nquick:   Only cheapest providers (deepseek, openrouter, stepfun)\nall:     Every configured provider (original behavior)\ndeep:    All providers + cross-validation round",
+          "args": [
+            {
+              "name": "config",
+              "type": "dict"
+            },
+            {
+              "name": "mode",
+              "type": "str"
+            },
+            {
+              "name": "question",
+              "type": "str"
+            }
+          ],
+          "return_type": "list[dict]",
+          "lineno": 29,
+          "decorators": []
+        },
         {
           "name": "_try_model",
           "docstring": "Try one model, append result to shared results list.",
@@ -16009,8 +16188,8 @@
               "type": "str"
             },
             {
-              "name": "model_cfg",
-              "type": "dict"
+              "name": "model_id",
+              "type": "str"
             },
             {
               "name": "question",
@@ -16023,10 +16202,39 @@
             {
               "name": "lock",
               "type": "threading.Lock"
+            },
+            {
+              "name": "is_cross_validation",
+              "type": "bool"
             }
           ],
           "return_type": "None",
-          "lineno": 29,
+          "lineno": 89,
+          "decorators": []
+        },
+        {
+          "name": "_cross_validate",
+          "docstring": "Run cross-validation round for deep/auto complex modes.\n\nTakes the most divergent responses and has another model validate them.\nThis implements: '幾重嘅Model去互相認證就算用平啲嘅Model都可以達到好高嘅效果'",
+          "args": [
+            {
+              "name": "config",
+              "type": "dict"
+            },
+            {
+              "name": "question",
+              "type": "str"
+            },
+            {
+              "name": "initial_results",
+              "type": "list[dict]"
+            },
+            {
+              "name": "mode",
+              "type": "str"
+            }
+          ],
+          "return_type": "list[dict]",
+          "lineno": 156,
           "decorators": []
         },
         {
@@ -16047,33 +16255,24 @@
             }
           ],
           "return_type": "str",
-          "lineno": 92,
+          "lineno": 217,
           "decorators": []
         },
         {
           "name": "fusion_analyze",
-          "docstring": "Run multi-model deliberation on a question using ALL configured providers.\n\nArgs:\n    question: The question or topic to analyze.\n\nReturns:\n    Structured analysis with consensus, contradictions, insights, and synthesis.",
+          "docstring": "Run multi-model deliberation on a question.\n\nArgs:\n    question: The question or topic to analyze.\n    mode: auto (default, intelligent selection), quick (cheapest),\n          all (every provider), deep (all + cross-validation).\n\nReturns:\n    Structured analysis with consensus, contradictions, insig",
           "args": [
             {
               "name": "question",
               "type": "str"
-            }
-          ],
-          "return_type": "str",
-          "lineno": 159,
-          "decorators": []
-        },
-        {
-          "name": "_handler",
-          "docstring": "",
-          "args": [
+            },
             {
-              "name": "args",
-              "type": "dict"
+              "name": "mode",
+              "type": "str"
             }
           ],
           "return_type": "str",
-          "lineno": 242,
+          "lineno": 293,
           "decorators": []
         }
       ],
@@ -16094,10 +16293,11 @@
         "time"
       ],
       "exports": [
+        "_select_models_for_mode",
         "_try_model",
+        "_cross_validate",
         "_synthesize",
-        "fusion_analyze",
-        "_handler"
+        "fusion_analyze"
       ]
     },
     "tools/get_skill.py": {
@@ -16161,7 +16361,7 @@
     "tools/git.py": {
       "path": "tools/git.py",
       "module_name": "tools.git",
-      "size_lines": 162,
+      "size_lines": 173,
       "docstring": "BAW built-in: git — commit, push, pull, status, log.\n\nAllows BAW to manage its own source code repository using the host's\ngit binary (mounted via docker-compose bind mount: /usr/bin/docker).\n\nGit config (user.name / user.email) is auto-configured on first use.\nAuthentication: SSH key or GITHUB_TOKEN from ~/.baw/.env is respected.",
       "functions": [
         {
@@ -16189,6 +16389,19 @@
           "decorators": []
         },
         {
+          "name": "_commit_with_backup",
+          "docstring": "Commit with auto-backup before the operation.",
+          "args": [
+            {
+              "name": "message",
+              "type": "str"
+            }
+          ],
+          "return_type": "dict",
+          "lineno": 78,
+          "decorators": []
+        },
+        {
           "name": "_handler",
           "docstring": "Execute a git operation in the BAW repo.\n\nSupported actions:\n  status    — Show working tree status (modified/untracked files)\n  log       — Show recent commits (use `count` param)\n  diff      — Show uncommitted changes\n  add       — Stage all changes\n  commit    — Commit staged changes (requires `m",
           "args": [
@@ -16210,13 +16423,16 @@
             }
           ],
           "return_type": "str",
-          "lineno": 78,
+          "lineno": 90,
           "decorators": []
         }
       ],
       "classes": [],
-      "baw_imports": [],
+      "baw_imports": [
+        "core.backup.auto_pre_mod_backup"
+      ],
       "all_imports": [
+        "core.backup",
         "json",
         "os",
         "pathlib",
@@ -16227,6 +16443,7 @@
         "_ensure_git",
         "_ensure_configured",
         "_git",
+        "_commit_with_backup",
         "_handler"
       ]
     },
@@ -17424,9 +17641,22 @@
     "tools/patch.py": {
       "path": "tools/patch.py",
       "module_name": "tools.patch",
-      "size_lines": 95,
-      "docstring": "BAW built-in: patch — find-and-replace file editing.\n\nLike targeted find-and-replace: targeted edits without rewriting the entire file.\nUses fuzzy matching to handle minor whitespace/indentation differences.",
+      "size_lines": 134,
+      "docstring": "BAW built-in: patch — find-and-replace file editing.\n\nLike targeted find-and-replace: targeted edits without rewriting the entire file.\nUses fuzzy matching to handle minor whitespace/indentation differences.\nAuto-backups before modifying BAW's own files.",
       "functions": [
+        {
+          "name": "_should_auto_backup",
+          "docstring": "Check if path is within BAW's own code or data dirs.",
+          "args": [
+            {
+              "name": "path",
+              "type": "Path"
+            }
+          ],
+          "return_type": "bool",
+          "lineno": 24,
+          "decorators": []
+        },
         {
           "name": "patch_file",
           "docstring": "Replace a string in a file with another string.\n\nArgs:\n    path: Path to the file to edit.\n    old_string: Exact text to find and replace. Must be unique unless replace_all=True.\n    new_string: Replacement text. Use empty string '' to delete.\n    replace_all: If True, replace all occurrences instea",
@@ -17449,17 +17679,22 @@
             }
           ],
           "return_type": "str",
-          "lineno": 10,
+          "lineno": 39,
           "decorators": []
         }
       ],
       "classes": [],
-      "baw_imports": [],
+      "baw_imports": [
+        "core.backup.auto_pre_mod_backup"
+      ],
       "all_imports": [
+        "core.backup",
+        "os",
         "pathlib",
         "re"
       ],
       "exports": [
+        "_should_auto_backup",
         "patch_file"
       ]
     },
@@ -20270,9 +20505,22 @@
     "tools/write_file.py": {
       "path": "tools/write_file.py",
       "module_name": "tools.write_file",
-      "size_lines": 46,
-      "docstring": "BAW built-in: write file",
+      "size_lines": 82,
+      "docstring": "BAW built-in: write file — auto-backup before self-modification.",
       "functions": [
+        {
+          "name": "_should_auto_backup",
+          "docstring": "Check if path is within BAW's own code or data dirs.",
+          "args": [
+            {
+              "name": "path",
+              "type": "Path"
+            }
+          ],
+          "return_type": "bool",
+          "lineno": 19,
+          "decorators": []
+        },
         {
           "name": "write_file",
           "docstring": "Write content to a file. Creates parent directories if needed.",
@@ -20287,16 +20535,20 @@
             }
           ],
           "return_type": "str",
-          "lineno": 6,
+          "lineno": 34,
           "decorators": []
         }
       ],
       "classes": [],
-      "baw_imports": [],
+      "baw_imports": [
+        "core.backup.auto_pre_mod_backup"
+      ],
       "all_imports": [
+        "core.backup",
         "pathlib"
       ],
       "exports": [
+        "_should_auto_backup",
         "write_file"
       ]
     }
@@ -20458,7 +20710,9 @@
       "core/llm.py"
     ],
     "tools/get_skill.py": [],
-    "tools/git.py": [],
+    "tools/git.py": [
+      "core/backup.py"
+    ],
     "tools/http_fetch.py": [
       "core/paths.py"
     ],
@@ -20477,7 +20731,9 @@
       "tools/kg_curator.py"
     ],
     "tools/mmx.py": [],
-    "tools/patch.py": [],
+    "tools/patch.py": [
+      "core/backup.py"
+    ],
     "tools/petrestaurants.py": [
       "core/paths.py"
     ],
@@ -20535,14 +20791,16 @@
     "tools/web_search.py": [
       "core/search.py"
     ],
-    "tools/write_file.py": []
+    "tools/write_file.py": [
+      "core/backup.py"
+    ]
   },
   "circular_dependencies": [],
   "stats": {
     "modules_scanned": 121,
-    "total_lines": 40256,
-    "dependencies_tracked": 81,
+    "total_lines": 40472,
+    "dependencies_tracked": 84,
     "circular_dep_count": 0,
-    "scanned_at": "2026-06-20 09:37:24.381883"
+    "scanned_at": "2026-06-21 01:52:54.689115"
   }
 }
