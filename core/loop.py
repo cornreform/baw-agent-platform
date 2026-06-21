@@ -351,6 +351,19 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "You ALREADY know the difference between 'hi' and 'analyze this codebase'. Trust that judgment.\n"
             "Do NOT over-process simple requests. Do NOT under-process complex ones.\n"
         )
+        # ── LANGUAGE HARD GATE (always active, before output structure) ──
+        lang_gate = (
+            "\n\n## LANGUAGE HARD GATE — Cantonese/Trad Chinese ONLY\n"
+            "All output MUST be in Cantonese (廣東話) or Traditional Chinese (繁體中文).\n"
+            "English thinking is internal noise — NEVER output it.\n"
+            "Rules:\n"
+            "- Your reasoning chain can be in English, but the final user-facing output MUST be Cantonese/TC.\n"
+            "- No English summaries, no English labels, no English explanations.\n"
+            "- If the user writes in English, still respond in Cantonese/TC.\n"
+            "- Exception: code names, file paths, technical terms (e.g. 'config.yaml', 'API', 'Docker') can stay in their original form.\n"
+            "This is a HARD GATE — not a suggestion. Violations break the user interface contract.\n"
+        )
+        system_prompt += lang_gate
         system_prompt += output_structure
         system_prompt += delegation_block
     else:
