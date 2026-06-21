@@ -448,11 +448,18 @@ def should_activate_court(prompt: str, mode: str = "auto") -> bool:
 def estimate_task_complexity(prompt: str, mode: str = "auto") -> str:
     """Estimate task complexity.
 
-    In AUTO mode: always return 'simple' — LLM self-regulates tool use.
+    In AUTO mode: use basic heuristic based on prompt structure.
+    LLM still self-regulates tool use, but base caps should match.
 
     In explicit mode: use traditional keyword/pattern estimation.
     """
     if mode == "auto":
+        prompt_len = len(prompt)
+        # Multi-step requests with enumeration/numbered lists are more complex
+        _multi_step = any(m in prompt for m in ["第一", "第二", "第三", "首先", "然後", "跟住", "最後",
+                                                  "1.", "2.", "3.", "(1)", "(2)", "(3)", "\n- ", "\n* "])
+        if prompt_len > 300 or _multi_step:
+            return "moderate"
         return "simple"
 
     prompt_lower = prompt.lower()

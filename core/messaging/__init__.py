@@ -2164,7 +2164,7 @@ class BaseConnector(ABC):
             if _task_complexity == "simple":
                 _MAX_AUTO_ROUNDS = 2
                 _MAX_TOTAL_SECONDS = 180
-                _focus_max_tool_turns = 10  # simple tasks don't need many tools
+                _focus_max_tool_turns = 25  # 10 was too low — BAW hits cap before reaching synthesis
                 logger.info(f"[_run_baw] Simple task — rounds={_MAX_AUTO_ROUNDS}, tool_turns={_focus_max_tool_turns}")
             elif _task_complexity == "moderate":
                 _MAX_AUTO_ROUNDS = 3
