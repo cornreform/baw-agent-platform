@@ -2255,7 +2255,8 @@ class BaseConnector(ABC):
                 if chat_id and _round > 1:
                     self.send_typing(chat_id)
 
-                with ThreadPoolExecutor(1) as pool:
+                pool = ThreadPoolExecutor(1)
+                try:
                     fut = pool.submit(
                        run_agent,
                        prompt=_current_prompt,
@@ -2295,6 +2296,8 @@ class BaseConnector(ABC):
                     else:
                         fut.cancel()
                         return "[QUEUED] Task took too long (>30min)."
+                finally:
+                    pool.shutdown(wait=False)  # don't block on stuck run_agent
 
                 output = response or ""
 

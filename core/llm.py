@@ -912,14 +912,17 @@ def _call_with_timeout(model, messages, tools, temperature, max_tokens):
     thread with a hard timeout to prevent multi-minute hangs.
     """
     import concurrent.futures
-    LLM_TIMEOUT = 90  # seconds: hard cap per LLM call
+    LLM_TIMEOUT = 30  # seconds: hard cap per LLM call
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         future = pool.submit(call_llm, model, messages, tools, temperature, max_tokens)
         try:
             return future.result(timeout=LLM_TIMEOUT)
         except concurrent.futures.TimeoutError:
             raise RuntimeError(f"LLM API timeout after {LLM_TIMEOUT}s: {model.provider}/{model.id}")
+    finally:
+        pool.shutdown(wait=False)  # don't block on stuck call_llm
 
 
 # ── Model router (based on message size) ───────────────────────
