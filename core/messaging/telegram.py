@@ -823,6 +823,9 @@ class TelegramConnector(BaseConnector):
             status_id = self.send(chat_id, "📥 Downloading image...")
             local_path = self._download_file(file_id, file_name)
 
+            # ── Extract caption text (sent together with photo) ──
+            caption = (msg.get("caption", "") or "").strip()
+
             from tools.vision import _vision_minimax, _vision_stepfun
 
             self.send(chat_id, "👁️ Analyzing with MiniMax vision...", edit_msg_id=status_id)
@@ -856,6 +859,8 @@ class TelegramConnector(BaseConnector):
                     vision_result = f"OCR: {content}"
                     provider_used = "OCR"
 
+            caption_section = f"\nUser caption: {caption}\n" if caption else ""
+
             prompt = (
                 f"[Image analysis via {provider_used}]\n"
                 f"File: {file_name}\n\n"
@@ -865,6 +870,7 @@ class TelegramConnector(BaseConnector):
                 f"- What is shown in this image?\n"
                 f"- If it's a product: what is it, and where can I buy it?\n"
                 f"- If there are similar items: suggest alternatives."
+                f"{caption_section}"
             )
 
             self.send(chat_id, "🤔 Analyzing with BAW...", edit_msg_id=status_id)
@@ -885,9 +891,10 @@ class TelegramConnector(BaseConnector):
                         )
                     ]
                     # Inject new photo context
+                    caption_tag = f"\nUser caption: {caption}\n" if caption else ""
                     session["messages"].append({
                         "role": "user",
-                        "content": f"[NEW PHOTO SENT — vision analysis follows. Ignore any previous photo analysis.]"
+                        "content": f"[NEW PHOTO SENT — vision analysis follows. Ignore any previous photo analysis.]{caption_tag}"
                     })
                     session["messages"].append({
                         "role": "assistant",
