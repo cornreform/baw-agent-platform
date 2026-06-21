@@ -398,3 +398,22 @@ Recent corrections suggest adjusting response style:
 - 用戶可以叫你用「fusion模式」或「fusion分析」去分析複雜問題
 - 用 `fusion_analyze(question="...")` tool，佢會 query 所有 provider 再 synthesis
 - 唔使逐個 provider 試，fusion_analyze 自動做 parallel query + judge synthesis
+
+## Cost-Aware Model Routing (built-in — new installs ship with this)
+
+config.yaml 嘅 `model.cost_tiers` 同 `model.preferential` 定義咗模型成本分層。
+呢個係原生技能，裝好就有：
+
+1. **日常/簡單任務** — 優先使用 `subscription` tier + `preferential` list
+   - Cron jobs (backup, health, decay)、簡單 Q&A、記憶操作
+   - Model: `deepseek-v4-flash` → `step-3.7-flash` → `MiniMax-M2.5`
+2. **中等複雜** — 可以升到 subscription 內較強 model
+   - Code review、config 修改、工具使用
+   - Model: `MiniMax-M2.7` → `deepseek-v4-flash`
+3. **複雜/高要求** — 先用 subscription 最強 model，唔夠先 fallback 去 `pay_per_use`
+   - Fusion、deep analysis、寫 code generator、系統改造
+   - Model: `MiniMax-M3` → `openrouter/...opus`
+4. **用家指定 model** — 用家講嘅 model 優先（例如 /model 指令）
+5. **融合模式 (fusion)** — 一律用多個 model 交叉驗證，唔單靠一個
+
+記住：**便宜 model 做 80% 嘅工作，貴 model 淨係做 20% 嘅複雜嘢**。
