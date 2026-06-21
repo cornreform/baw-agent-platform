@@ -106,13 +106,15 @@ def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
 
     MAX_ATTEMPTS = 3
     last_error = ""
-    
+    attempt = 0
+
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        pool = None
         _start = _t.time()
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(tool.handler, **arguments)
-                result = future.result(timeout=timeout)
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = pool.submit(tool.handler, **arguments)
+            result = future.result(timeout=timeout)
             _dur = _t.time() - _start
             try:
                 from .evolve import track_tool_call
@@ -136,7 +138,6 @@ def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
                 if name in _NON_IDEMPOTENT:
                     break
                 timeout = min(timeout * 2, 120)  # Double timeout each retry
-                continue
         except Exception as e:
             _dur = _t.time() - _start
             error_str = str(e)
@@ -156,8 +157,10 @@ def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
                 if "invalid syntax" in error_str.lower() or "no such file" in error_str.lower():
                     if name == "bash" and "path" in str(arguments.get("command", "")):
                         # Try alternate path
-                        continue
-                continue
+                        pass  # will retry
+        finally:
+            if pool is not None:
+                pool.shutdown(wait=False)
     
     # All attempts exhausted
     from .guards import bail

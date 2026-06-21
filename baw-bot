@@ -265,19 +265,65 @@ Examples:
         logger.debug(f"[Guard] SessionGuard init: {e}")
 
     # Handle shutdown gracefully
+    _shutdown_in_progress = [False]
+
     def shutdown(signum, frame):
-        logger.info("Shutting down...")
+        if _shutdown_in_progress[0]:
+            logger.warning("Force shutdown (SIGTERM again)")
+            os._exit(1)
+        _shutdown_in_progress[0] = True
+        logger.info("Shutting down gracefully...")
+        
+        # 1. Stop accepting new tasks
+        try:
+            from core.scheduler import Scheduler
+            _sched.stop()
+        except Exception:
+            pass
+        
+        # 2. Signal all connectors to stop
+        for c in connectors:
+            try:
+                c.stop()
+            except Exception as e:
+                logger.debug(f"[Shutdown] Connector stop: {e}")
+        
+        # 3. Give in-flight tasks time to drain
+        drain_start = time.time()
+        drain_timeout = 15  # max seconds to wait
+        while time.time() - drain_start < drain_timeout:
+            remaining = sum(1 for c in connectors if getattr(c, "_running", False))
+            if remaining == 0:
+                break
+            time.sleep(0.5)
+        
+        # 4. Final save
         try:
             from core.guards import SessionGuard
             SessionGuard.shutdown()
         except Exception:
             pass
-        for c in connectors:
-            c.stop()
+        
+        logger.info("Shutdown complete")
         sys.exit(0)
+
+    def reload_config(signum, frame):
+        """SIGHUP: reload config without restarting the process."""
+        logger.info("Reloading config (SIGHUP)...")
+        try:
+            from core.config import load_config
+            new_config = load_config()
+            # Apply changes to connectors that support it
+            for c in connectors:
+                if hasattr(c, "reload") and callable(c.reload):
+                    c.reload(new_config)
+            logger.info("Config reloaded")
+        except Exception as e:
+            logger.error(f"Config reload failed: {e}")
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGHUP, reload_config)
 
     # Keep alive
     try:

@@ -506,6 +506,9 @@ class BaseConnector(ABC):
             if cmd == "focus" and arg:
                 return self._handle_focus(arg, chat_id=msg.chat_id)
 
+            if cmd == "fusion" and arg:
+                return self._handle_fusion(arg, chat_id=msg.chat_id)
+
             if cmd in ("court", "ct"):
                 # M2 (Fable 5 spec): 4 sub-commands:
                 #   /court              → recent 5
@@ -1401,8 +1404,8 @@ class BaseConnector(ABC):
         except Exception as e:
             logger.warning(f"[Context] Memory save failed: {e}")
 
-        # Compress session: keep last 4 msgs + summary header
-        _keep = 4
+        # Compress session: keep last 8 msgs + summary header
+        _keep = 8
         _compressed = conv_history[-_keep:]
         _compressed.insert(0, {
             "role": "user",
@@ -1951,10 +1954,14 @@ class BaseConnector(ABC):
             # mode from per-chat config > global config > default
             cc = self._chat_config.get(chat_id, {}) if chat_id else {}
             mode = cc.get("mode") or config.get("mode", "auto")
-            # ── Focus Mode: force full execution (tight), not quick ──
+            # ── Focus Mode: force full execution (tight), relentless approach ──
             _is_focus_mode = prompt.startswith("[FOCUS MODE")
             if _is_focus_mode:
-                mode = "tight"  # full debate + plan + execute — skip quick mode 5-tool cap
+                mode = "tight"
+            # ── Fusion Mode: parallel multi-provider research + synthesis ──
+            _is_fusion_mode = prompt.startswith("[FUSION MODE")
+            if _is_fusion_mode:
+                mode = "tight"
 
             # ── Session management ──
             session = None
@@ -2178,10 +2185,15 @@ class BaseConnector(ABC):
             _MAX_TOTAL_SECONDS = 600
             # ── Focus Mode: relentless execution — bump limits ──
             if _is_focus_mode:
+                _MAX_AUTO_ROUNDS = 10
+                _MAX_TOTAL_SECONDS = 1800
+                _focus_max_tool_turns = 100
+                logger.info(f"[_run_baw] Focus Mode — rounds={_MAX_AUTO_ROUNDS}, timeout={_MAX_TOTAL_SECONDS}s, tool_turns={_focus_max_tool_turns}")
+            elif _is_fusion_mode:
                 _MAX_AUTO_ROUNDS = 8
                 _MAX_TOTAL_SECONDS = 1200
-                _focus_max_tool_turns = 40  # override per-round tool cap
-                logger.info(f"[_run_baw] Focus Mode — rounds={_MAX_AUTO_ROUNDS}, timeout={_MAX_TOTAL_SECONDS}s, tool_turns={_focus_max_tool_turns}")
+                _focus_max_tool_turns = 80
+                logger.info(f"[_run_baw] Fusion Mode — rounds={_MAX_AUTO_ROUNDS}, tool_turns={_focus_max_tool_turns}")
             else:
                 _focus_max_tool_turns = 0  # will be set by complexity below
             # ── Token Killer: adaptive tool cap based on task complexity ──
@@ -2262,8 +2274,9 @@ class BaseConnector(ABC):
                         f"- Auto-install missing packages before attempting\n"
                         f"- Research root cause from error message and fix it\n\n"
                         f"Do NOT repeat the same approach that just failed.\n"
-                        + (f"FOCUS MODE: NO human questions. NO stopping. Try ANYTHING.\n" if _is_focus_mode else "") +
-                        f"Execute the full plan silently. Report only the final result."
+                        + (f"FOCUS MODE: NO human questions. NO stopping. Try ANYTHING.\n" if _is_focus_mode else "")
+                        + (f"FUSION MODE: Research from multiple angles. Compare sources. Synthesize balanced answer.\n" if _is_fusion_mode else "")
+                        + f"Execute the full plan silently. Report only the final result."
                     )
 
                 # Refresh typing indicator each round
@@ -2760,6 +2773,30 @@ class BaseConnector(ABC):
 
         return self._run_baw(focus_prompt, chat_id=chat_id)
 
+    def _handle_fusion(self, query: str, chat_id: str | None = None) -> str:
+        """Fusion Mode: parallel multi-provider research + synthesis.
+
+        1. Spawn parallel web research tasks to multiple providers
+        2. Each provider analyzes the query independently
+        3. Synthesize the best answer from all perspectives
+        """
+        self.send(chat_id, "🧬 <b>Fusion Mode</b> · Parallel multi-provider research...")
+
+        fusion_prompt = (
+            f"[FUSION MODE — PARALLEL MULTI-PROVIDER RESEARCH]\n\n"
+            f"QUERY: {query}\n\n"
+            f"RULES:\n"
+            f"- Research the query using MULTIPLE approaches in parallel\n"
+            f"- Web search: search from different angles (Chinese + English sources)\n"
+            f"- Compare and contrast findings from different sources\n"
+            f"- Identify disagreements or inconsistencies between sources\n"
+            f"- Synthesize a balanced final answer\n"
+            f"- Output MUST contain actual findings, not just 'let me search' planning\n"
+            f"- NO human questions. NO stopping.\n"
+        )
+
+        return self._run_baw(fusion_prompt, chat_id=chat_id)
+
     @staticmethod
     def _help_text() -> str:
         return (
@@ -2770,6 +2807,7 @@ class BaseConnector(ABC):
             "/status — BAW system status + sessions\n"
             "/btw `<text>` — Quick answer (no court, no plan)\n"
             "/focus `<goal>` — Model Council + relentless execution\n"
+            "/fusion `<query>` — Parallel multi-provider research + synthesis\n"
             "/fresh `<prompt>` — Raw model — no soul, no memories\n"
             "/court — 最近 5 單案件 (id+verdict+score+elapsed)\n"
             "/court `<id>` — 查全卷 (起訴/答辯/證物/判決)\n"
