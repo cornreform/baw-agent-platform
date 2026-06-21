@@ -107,6 +107,12 @@ def validate_output(output: str, *, prompt: str = "") -> str:
     # Phase 8: HTML tag balance — ensure all <b> <i> <u> <s> <code> are closed
     result = _balance_html(result)
 
+    # Phase 8a: Escape standalone < and > that are NOT part of HTML tags
+    # Telegram's HTML parser rejects messages with unescaped < that don't
+    # start valid tags. This prevents "can't parse entities" fallback which
+    # strips ALL HTML formatting.
+    result = _escape_plain_lt_gt(result)
+
     # Phase 9: Final sanity — output must not be empty
     if not result.strip():
         return _empty_fallback()
@@ -378,6 +384,48 @@ def _compress_verbose(text: str) -> str:
         return text  # Compression produced nothing useful, keep original
 
     return '\n'.join(result_lines).strip()
+
+
+def _escape_plain_lt_gt(text: str) -> str:
+    """Escape < and > that are NOT part of HTML tags.
+
+    Telegram's parse_mode=HTML requires < to either start a valid tag
+    (</?[a-zA-Z]...>) or be escaped as &lt;. Unescaped standalone <
+    causes Telegram to reject the entire message, triggering a fallback
+    that strips ALL HTML formatting.
+
+    This function replaces:
+      - Standalone < → &lt;  (when not followed by a letter or /)
+      - Standalone > → &gt;  (when not preceded by a letter that forms a tag)
+    """
+    result = []
+    i = 0
+    while i < len(text):
+        if text[i] == '<':
+            # Check if this starts a valid HTML tag: </?[a-zA-Z]
+            rest = text[i:]
+            tag_match = re.match(r'</?[a-zA-Z][^>]*>', rest)
+            if tag_match:
+                result.append(tag_match.group(0))
+                i += tag_match.end()
+                continue
+            # Standalone < → escape
+            result.append('&lt;')
+            i += 1
+        elif text[i] == '>':
+            # Check if this closes a valid tag (preceded by a letter)
+            before = text[max(0, i-20):i+1]
+            if re.search(r'</?[a-zA-Z][^>]*$', before):
+                result.append('>')
+                i += 1
+                continue
+            # Standalone > → escape
+            result.append('&gt;')
+            i += 1
+        else:
+            result.append(text[i])
+            i += 1
+    return ''.join(result)
 
 
 def score_output(output: str) -> dict:
