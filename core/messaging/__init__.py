@@ -2473,13 +2473,19 @@ class BaseConnector(ABC):
                 try:
                     agreement = cv.get("agreement_level", "unknown")
                     gap = cv.get("score_gap", 0)
+                    _devil_score = cv.get("devil_score", 0)
+                    _angel_score = cv.get("angel_score", 0)
                     # Skip court verdict if the only output is the empty-fallback message
                     _has_real_content = bool(output.strip()) and \
                         "No additional output" not in output and \
                         "Completed. (No" not in output and \
                         "Task failed to reach goal" not in output
                     if _has_real_content:
-                        pass
+                        _gap_label = f"gap={gap}" if gap else "unanimous" if agreement == "court-v2" else ""
+                        _score_label = f"{_devil_score}/{_angel_score}"
+                        output += f"\n\n⚖️ 法庭 {_score_label} | {agreement}"
+                        if _gap_label:
+                            output += f" | {_gap_label}"
                 except Exception:
                     pass
 
