@@ -5,6 +5,7 @@ Uses ripgrep (rg) when available for speed, falls back to Python.
 """
 import re
 import os
+import time
 import subprocess as sp
 from pathlib import Path
 
@@ -47,11 +48,21 @@ def _rg_search(root: str, pattern: str, file_glob: str, limit: int) -> str:
         cmd.extend(["--glob", file_glob])
     cmd.append(root)
 
-    r = sp.run(cmd, capture_output=True, text=True, timeout=30)
+    r = sp.run(cmd, capture_output=True, text=True, timeout=15)
     if r.returncode == 1:
         return f"No matches found for '{pattern}'"
-    if r.returncode > 1:
-        raise RuntimeError(r.stderr.strip())
+    if r.returncode > 1 and r.stderr.strip():
+        # Only raise on true errors, not on I/O errors for unreadable files
+        _stderr = r.stderr.strip()
+        _io_error_count = _stderr.count("Input/output error") + _stderr.count("Permission denied")
+        _total_lines = len(_stderr.splitlines())
+        # If most errors are I/O, just return partial results
+        if _io_error_count >= _total_lines * 0.7 and r.stdout.strip():
+            lines = r.stdout.strip().splitlines()[:limit]
+            if len(lines) < limit:
+                lines.append(f"(I/O errors on {_io_error_count} files — partial results)")
+            return "\n".join(lines)
+        raise RuntimeError(_stderr)
 
     lines = r.stdout.strip().splitlines()
     if not lines:
@@ -64,8 +75,10 @@ def _rg_search(root: str, pattern: str, file_glob: str, limit: int) -> str:
 
 
 def _py_search(root: str, pattern: str, file_glob: str, limit: int) -> str:
-    """Fallback: search using Python standard library."""
+    """Fallback: search using Python standard library with 15s timeout."""
     import fnmatch
+    import signal as _sig
+    import threading as _th
 
     try:
         regex = re.compile(pattern)
@@ -74,15 +87,27 @@ def _py_search(root: str, pattern: str, file_glob: str, limit: int) -> str:
 
     results = []
     file_pattern = file_glob or "*"
+    _start = time.time()
+    _timeout = 15.0
 
     for dirpath, dirnames, filenames in os.walk(root):
         # Skip hidden dirs and common ignores
-        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".git")]
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".git", "venv", ".venv")]
 
         for fname in sorted(filenames):
             if not fnmatch.fnmatch(fname, file_pattern):
                 continue
+            # Skip large files (>10MB)
             fpath = os.path.join(dirpath, fname)
+            try:
+                if os.path.getsize(fpath) > 10 * 1024 * 1024:
+                    continue
+            except OSError:
+                continue
+            # Check timeout
+            if time.time() - _start > _timeout:
+                results.append(f"⏱️ Search timed out after {_timeout}s — showing partial results")
+                break
             try:
                 with open(fpath, "r", encoding="utf-8", errors="replace") as f:
                     for i, line in enumerate(f, 1):
@@ -93,8 +118,10 @@ def _py_search(root: str, pattern: str, file_glob: str, limit: int) -> str:
                                 break
                 if len(results) >= limit:
                     break
-            except (OSError, PermissionError):
+            except (OSError, UnicodeDecodeError):
                 continue
+        if time.time() - _start > _timeout:
+            break
         if len(results) >= limit:
             break
 

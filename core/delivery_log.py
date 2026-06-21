@@ -21,8 +21,12 @@ from typing import Optional
 logger = logging.getLogger("baw.delivery")
 
 _LOG_DIR = Path.home() / ".baw" / "logs"
-_LOG_FILE = _LOG_DIR / "delivery.jsonl"
 _MAX_ENTRIES = 10_000  # auto-prune after this many
+
+
+def _log_path() -> Path:
+    """Compute delivery log path from current _LOG_DIR."""
+    return _LOG_DIR / "delivery.jsonl"
 
 
 def _ensure_log():
@@ -50,7 +54,7 @@ def record_send(
         "metadata": metadata or {},
     }
     try:
-        with open(_LOG_FILE, "a", encoding="utf-8") as f:
+        with open(_log_path(), "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         _maybe_prune()
     except OSError as e:
@@ -74,7 +78,7 @@ def record_error(
         "error": error[:500],
     }
     try:
-        with open(_LOG_FILE, "a", encoding="utf-8") as f:
+        with open(_log_path(), "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except OSError as e:
         logger.warning(f"[Delivery] Failed to write error: {e}")
@@ -95,7 +99,7 @@ def record_delivery_confirmation(
         "confirm": confirm_data or {},
     }
     try:
-        with open(_LOG_FILE, "a", encoding="utf-8") as f:
+        with open(_log_path(), "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except OSError as e:
         logger.warning(f"[Delivery] Failed to write confirmation: {e}")
@@ -104,12 +108,12 @@ def record_delivery_confirmation(
 def recent_deliveries(minutes: int = 60, limit: int = 50) -> list[dict]:
     """Get recent delivery records, newest first."""
     _ensure_log()
-    if not _LOG_FILE.exists():
+    if not _log_path().exists():
         return []
     cutoff = time.time() - (minutes * 60)
     entries = []
     try:
-        with open(_LOG_FILE, "r", encoding="utf-8") as f:
+        with open(_log_path(), "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -148,15 +152,15 @@ def delivery_stats(minutes: int = 60) -> dict:
 def _maybe_prune():
     """Keep _MAX_ENTRIES at most by rewriting the log."""
     try:
-        if not _LOG_FILE.exists():
+        if not _log_path().exists():
             return
-        with open(_LOG_FILE, "r", encoding="utf-8") as f:
+        with open(_log_path(), "r", encoding="utf-8") as f:
             lines = f.readlines()
         if len(lines) <= _MAX_ENTRIES:
             return
         # Keep newest entries
         tail = lines[-_MAX_ENTRIES:]
-        with open(_LOG_FILE, "w", encoding="utf-8") as f:
+        with open(_log_path(), "w", encoding="utf-8") as f:
             f.writelines(tail)
         logger.info(f"[Delivery] Pruned log: {len(lines)} → {len(tail)} entries")
     except OSError:

@@ -1626,6 +1626,29 @@ def run_agent(
                     + "\n\nHonest status: see synthesis results above."
                 )
 
+        # ── Synthesis enforcement: ensure file sends come with explanation ──
+        _has_media = "MEDIA:" in (final_content or "")
+        _has_explanation = bool(final_content and len(final_content.strip()) > 50)
+        if _has_media and not _has_explanation:
+            # LLM sent files with no/poor explanation — force synthesis
+            _tool_msgs = [
+                m.content or "" for m in reversed(ctx.messages)
+                if hasattr(m, 'role') and m.role == "tool" and m.content
+            ][:3]
+            _file_names = [
+                line.replace("MEDIA:", "").strip()
+                for line in (final_content or "").splitlines()
+                if line.startswith("MEDIA:")
+            ]
+            _explanation = (
+                f"📂 已生成 {len(_file_names)} 個檔案：\n"
+                + "\n".join(f"  • {f}" for f in _file_names[:5])
+            )
+            if _tool_msgs:
+                _details = _tool_msgs[0][:200]
+                _explanation += f"\n\n{_details}"
+            final_content = _explanation
+
         # ── Inject reasoning content if configured ──
         if config.get("display", {}).get("show_reasoning"):
             _reasoning = getattr(quick_resp, 'reasoning_content', None) or ""
