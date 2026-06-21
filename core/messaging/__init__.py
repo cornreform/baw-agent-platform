@@ -113,6 +113,7 @@ class BaseConnector(ABC):
         self._silent_mode = False  # suppress progress updates (for batch execution)
         # ── Session management ──
         self._sessions: dict[str, dict] = {}  # {chat_id: session_dict}
+        self._session_lock = threading.Lock()  # protects _sessions dict (accessed from background threads)
         self._sessions_dir = Path.home() / ".baw" / "sessions"
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
         self._load_session_index()
@@ -368,21 +369,22 @@ class BaseConnector(ABC):
     def _get_or_create_session(self, chat_id: str, first_message: str = "") -> dict:
         """Get (or create) the active in-memory session for this chat.
         If creating new, auto-name from first_message (first 40 chars, stripped)."""
-        if chat_id not in self._sessions:
-            sid = f"ses-{uuid.uuid4().hex[:12]}"
-            # Auto-name from first message
-            name = "untitled"
-            if first_message.strip():
-                clean = first_message.strip().replace("\n", " ")[:40]
-                name = clean if len(clean) >= 3 else "untitled"
-            self._sessions[chat_id] = {
-                "id": sid,
-                "name": name,
-                "messages": [],
-                "created": time.time(),
-                "updated": time.time(),
-            }
-        return self._sessions[chat_id]
+        with self._session_lock:
+            if chat_id not in self._sessions:
+                sid = f"ses-{uuid.uuid4().hex[:12]}"
+                # Auto-name from first message
+                name = "untitled"
+                if first_message.strip():
+                    clean = first_message.strip().replace("\n", " ")[:40]
+                    name = clean if len(clean) >= 3 else "untitled"
+                self._sessions[chat_id] = {
+                    "id": sid,
+                    "name": name,
+                    "messages": [],
+                    "created": time.time(),
+                    "updated": time.time(),
+                }
+            return self._sessions[chat_id]
 
     def _save_session_to_disk(self, session: dict):
         """Write session to disk as JSON."""
@@ -402,7 +404,9 @@ class BaseConnector(ABC):
                              key=lambda x: x[1]["updated"], reverse=True):
             import datetime
             dt = datetime.datetime.fromtimestamp(s["updated"]).strftime("%m-%d %H:%M")
-            msg_count = "(active)" if sid in [ses["id"] for ses in self._sessions.values()] else ""
+            with self._session_lock:
+                is_active = sid in [ses["id"] for ses in self._sessions.values()]
+            msg_count = "(active)" if is_active else ""
             lines.append(
                 f"  `{sid[:12]}` — <b>{s['name']}</b> "
                 f"({dt}) {msg_count}"
@@ -433,17 +437,19 @@ class BaseConnector(ABC):
         if spath.exists():
             spath.unlink()
             # Remove from in-memory active sessions too
-            for cid, ses in list(self._sessions.items()):
-                if ses["id"] == session_id:
-                    del self._sessions[cid]
-                    break
+            with self._session_lock:
+                for cid, ses in list(self._sessions.items()):
+                    if ses["id"] == session_id:
+                        del self._sessions[cid]
+                        break
             return True
         for f in self._sessions_dir.glob(f"{session_id}*.json"):
             f.unlink()
-            for cid, ses in list(self._sessions.items()):
-                if ses["id"] == session_id:
-                    del self._sessions[cid]
-                    break
+            with self._session_lock:
+                for cid, ses in list(self._sessions.items()):
+                    if ses["id"] == session_id:
+                        del self._sessions[cid]
+                        break
             return True
         return False
 
@@ -714,15 +720,16 @@ class BaseConnector(ABC):
                 return self._handle_task_command(msg.chat_id, "new", arg)
             if cmd == "reset":
                 # Hard reset — clear current session without saving
-                if msg.chat_id in self._sessions:
-                    old = self._sessions[msg.chat_id]
-                    # Delete saved session file too
-                    self._delete_session(old["id"])
-                new_sid = f"ses-{uuid.uuid4().hex[:12]}"
-                self._sessions[msg.chat_id] = {
-                    "id": new_sid, "name": "fresh",
-                    "messages": [], "created": time.time(), "updated": time.time(),
-                }
+                with self._session_lock:
+                    if msg.chat_id in self._sessions:
+                        old = self._sessions[msg.chat_id]
+                        # Delete saved session file too
+                        self._delete_session(old["id"])
+                    new_sid = f"ses-{uuid.uuid4().hex[:12]}"
+                    self._sessions[msg.chat_id] = {
+                        "id": new_sid, "name": "fresh",
+                        "messages": [], "created": time.time(), "updated": time.time(),
+                    }
                 return "Session reset — starting fresh."
             if cmd == "list":
                 return self._handle_task_command(msg.chat_id, "list", "")
@@ -1234,13 +1241,14 @@ class BaseConnector(ABC):
         if action == "new":
             # Save current session, start fresh
             self._save_session_to_disk(self._get_or_create_session(chat_id))
-            new_sid = f"ses-{uuid.uuid4().hex[:12]}"
-            name = arg or "untitled"
-            self._sessions[chat_id] = {
-                "id": new_sid, "name": name,
-                "messages": [], "created": time.time(), "updated": time.time(),
-            }
-            self._save_session_to_disk(self._sessions[chat_id])
+            with self._session_lock:
+                new_sid = f"ses-{uuid.uuid4().hex[:12]}"
+                name = arg or "untitled"
+                self._sessions[chat_id] = {
+                    "id": new_sid, "name": name,
+                    "messages": [], "created": time.time(), "updated": time.time(),
+                }
+                self._save_session_to_disk(self._sessions[chat_id])
             return f"[OK] New task started: <b>{name}</b> (`{new_sid[:12]}`)"
 
         elif action == "list" or action == "ls":
@@ -1254,12 +1262,13 @@ class BaseConnector(ABC):
             if not data:
                 return f"Session `{sid}` not found. Use `/task list` to see saved tasks."
             # Assign to this chat
-            self._sessions[chat_id] = {
-                "id": data["id"], "name": data.get("name", "untitled"),
-                "messages": data.get("messages", []),
-                "created": data.get("created", 0.0), "updated": time.time(),
-            }
-            msg_count = len(self._sessions[chat_id]["messages"])
+            with self._session_lock:
+                self._sessions[chat_id] = {
+                    "id": data["id"], "name": data.get("name", "untitled"),
+                    "messages": data.get("messages", []),
+                    "created": data.get("created", 0.0), "updated": time.time(),
+                }
+                msg_count = len(self._sessions[chat_id]["messages"])
             return (
                 f"📂 Resumed task: <b>{data.get('name', 'untitled')}</b> "
                 f"(`{data['id'][:12]}`)\n"
@@ -1396,7 +1405,8 @@ class BaseConnector(ABC):
             return "📭 No saved sessions found."
 
         # Get current session id to exclude it
-        current_sid = self._sessions.get(chat_id, {}).get("id", "")
+        with self._session_lock:
+            current_sid = self._sessions.get(chat_id, {}).get("id", "")
 
         # Sort by updated time descending, pick first that isn't current
         candidates = sorted(
@@ -1419,13 +1429,14 @@ class BaseConnector(ABC):
             return f"[FAIL] Failed to load session `{target['id'][:12]}`."
 
         # Load messages into current chat session
-        self._sessions[chat_id] = {
-            "id": data["id"],
-            "name": data.get("name", "untitled"),
-            "messages": data.get("messages", []),
-            "created": data.get("created", 0.0),
-            "updated": time.time(),
-        }
+        with self._session_lock:
+            self._sessions[chat_id] = {
+                "id": data["id"],
+                "name": data.get("name", "untitled"),
+                "messages": data.get("messages", []),
+                "created": data.get("created", 0.0),
+                "updated": time.time(),
+            }
 
         # Build context summary from last few messages
         msgs = data.get("messages", [])
