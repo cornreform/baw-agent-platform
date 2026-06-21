@@ -57,6 +57,25 @@ model:
     model: step-3.7-flash
   - match: write|create|build|製作|建立|generate|生成|設計|design
     model: step-3.7-flash
+  # ── Cost-aware model routing (built-in) ──
+  # Simple tasks → subscription/flash models first.
+  # Complex tasks → pay-per-use premium models.
+  # See SOUL.md "Cost-Aware Model Routing" section.
+  cost_tiers:
+    subscription:
+      - step-3.7-flash       # $0.5/$2.0 per 1M — StepFun flash
+      - deepseek-v4-flash    # $0.3/$1.2 per 1M — DeepSeek flash
+      - MiniMax-M2.5         # MiniMax medium tier
+      - MiniMax-M2.7         # MiniMax more capable
+    pay_per_use:
+      - deepseek-v4-pro      # DeepSeek Pro — costs more
+      - MiniMax-M3           # MiniMax flagship
+      - openrouter/anthropic/claude-opus-4.8   # Premium
+      - openrouter/openai/gpt-5.5-pro          # Premium
+  preferential:
+    - deepseek-v4-flash     # Cheapest, use first
+    - step-3.7-flash        # Cheap, good fallback
+    - MiniMax-M2.5          # Free tier priority
 permissions:
   risk_levels:
     high:
