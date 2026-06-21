@@ -332,8 +332,17 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
 
     if fresh_start:
+        # Source Verification Gate - must apply even in quick mode
+        verification_gate = (
+            "\n\n## [WARN] SOURCE VERIFICATION GATE (always on)\n"
+            "For research/analysis tasks: EVERY factual claim MUST have a corresponding\n"
+            "search/web_extract tool output as backlink. If you didn't search it, say\n"
+            "'⚠️ unverified' or omit. NEVER claim sources you didn't search (e.g., 'Amazon reviews'\n"
+            "when no Amazon search was made).\n"
+        )
         return (
-            "You are an AI assistant. No prior context, no memories, no soul profile.\n"
+            verification_gate +
+            "\n\nYou are an AI assistant. No prior context, no memories, no soul profile.\n"
             "Respond to this prompt with your raw, unfiltered judgment.\n"
             "Be direct and honest. Do not assume any prior conversation.\n"
         )
@@ -918,7 +927,10 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
     for claim in provider_claims:
         claim_clean = claim.strip('"\'",.）)').lower()
         # Skip very short or Chinese-only tokens (false positives)
-        if len(claim_clean) < 3 or _vre.match(r'^[\u4e00-\u9fff]+$', claim_clean):
+        if len(claim_clean) < 3 or _vre.match('^[\u4e00-\u9fff]+$', claim_clean):
+            continue
+        # Skip code refs: key=val, starts with ` or /, contains .py
+        if '=' in claim_clean or claim_clean.startswith('`') or claim_clean.startswith('/') or '.py' in claim_clean:
             continue
         # Skip natural language: enumeration commas, full-width punct, >40 chars
         if '\u3001' in claim_clean or '\uff0c' in claim_clean or '\u3002' in claim_clean or len(claim_clean) > 40:
