@@ -5,63 +5,64 @@
 # Nightly maintenance window: 02:00-05:00 HKT (45-min gaps)
 # Weekly maintenance: Mon 05:00-06:00
 # Reports auto-delivered on next user interaction via startup hook
+# All tasks run through BAW agent loop with system default model.
 
 - name: daily-backup
   cron: "0 2 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.backup import create_backup; r=create_backup(); sm=r.get('size_mb',0); print(f'Backup: {sm}MB')\""
+  command: "Create a daily backup of config, memory, and skills. Keep the last 7 backups. Report the backup size in MB."
   description: "02:00 HKT — Daily backup of config/memory/skills (keeps last 7)"
   enabled: true
 
 - name: nightly-health-check
   cron: "0 3 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.doctor import cmd_doctor; from pathlib import Path; cmd_doctor(Path.home() / '.baw', fix=False); print('Health check completed')\""
+  command: "Run a full self-diagnosis: check provider health, disk space, config integrity. Check API keys are valid, schemas are correct. Fix any auto-fixable issues. Report critical problems only."
   description: "03:00 HKT — Full self-diagnose: provider health, disk, config"
   enabled: true
 
 - name: daily-memory-decay
   cron: "30 3 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.memory import MemoryStore; from pathlib import Path; m=MemoryStore(Path.home() / '.baw'); m.decay(); print('Memory decay completed')\""
+  command: "Run memory store score decay for old entries. Read the memory store, apply decay factors to entries older than 7 days. Confirm completion."
   description: "03:30 HKT — Memory store score decay for old entries"
   enabled: true
 
 - name: daily-kg-extract
   cron: "0 4 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.knowledge_graph import extract_from_memory; print(extract_from_memory())\""
+  command: "Extract knowledge graph triples from recent memory store entries. Read the memory store, find new or updated entries, extract entities and relationships. Add them to the knowledge graph. Report how many triples were extracted."
   description: "04:00 HKT — Auto-populate knowledge graph from memory store"
   enabled: true
 
 - name: daily-evolve-analyze
   cron: "30 4 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.evolve import analyze, auto_optimize, flush_behavior; flush_behavior(); r=auto_optimize(dry_run=True); pf=r.get('patterns_found',0); qc=r.get('queued_count',0); print(f'Evolve analyze: {pf} patterns, {qc} queued')\""
+  command: "Analyze recent behavior patterns. Read the evolution log and SOUL.md. Do a dry-run auto-optimize to identify improvement opportunities. Report how many patterns found, how many changes queued (but don't apply changes today — dry run only)."
   description: "04:30 HKT — Analyze behavior, extract patterns, queue SOUL.md patches"
   enabled: true
 
 - name: weekly-self-evolution
-  cron: "0 5 * * 0"
-  command: "!python3 /app/scripts/self_harness_eval.py"
-  description: "Sun 05:00 HKT — Full self-harness evaluation: codebase scan, health check, improvement proposals"
+  cron: "0 3 * * 0"
+  command: "Run full self-evolution: analyze memory patterns, flush behavior data, run auto-optimize with changes applied. Read SOUL.md before and after to confirm whether patches were applied. Report patterns found and whether SOUL.md was modified."
+  description: "Sun 03:00 HKT — Full self-evolution: analyze memory, apply SOUL.md patches"
   enabled: true
 
 - name: weekly-kg-curation
   cron: "0 5 * * 1"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.kg_curator import curate; r=curate(action='curate',dry_run=False); from pathlib import Path; report=Path.home()/'.baw'/'reports'/'weekly_kg_report.txt'; report.parent.mkdir(exist_ok=True); report.write_text(r); print(r)\""
+  command: "Run weekly knowledge graph curation. Load the knowledge graph, identify noise and orphaned triples, consolidate duplicates. Save the curated graph and write a report to ~/.baw/reports/weekly_kg_report.txt. Report before/after triple counts."
   description: "Mon 05:00 HKT — Weekly KG curation: consolidate noise, remove orphans"
   enabled: true
 
 - name: weekly-memory-quality
   cron: "15 5 * * 1"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.memory_quality import _handler; from pathlib import Path; r=_handler({'action':'both'}); report=Path.home()/'.baw'/'reports'/'weekly_quality_report.txt'; report.parent.mkdir(exist_ok=True); report.write_text(r); print(r)\""
+  command: "Run weekly memory quality audit. Check memory store for decay, knowledge graph signal ratio, and L1 context efficiency. Run quality checks on both memory and KG. Write a report to ~/.baw/reports/weekly_quality_report.txt. Report the loss score and any improvement suggestions."
   description: "Mon 05:15 HKT — Weekly memory quality report (loss score)"
   enabled: true
 
 - name: weekly-session-synthesis
   cron: "30 5 * * 1"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from tools.session_synthesis import synthesize; from pathlib import Path; r=synthesize(days_back=7,store=True); report=Path.home()/'.baw'/'reports'/'weekly_synthesis_report.txt'; report.parent.mkdir(exist_ok=True); report.write_text(r); print(r)\""
+  command: "Run weekly cross-session pattern synthesis. Scan the last 7 days of sessions and memory entries. Find topic clusters, emerging patterns, and insights. Store insights back to memory. Write a report to ~/.baw/reports/weekly_synthesis_report.txt. Report how many clusters and insights were found."
   description: "Mon 05:30 HKT — Weekly cross-session pattern synthesis"
   enabled: true
 
 - name: daily-self-report
   cron: "0 10 * * *"
-  command: "!python3 -c \"import sys; sys.path.insert(0,'/app'); from core.scheduler import Scheduler; from pathlib import Path; s=Scheduler(Path.home() / '.baw'); r=s.status_report()+chr(10)+s.cron_status_report(); report=Path.home()/'.baw'/'reports'/'daily_health_report.txt'; report.parent.mkdir(exist_ok=True); report.write_text(r); print(r)\""
+  command: "Generate a morning health report. Check the scheduler status and recent cron task history. Read any scheduled task failures. Write a report to ~/.baw/reports/daily_health_report.txt. Report a summary: how many tasks ok, how many failed, any critical issues."
   description: "10:00 HKT — Morning report: scheduled tasks + recent failures"
   enabled: true
