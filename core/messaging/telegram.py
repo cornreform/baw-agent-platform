@@ -776,19 +776,37 @@ class TelegramConnector(BaseConnector):
             _content_size = len(content)
             _content_pages = content.count("--- Page")  # rough page count
 
-            prompt = (
-                f"[File: {file_name}]\n"
-                f"[Type: {doc.get('mime_type', 'unknown')}]\n\n"
-                f"The full text of this document has been extracted and saved to:\n"
-                f"  {_extracted_path}\n"
-                f"  Size: {_content_size} chars, ~{_content_pages} pages\n\n"
-                f"Use `read_file` with offset/limit to read it in chunks (500 lines at a time).\n"
-                f"Use `search_files` with regex to find keywords across the document.\n"
-                f"Do NOT try to read the entire file at once — read and analyze section by section.\n\n"
-                f"Task: Analyze this file. Summarize its key content in Traditional Chinese. "
-                f"If it's a technical document, identify the main topics. "
-                f"Annotate key findings with page numbers from the extracted text."
-            )
+            # ── Extract caption text (sent together with document) ──
+            caption = (msg.get("caption", "") or "").strip()
+
+            if caption:
+                # User provided instruction — use it as primary task
+                prompt = (
+                    f"[File: {file_name}]\n"
+                    f"[Type: {doc.get('mime_type', 'unknown')}]\n\n"
+                    f"The full text of this document has been extracted and saved to:\n"
+                    f"  {_extracted_path}\n"
+                    f"  Size: {_content_size} chars, ~{_content_pages} pages\n\n"
+                    f"Use `read_file` with offset/limit to read it in chunks (500 lines at a time).\n"
+                    f"Use `search_files` with regex to find keywords across the document.\n"
+                    f"Do NOT try to read the entire file at once — read and analyze section by section.\n\n"
+                    f"User instruction: {caption}"
+                )
+            else:
+                # No caption — default to summarise
+                prompt = (
+                    f"[File: {file_name}]\n"
+                    f"[Type: {doc.get('mime_type', 'unknown')}]\n\n"
+                    f"The full text of this document has been extracted and saved to:\n"
+                    f"  {_extracted_path}\n"
+                    f"  Size: {_content_size} chars, ~{_content_pages} pages\n\n"
+                    f"Use `read_file` with offset/limit to read it in chunks (500 lines at a time).\n"
+                    f"Use `search_files` with regex to find keywords across the document.\n"
+                    f"Do NOT try to read the entire file at once — read and analyze section by section.\n\n"
+                    f"Task: Analyze this file. Summarize its key content in Traditional Chinese. "
+                    f"If it's a technical document, identify the main topics. "
+                    f"Annotate key findings with page numbers from the extracted text."
+                )
 
             self.send(chat_id, f"🤔 Analyzing **{file_name}** (~{_content_pages} pages)...", edit_msg_id=status_id)
             response = self._run_baw(prompt, chat_id=chat_id)
@@ -859,19 +877,25 @@ class TelegramConnector(BaseConnector):
                     vision_result = f"OCR: {content}"
                     provider_used = "OCR"
 
-            caption_section = f"\nUser caption: {caption}\n" if caption else ""
-
-            prompt = (
-                f"[Image analysis via {provider_used}]\n"
-                f"File: {file_name}\n\n"
-                f"Vision result:\n{vision_result}\n\n"
-                f"---\n"
-                f"Based on the vision analysis above, answer in Traditional Chinese:\n"
-                f"- What is shown in this image?\n"
-                f"- If it's a product: what is it, and where can I buy it?\n"
-                f"- If there are similar items: suggest alternatives."
-                f"{caption_section}"
-            )
+            if caption:
+                prompt = (
+                    f"[Image analysis via {provider_used}]\n"
+                    f"File: {file_name}\n\n"
+                    f"Vision result:\n{vision_result}\n\n"
+                    f"---\n"
+                    f"User instruction: {caption}"
+                )
+            else:
+                prompt = (
+                    f"[Image analysis via {provider_used}]\n"
+                    f"File: {file_name}\n\n"
+                    f"Vision result:\n{vision_result}\n\n"
+                    f"---\n"
+                    f"Based on the vision analysis above, answer in Traditional Chinese:\n"
+                    f"- What is shown in this image?\n"
+                    f"- If it's a product: what is it, and where can I buy it?\n"
+                    f"- If there are similar items: suggest alternatives."
+                )
 
             self.send(chat_id, "🤔 Analyzing with BAW...", edit_msg_id=status_id)
 
@@ -1422,7 +1446,7 @@ class TelegramConnector(BaseConnector):
         chat_id = str(msg["chat"]["id"])
         user_id = str(msg["from"]["id"])
         user_name = msg["from"].get("first_name", "User")
-        text = msg.get("text", "").strip()
+        text = (msg.get("text", "") or msg.get("caption", "") or "").strip()
 
         # ── Handle reply-to: prepend quoted message context
         reply = msg.get("reply_to_message")
@@ -1432,20 +1456,24 @@ class TelegramConnector(BaseConnector):
                 reply_from = reply.get("from", {}).get("first_name", "User")
                 text = f"> {reply_from}: {reply_text[:200]}\n\n{text}"
 
-        if not text:
-            # ── Non-text message — check media group FIRST ──
+        # ── Media message (document/photo/video/voice) — with or without caption ──
+        # Always route to media handler so the file gets processed.
+        # The caption text (if any) is passed as user instruction inside the handler.
+        doc = msg.get("document")
+        photo = msg.get("photo")
+        video = msg.get("video")
+        audio = msg.get("audio")
+        voice = msg.get("voice")
+        has_media = bool(doc or photo or video or audio or voice)
+
+        if has_media:
+            # ── Check media group FIRST ──
             media_group_id = msg.get("media_group_id")
             if media_group_id:
                 self._buffer_media_group(chat_id, media_group_id, msg)
                 return
 
-            # ── Single non-text message (no group) — queue if busy, else process ──
-            doc = msg.get("document")
-            photo = msg.get("photo")
-            video = msg.get("video")
-            audio = msg.get("audio")
-            voice = msg.get("voice")
-
+            # ── Single media message (no group) — queue if busy, else process ──
             if doc:
                 self._handle_media_msg(chat_id, user_id, user_name, msg, "document")
             elif photo:
@@ -1455,6 +1483,10 @@ class TelegramConnector(BaseConnector):
             elif audio or voice:
                 self._handle_media_msg(chat_id, user_id, user_name, msg, "voice")
             # else: silent ignore for unknown types
+            return
+
+        if not text:
+            # Truly empty message — silently ignore
             return
 
         # Access control
