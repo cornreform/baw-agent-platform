@@ -1,0 +1,257 @@
+# BAW Agent Platform Configuration
+# Linux + macOS compatible
+# Protocol-agnostic: switch models by changing one line
+
+model:
+  default: "deepseek-v4-flash"  # 最平，日常任務用
+  # Fallback used when primary fails (must be a DIFFERENT model).
+  fallback: "MiniMax-M3"        # 月費最強兜底
+
+  # ── Per-task model routing ──
+  # When delegate_task is called, the goal is matched against these rules.
+  # First match wins. If no match, falls back to executor.model.
+  task_rules:
+    - match: "search|product|購買|價錢|價格|price|shop|商店|查詢|research|find|lookup"
+      model: "step-3.7-flash"
+    - match: "code|debug|fix|bug|error|program|script|python|node|測試|修復"
+      model: "step-3.7-flash"
+    - match: "vision|image|photo|圖片|相片|screenshot|截圖"
+      model: "step-3.7-flash"
+    - match: "write|create|build|製作|建立|generate|生成|設計|design"
+      model: "step-3.7-flash"
+    - match: "fusion|fusion模式|fusion mode|用fusion|開fusion|開住fusion"
+      model: "openrouter/fusion"
+
+  # ── Cost-aware routing tiers ──
+  # Monthly subscription models — unlimited usage within 5hr/month quota
+  cost_tiers:
+    subscription:
+      - step-3.7-flash
+      - MiniMax-M2.5
+      - MiniMax-M2.7
+      - MiniMax-M3
+    # Pay-per-use — credits consumed per token
+    pay_per_use:
+      - deepseek-v4-flash
+      - deepseek-v4-pro
+      - openrouter/anthropic/claude-opus-4.8
+      - openrouter/anthropic/claude-sonnet-4.6
+      - openrouter/openai/gpt-5.5-pro
+      - openrouter/qwen/qwen3.7-plus
+    # DPO order — cheapest effective model first
+    preferential:
+      - step-3.7-flash
+      - MiniMax-M2.5
+      - MiniMax-M2.7
+      - MiniMax-M3
+      - deepseek-v4-flash
+
+# ── Executor config ──
+executor:
+  model: "step-3.7-flash"
+
+capabilities:
+  vision:
+    model: "MiniMax-M3"
+  chat:
+    model: "step-3.7-flash"
+  image_generation:
+    model: "step-image-edit-2"
+  stt:
+    method: stepfun-asr
+    model: stepaudio-2.5-asr
+    base_url: https://api.stepfun.ai/step_plan/v1
+    api_key_env: STEPFUN_API_KEY
+  tts:
+    model: "stepaudio-2.5-tts"
+  browser:
+    # Browser internal LLM — used for the in-browser page-understanding /
+    # summarization / form-fill reasoning loop, not the chat surface.
+    model: "step-3.7-flash"
+  delegate_task:
+    # Sub-agent delegation LLM — picks the model per task_rules above,
+    # but the default fallback (and the meta-planner that *chooses* the
+    # sub-agent) runs on step-3.7-flash.
+    model: "step-3.7-flash"
+  web_extract:
+    model: "step-3.7-flash"
+  web_browser:
+    model: "step-3.7-flash"
+
+providers:
+  # ── OpenAI-compatible (default protocol: openai-chat) ──────────
+  # Works with: DeepSeek, MiniMax, Groq, Together, OpenRouter, etc.
+  deepseek:
+    base_url: "https://api.deepseek.com/v1"
+    api_key_env: "DEEPSEEK_API_KEY"
+    models:
+      - id: "deepseek-v4-flash"
+        context_window: 65536
+        vision: false
+        cost_per_1m_input: 0.30
+        cost_per_1m_output: 1.20
+      - id: "deepseek-reasoner"
+        context_window: 65536
+        vision: false
+        cost_per_1m_input: 0.55
+        cost_per_1m_output: 2.19
+
+  minimax:
+    base_url: "https://api.minimax.io/v1"
+    api_key_env: "MINIMAX_API_KEY"
+    models:
+      - id: "MiniMax-M3"
+        context_window: 1048576
+        vision: true
+        capabilities: ["chat", "vision", "tts", "image_generation"]
+        cost_per_1m_input: 2.00
+        cost_per_1m_output: 8.00
+      - id: "MiniMax-M2.5"
+        context_window: 1048576
+        vision: false
+        cost_per_1m_input: 0.50
+        cost_per_1m_output: 2.00
+
+  # ── Moonshot (Kimi) — OpenAI-compatible ────────────────────────
+  moonshot:
+    base_url: "https://api.moonshot.ai/v1"
+    api_key_env: "MOONSHOT_API_KEY"
+    models:
+      - id: "kimi-k2.6"
+        context_window: 262144
+        vision: true
+        cost_per_1m_input: 1.00
+        cost_per_1m_output: 3.00
+
+  # ── Stepfun — OpenAI-compatible ────────────────────────────────
+  stepfun:
+    base_url: "https://api.stepfun.ai/step_plan/v1"
+    api_key_env: "STEPFUN_API_KEY"
+    models:
+      - id: "step-3.7-flash"
+        context_window: 262144
+        vision: true
+        cost_per_1m_input: 0.50
+        cost_per_1m_output: 2.00
+
+  # ── OpenRouter — multi-model routing ──────────────────────────
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    models:
+      - id: "openrouter/fusion"
+        context_window: 128000
+        vision: false
+        capabilities: ["chat"]
+        cost_per_1m_input: 0.50
+        cost_per_1m_output: 1.50
+      - id: "openrouter/auto"
+        context_window: 128000
+        vision: false
+        capabilities: ["chat"]
+        cost_per_1m_input: 0.10
+        cost_per_1m_output: 0.30
+
+  # ── Anthropic protocol ─────────────────────────────────────────
+  # All Claude models via anthropic.com
+  # anthropic:
+  #   base_url: "https://api.anthropic.com/v1"
+  #   api_key_env: "ANTHROPIC_API_KEY"
+  #   protocol: anthropic
+  #   models:
+  #     - id: "claude-sonnet-4-20250514"
+  #       context_window: 200000
+  #       vision: true
+  #       cost_per_1m_input: 3.00
+  #       cost_per_1m_output: 15.00
+
+  # ── Google protocol ────────────────────────────────────────────
+  # All Gemini models via Google AI Studio
+  # google:
+  #   base_url: "https://generativelanguage.googleapis.com/v1beta"
+  #   api_key_env: "GEMINI_API_KEY"
+  #   protocol: google
+  #   models:
+  #     - id: "gemini-2.5-pro"
+  #       context_window: 1048576
+  #       vision: true
+  #       cost_per_1m_input: 1.25
+  #       cost_per_1m_output: 5.00
+
+  # ── Custom protocols ──────────────────────────────────────────
+  # Any provider can be added with register_protocol("name", handler_fn).
+  # See core/llm.py for examples.
+
+permissions:
+  risk_levels:
+    high:
+      - path: "/etc/*"
+      - path: "/usr/*"
+      - path: "/boot/*"
+      - path: "*.pem"
+      - path: "*.key"
+      - path: ".env"
+      - cmd_prefix: "rm -rf"
+      - cmd_prefix: "sudo"
+      - cmd_prefix: "dd if="
+    medium:
+      - tool: "write_file"
+      - tool: "bash"
+    low:
+      - tool: "read_file"
+      - tool: "web_search"
+
+tone:
+  default: "casual"
+  profiles:
+    casual:
+      description: "日常同 the user 吹水 — 粵語口語、短句、emoji OK"
+    business:
+      description: "客戶文件 — 合作邀約 tone、唔出個人名、冇 deadline 壓力"
+    client-doc:
+      description: "Client facing 文件 — 零 comment、零 meta、直接出 artifact"
+    teaching:
+      description: "教學文件 — 直接俾 .md、唔問要唔要 extra format"
+    ot-rt:
+      description: "快速執行 — 做完先報、唔逐 step confirm"
+    stepwise:
+      description: "逐步執行 — 每步報 result、等 confirm 先繼續"
+
+fact_check:
+  mode: "normal"
+
+adversarial:
+  enabled: true
+  # angel_model: "kimi-k2.6"    # Optional: override Angel's model (default: model.default)
+  # devil_model: "kimi-k2.6"    # Optional: override Devil's model (default: model.default)
+  flag_threshold: 0
+  warn_threshold: 2
+
+# ━━ Tribunal (Multi-Model Consensus) ━━
+# Optional — if omitted, Tribunal auto-detects from available models.
+tribunal:
+  # The judge that synthesises the final verdict
+  chief:
+    name: "step-3.7-flash"
+    provider: "stepfun"
+
+  # The panel of judges that evaluate independently
+  bench:
+    - name: "step-3.7-flash"
+      provider: "stepfun"
+      role: "analyst"
+    - name: "kimi-k2.6"
+      provider: "moonshot"
+      role: "creative"
+    # Add more judges as needed:
+    # - name: "claude-sonnet-4"
+    #   provider: "anthropic"
+    #   role: "cautious"
+
+# ━━ Connectors ━━
+# Platform connectors — tokens loaded from env vars (.env)
+display:
+  language: zh  # Language for progress messages etc. (zh = Traditional Chinese)
+telegram:
+  token: ""           # Loaded from TELEGRAM_BOT_TOKEN or BAW_TELEGRAM_TOKEN env var
+  allowed_users: [YOUR_TELEGRAM_ID]  # the user only
