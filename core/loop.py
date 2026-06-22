@@ -45,16 +45,17 @@ OUTPUT_MAX_TOKENS = 100_000  # Effectively unlimited; prevents infinite loops
 OUTPUT_MAX_CHARS = 1_000_000  # Effectively unlimited; safety bound only
 
 # ── Per-mode max tokens (input-side budget for LLM generation) ──
-# Quick mode: rapid research, short answers → 4096 default
-# Hybrid mode: moderate reasoning → 8192
-# Tight mode: deep analysis → 16384
-# Auto: let LLM decide (5120 — comfortable middle ground)
+# Quick mode: rapid research → 8192
+# Hybrid mode: moderate reasoning → 16384
+# Tight mode: deep analysis → 32768
+# Auto: let LLM decide (12288)
+# Focus: intensive tool-driven research → 32768
 MODE_MAX_TOKENS = {
-    "quick": 4096,
-    "hybrid": 8192,
-    "tight": 16384,
-    "auto": 5120,
-    "focus": 16384,
+    "quick": 8192,
+    "hybrid": 16384,
+    "tight": 32768,
+    "auto": 12288,
+    "focus": 32768,
 }
 
 # ── Lightweight performance profiler ──
@@ -96,13 +97,13 @@ def _human_tokens(n: int) -> str:
 
 
 # ── Constants ──────────────────────────────────────────────────
-MAX_TOOL_TURNS = 25      # base — overridden dynamically by task complexity below
+MAX_TOOL_TURNS = 50      # base — overridden dynamically by task complexity below
 
 # ── Tool cap scaling by task complexity ──
 _TOOL_TURNS_BY_COMPLEXITY = {
     "simple":   50,
-    "moderate": 75,
-    "complex":  100,
+    "moderate": 100,
+    "complex":  150,
 }
 
 MAX_QUICK_TOOL_TURNS = 5  # stricter cap for quick mode
@@ -1704,7 +1705,7 @@ def run_agent(
     _complexity = estimate_task_complexity(prompt, mode=_mode)
     # ── Scale tool cap by task complexity ──
     _base_turns = _TOOL_TURNS_BY_COMPLEXITY.get(_complexity, MAX_TOOL_TURNS)
-    if max_tool_turns == 25 and _base_turns > 25:  # only override default (25)
+    if max_tool_turns == MAX_TOOL_TURNS and _base_turns > MAX_TOOL_TURNS:  # only override default
         max_tool_turns = _base_turns
         logger.info(f"[loop] Tool cap scaled to {max_tool_turns} ({_complexity} task)")
     if _skip_court:
