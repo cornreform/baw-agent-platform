@@ -286,13 +286,41 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: st
                     final_content = f"[TIMEOUT] Sub-agent exceeded {OVERALL_TIMEOUT}s overall limit. Partial result: {final_content[:200]}"
                     break
                 try:
-                    fb = call_llm_with_fallback(
-                        config,
-                        ctx.to_openai_messages(),
-                        tools=openai_tools,
-                        temperature=0.5,
-                    )
-                except (RuntimeError, ValueError, ConnectionError, TimeoutError) as _llm_err:
+                    # P1-5 (Opus 4.8 audit): handle "Shutdown in progress" as transient.
+                    # The sub-agent runs inside the parent process but the parent is
+                    # NOT actually shutting down — a race condition or leftover signal
+                    # handler from a previous iteration set _shutdown_requested.
+                    # Clear it and retry once.
+                    from core.llm import is_shutdown_requested
+                    _shutdown_retries = 0
+                    _re_msg = ""  # for finally block reference
+                    while _shutdown_retries < 2:
+                        try:
+                            fb = call_llm_with_fallback(
+                                config,
+                                ctx.to_openai_messages(),
+                                tools=openai_tools,
+                                temperature=0.5,
+                            )
+                            break  # success
+                        except RuntimeError as _re:
+                            _re_msg = str(_re)
+                            if "Shutdown" in _re_msg and is_shutdown_requested():
+                                # Likely a false positive — parent is still running
+                                import logging as _lg
+                                _lg.getLogger(__name__).warning(
+                                    f"[delegate_task] Shutdown flag detected — clearing and retrying "
+                                    f"(attempt {_shutdown_retries + 1}/2)"
+                                )
+                                # Clear the global flag
+                                import core.llm as _llm_mod
+                                _llm_mod._shutdown_requested = False
+                                _shutdown_retries += 1
+                                continue
+                            raise  # Real error, don't swallow
+                    else:
+                        raise RuntimeError(f"Sub-agent LLM call failed after shutdown retries: {_re_msg}")
+                except (ValueError, ConnectionError, TimeoutError) as _llm_err:
                     _last_error = str(_llm_err)
                     raise  # Re-raise to trigger model retry
 
