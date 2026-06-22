@@ -691,7 +691,7 @@ baw --setup          # → Guided setup wizard</pre>
   <tr>
     <td><a href="https://github.com/Panniantong/Agent-Reach">🕵️ Agent Reach</a></td>
     <td><a href="https://github.com/Panniantong">Neo Reid (Panniantong)</a></td>
-    <td>本地 HTML→Markdown 提取（用 html2text 取代咗佢嘅 Jina Reader 方案）、RSS feed 閱讀、platform health doctor 概念。Agent Reach 嘅「每個 platform 有 preferred + fallback backend」routing 理念啟發咗我哋嘅 web_extract 多層 fallback 設計。37K ⭐ 實至名歸。</td>
+    <td>本地 HTML→Markdown 提取理念、RSS feed 閱讀、platform health doctor 概念。Agent Reach 嘅「每個 platform 有 preferred + fallback backend」routing 理念啟發咗我哋嘅 web_extract 多層 fallback 設計。37K ⭐ 實至名歸。</td>
   </tr>
   <tr>
     <td><a href="https://jina.ai/reader/">📖 Jina AI Reader</a></td>
@@ -702,6 +702,73 @@ baw --setup          # → Guided setup wizard</pre>
     <td><a href="https://clay.com/">🏢 Clay</a></td>
     <td><a href="https://clay.com/">Clay</a></td>
     <td>Waterfall Enrichment pattern（multi-provider lookup with circuit-breaker）啟發咗我哋嘅多源數據檢索思路。雖然我哋嘅實作最終用 delegate_task + web_extract 取代咗專用 enrichment engine，但 Clay 嘅架構理念（sequential provider fallback、circuit-breaker pattern）係重要嘅參考。</td>
+  </tr>
+</table>
+
+<h3>🧰 Core Libraries & Tools / 核心函式庫</h3>
+
+<p>以下開源函式庫係 BAW 核心功能嘅技術基礎，唔係設計靈感，但冇咗佢哋 BAW 就唔會 work：</p>
+
+<table>
+  <tr>
+    <th>Library / 函式庫</th>
+    <th>Author / 作者</th>
+    <th>功能 / 用途</th>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/Alir3z4/html2text">html2text</a></td>
+    <td>Alir3z4 (based on Aaron Swartz's original)</td>
+    <td>本地 HTML→Markdown 轉換引擎 — web_extract tool 嘅核心</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/kurtmckee/feedparser">feedparser</a></td>
+    <td>Kurt McKee</td>
+    <td>RSS/Atom feed 解析 — rss_feed tool 嘅基礎</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/SYSTRAN/faster-whisper">faster-whisper</a></td>
+    <td>Guillaume Klein / SYSTRAN</td>
+    <td>本地語音識別引擎（CTranslate2-based Whisper）— 本地 STT，毋須外部 API</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/rany2/edge-tts">edge-tts</a></td>
+    <td>rany2</td>
+    <td>本地免費 TTS（Microsoft Edge TTS 封裝）— BAW 預設 TTS provider，支援粵語</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/Textualize/textual">Textual</a></td>
+    <td>Will McGugan / Textualize</td>
+    <td>TUI 框架 — powers baw --board dashboard 同 baw --tui-chat 互動界面</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/Textualize/rich">Rich</a></td>
+    <td>Will McGugan / Textualize</td>
+    <td>Terminal 格式化 — powers 所有 CLI table/panel/syntax highlight 輸出</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/modelcontextprotocol/python-sdk">MCP Python SDK</a></td>
+    <td>Anthropic</td>
+    <td>Model Context Protocol SDK — BAW 連接 MCP server 做 tool discovery</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/fastapi/fastapi">FastAPI</a></td>
+    <td>Sebastián Ramírez (tiangolo)</td>
+    <td>Web framework — Telegram webhook mode 嘅 async transport layer</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/encode/uvicorn">Uvicorn</a></td>
+    <td>Encode / Tom Christie</td>
+    <td>ASGI server — 執行 FastAPI webhook server</td>
+  </tr>
+  <tr>
+    <td><a href="https://www.openstreetmap.org/">🗺️ OpenStreetMap / Overpass API</a></td>
+    <td>OpenStreetMap Foundation</td>
+    <td>免費地理數據源 — BAW 嘅 geospatial query 同 location/restaurant search 基礎</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/AsamK/signal-cli">signal-cli</a></td>
+    <td>AsamK</td>
+    <td>Signal 通訊 CLI — BAW 嘅 Signal messaging platform 整合依賴</td>
   </tr>
 </table>
 
