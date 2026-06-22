@@ -43,11 +43,11 @@ services:
           memory: 256M
     # ── Healthcheck ──
     healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep -v grep | grep -q 'python3.*baw-bot' || exit 1"]
+      test: ["CMD-SHELL", "cat /proc/1/cmdline 2>/dev/null | tr '\\0' ' ' | grep -q python3 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 35s
     logging:
       driver: "json-file"
       options:
