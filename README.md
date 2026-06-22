@@ -13,6 +13,8 @@
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
   <img src="https://img.shields.io/badge/voice-STT-brightgreen" alt="Voice STT Support">
+  <img src="https://img.shields.io/github/stars/cornreform/baw-agent-platform?style=flat&label=stars" alt="GitHub stars">
+  <img src="https://img.shields.io/github/last-commit/cornreform/baw-agent-platform?style=flat&label=updated" alt="last commit">
 </p>
 
 <h1 align="center">⚫ BAW — Black And White ⚪</h1>
@@ -57,6 +59,8 @@ cd ~/baw && docker compose up -d
 
 <p><strong>BAW (Black And White)</strong> is an agent platform built entirely from scratch — no LangChain, no AutoGPT, no vendor framework. Named after two dogs (black & white), it embodies the core philosophy of <strong>🤍 Angel (executor)</strong> vs <strong>🖤 Devil (opposition)</strong> courtroom-style adversarial debate.</p>
 
+<p>We built BAW for our own use — an AI agent platform that combines multi-model LLM orchestration with a built-in adversarial court system that reviews every action before execution. Every model call, tool invocation, and file write runs through an Angel/Devil debate before anything happens. It is not a framework wrapper; it is an autonomous LLM agent platform built from scratch, designed to run independently without vendor lock-in or external dependencies. If that sounds useful to you, you are welcome to use it too.</p>
+
 <h3>🚀 Quick Start</h3>
 
 <pre>
@@ -84,6 +88,29 @@ baw                    # Interactive Chat mode
 Run <code>baw --setup</code> — it walks through Telegram token, default model, API keys, auto-configures providers + STT + TTS + vision.<br>
 <strong>Plan selection:</strong> setup asks about your plan type (standard / step-plan / code-plan / etc.) — never hardcodes endpoints.
 </blockquote>
+
+<h3>💻 CLI Demo</h3>
+
+<pre>
+$ baw --version
+BAW (Black And White) Agent Platform v1.14.0
+Commit: 26025dc (v1.14.0-1-g26025dc)
+Home: /app
+Architecture: self-improving loop with Angel/Devil adversarial court
+
+$ baw --help
+🖤  BAW CLI — Black And White Agent Platform
+
+  All commands run inside the Docker container (baw-telegram).
+  Pass --help to see full command reference.
+
+  Quick start:
+    baw              # Interactive chat
+    baw tui-chat     # Full-screen TUI chat
+    baw dashboard    # Live dashboard
+    baw status       # Health overview
+    baw --help       # Full command reference (inside container)
+</pre>
 
 <h3>🔧 Prerequisites</h3>
 
