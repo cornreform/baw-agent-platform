@@ -300,6 +300,173 @@ All notable changes to BAW (Black And White) Agent Platform.
 - Inline executor anti-fake output validation.
 - Subprocess repr added to fake markers.
 
+## v1.14.0 — 2026-06-22 (Raise autonomy limits: tool cap, mode tokens, scaling guard)
+
+### ⚙️ Autonomy Limits Raised
+
+- **MAX_TOOL_TURNS 25→50** — base tool loop cap doubled, giving BAW more room for complex multi-step workflows
+- **Complexity scaling**: moderate 75→100, complex 100→150 — scaling multipliers adjusted proportionally
+- **Scaling guard fix**: was hardcoded to `25` — now uses `MAX_TOOL_TURNS` constant, so scaling works correctly for any base value
+- **bawrun.py hardcoded 15→50** — the runner was bypassing all complexity scaling with its own 15-turn limit; now respects the system-wide cap
+- **Mode max tokens doubled**: quick 4096→8192, hybrid 8192→16384, tight 16384→32768, auto 5120→12288, focus 16384→32768 — ensures complex outputs aren't truncated mid-synthesis
+
+---
+
+## v1.13.0 — 2026-06-22 (Full system audit fixes: slash commands, CLI, installer)
+
+### 🔧 Slash Command Hardening
+
+- **/fresh handler** added to `route()` — was registered in help text and menu but dead, silently falling through to generic dispatch
+- **/v alias removed** from validate (conflicted with /version)
+- **/task bare usage** — added missing handler for task without arguments (was falling through to _dispatch)
+- **/models now accurate** — shows auxiliary model roles as documented, not just model names
+
+### 📦 Installer + Version Sync
+
+- **install.sh version sync**: v1.1.0 → v1.12.1 (was 12 versions out of date)
+- **baw standalone script version sync**: 0.22.0 → 1.12.1 (was 18 versions out of date)
+- **`__version__`** added to `core/__init__.py` as single source of truth
+
+### 🐧 Systemd Service Fixes
+
+- **baw.service**: now uses native systemd specifiers `%h`/`%u` — no more fragile `sed` substitution at install time
+- **baw-docker.service**: same `%h`/`%u` fix, removed hardcoded `YOUR_USERNAME` placeholder
+- **install.sh**: auto-detects Docker GID for `docker-compose.yml` — no more GID mismatch errors
+- **install.sh**: removed obsolete `%HOME%`/`%USER%` sed substitution that broke on some distros
+- **docker-compose.yml**: GID documented with `getent group docker` command in comment
+- **install.sh**: auto-fixes Docker GID mismatch during install
+
+---
+
+## v1.12.1 — 2026-06-22 (Fix: POST-TURN VERIFICATION false positives + broken unicode filters)
+
+### 🐞 Bug Fixes
+
+Three fixes in `_verify_post_turn_claims` Pattern 2 (config claim detection):
+
+1. **Code reference exclusion** — tokens containing `=` (e.g. `fresh_start=True`), starting with backtick or `/`, or containing `.py` are now skipped. Prevents code documentation and command examples from being flagged as config claims.
+
+2. **Broken Chinese-only filter** — was using raw-string double-backslash `r'^[\\u4e00-\\u9fff]+$'` which matched literal `\\u4e00` characters, NOT actual Chinese Unicode. Changed to `'^[\u4e00-\u9fff]+$'` — now correctly detects Chinese text.
+
+3. **Broken punctuation filter** — was checking for literal text `'\\u3001'` instead of the actual Unicode character `'、'`. Same fix applied for `'\\uff0c'` (→ `'，'`) and `'\\u3002'` (→ `'。'`).
+
+---
+
+## v1.12.0 — 2026-06-22 (Fix: English reasoning leakage + court verdict footer stub)
+
+### 🐞 Bug Fixes
+
+**1. English reasoning leakage** — system prompt contained a loophole: "reasoning chain can be in English". Removed this permission entirely. Reasoning MUST be in Cantonese/Traditional Chinese at all stages. Added explicit "First word = first word user sees" clarity. The English permission loophole is now closed at the system prompt level.
+
+**2. Court verdict footer stub** — footer implementation at line 2481-2482 was:
+```python
+if _has_real_content: pass
+```
+The `pass` meant the verdict footer was never appended. Now appends:
+```
+⚖️ 法庭 {scores} | {agreement} | {gap}
+```
+Both fixes address user report of missing footer info and visible English reasoning in BAW output.
+
+---
+
+## v1.11.0 — 2026-06-22 (Phase 13: Documentation)
+
+### 📚 Documentation
+
+- **ARCHITECTURE.md** — comprehensive architecture document covering the Black & White Court philosophy (黑白法庭哲學), four-tier adjudication system, and architectural differences from Hermes/OpenClaw
+- **DEVGUIDE.md** — development guide with coding conventions (開發守則), project structure map (專案結構), debugging guide (調試指南), and FAQ (常見問題)
+
+### 🧪 Tests
+
+- 27 tests all passing (court system, delivery log, evolve pipeline)
+- Coverage maintained across all test suites
+
+---
+
+## v1.10.0 — 2026-06-22 (Phase 11-12: Error Recovery + Testing)
+
+### 🛡️ Phase 11 — Error Recovery Hardening
+
+- **Search timeout tightened**: `rg` (ripgrep) timeout reduced from 30s to 15s; Python fallback now also times out at 15s and skips files over 10MB
+- **rg I/O error resilience**: partial results returned on I/O errors instead of hard failure — BAW can work with incomplete data
+- **Synthesis enforcement**: when sending a MEDIA file (image/audio/video), BAW must also include a text description — no more silent file-only sends
+- **Output synthesis**: ensures all file sends are accompanied by human-readable explanations of what was sent and why
+
+### 🧪 Phase 12 — Test Coverage Expansion
+
+- **27 new tests**:
+  - Court system: 18 tests covering tier routing, verdict generation, score tracking
+  - Delivery log: 5 tests for delivery confirmation, persistence, and recovery
+  - Evolve pipeline: 4 tests for pattern analysis, lesson learning, and auto-patching
+- **Test isolation fix**: replaced global `_LOG_FILE` with `_log_path()` method for file-scoped test isolation
+- All 27 tests passing
+
+---
+
+## v1.9.0 — 2026-06-22 (Phase 9-10: Court System Hardening + Self-Evolution)
+
+### 🏛️ Phase 9 — Court System Hardening
+
+- **TIER_0 fast lane** now supports tool execution (was LLM-only) — simple questions can produce richer responses with live tool data
+- **TIER_3 Supreme Court**: multi-model appellate review process — when lower tiers disagree, a panel of models deliberates and produces a unified appellate verdict
+- **Court default on**: court is now enabled by default for hybrid/tight modes (was opt-in) — no more silent bypasses
+- **New CLI subcommands**: `/court recent` (last N rulings) and `/court detail <id>` (full ruling with scores)
+- **Court telemetry**: score drift detection — tracks if judge scores are trending up/down over time for model quality monitoring
+
+### 🧬 Phase 10 — Self-Evolution Integration
+
+- **`_analyze_court_scores()`**: detects retry rate drift and appeal rate drift — flags when court performance is degrading
+- **Court score analysis** integrated into weekly evolution pipeline — court outcomes now feed into BAW's self-improvement cycle
+- **Learned lessons summary restored** — evolution reports now include what was learned from court pattern analysis
+- **Auto-learn from court patterns**: tier selection becomes smarter over time based on which tiers/tools produced the best outcomes
+
+---
+
+## v1.8.0 — 2026-06-22 (Phase 6-8: Monitoring & Reliability + Production Readiness + Performance)
+
+### 📊 Phase 6 — Monitoring & Reliability
+
+- **Delivery confirmation log** (`core/delivery_log.py`): tracks every message BAW sends — message ID, timestamp, platform, content hash, delivery status. Provides audit trail for "did BAW actually send that?"
+- **execute_tool pool shutdown cleanup**: proper `finally` block ensures thread pool is always cleaned up, preventing zombie threads on error paths
+- **Health endpoint improvement**: added uptime, active task count, and delivery stats to the health check response — richer diagnostics for `/doctor` and monitoring tools
+
+### 🚀 Phase 7 — Production Readiness
+
+- **Graceful restart with drain**: SIGTERM/SIGINT/SIGHUP handling — BAW finishes in-flight tasks before shutting down. No more mid-conversation kills.
+- **Webhook deployment guide** (`DEPLOYMENT.md`): step-by-step guide for deploying BAW behind a reverse proxy with webhook endpoints
+- **Docker healthcheck improvement**: health endpoint now checks real application state (not just "process is running") — orchestrator can detect stuck/infinite-loop states
+
+### ⚡ Phase 8 — Performance Tuning
+
+- **Session compression**: keep count increased 4→8 messages per compression cycle — fewer compression events, smoother conversation flow
+- **Per-mode max_tokens tuning**: quick=4K, hybrid=8K, tight=16K, focus=16K — mode-appropriate output budgets prevent both truncation and waste
+- **Lightweight performance profiler**: `perf_start()`/`perf_end()` markers — BAW can self-measure how long individual steps take without external tooling
+
+### 🔧 Notable Fixes Leading to v1.8.0
+
+- **Thread safety**: `_session_lock` prevents dict corruption on concurrent access (v1.7.2)
+- **Telegram poll loop crash-proof**: httpx thread safety, offset persistence, auto-restart on crash (v1.7.3)
+- **Vision session injection**: inject analysis result before `_run_baw`, strip old photo entries so BAW sees current photo (v1.7.4)
+- **Photo+caption handling**: Telegram caption text no longer silently dropped (v1.7.5)
+- **ThreadPoolExecutor shutdown fix**: `wait=False` prevents stuck tasks from blocking process exit (v1.7.6)
+- **Output format enforcement**: `_strip_narration` output filter removes AI narrative framing from user-facing output
+- **Synthesis guard**: empty output now triggers text-only retry instead of silent fallback
+- **Tool turn caps**: dynamic tool cap based on complexity — simple=50, moderate=75, complex=100
+- **Token optimization**: CostTracker reset bug fixed, context compaction improvements, model list summary trimming
+- **Config drift auto-fix**: system-defined overrides always win, user config changes blocked without permission
+- **Cantonese routing**: router scoring recognizes 第一/第二/第三 multi-step patterns and deep keywords (睇/config/system)
+
+### 🧪 Test Coverage
+
+- 157 tests (grown from 15 at v0.22.0)
+- Memory curator: classification accuracy, conflict detection, noise gate
+- Context compaction: threshold trigger, summary quality, no-false-trigger
+- Memory search by ID: full ID, partial suffix, content backwards compatibility
+- 15/15 verification tests passing
+
+---
+
 ## Earlier versions
 
 See git history for v0.17.x and below.

@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.21.0-blueviolet" alt="v1.1.0">
+  <img src="https://img.shields.io/badge/version-1.14.0-blueviolet" alt="v1.14.0">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -26,58 +26,15 @@
 
 ## 🔄 完全獨立 (Full Independence)
 
-BAW v1.1.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
+BAW v1.14.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
 
 | Phase | 能力 | Tools |
 |-------|------|-------|
-| 1 — Code Management | Git commit → push → Docker build → restart | usage: git [-v | --version] [-h | --help] [-C <path>] [-c <name>=<value>]
-           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
-           [-p | --paginate | -P | --no-pager] [--no-replace-objects] [--bare]
-           [--git-dir=<path>] [--work-tree=<path>] [--namespace=<name>]
-           [--config-env=<name>=<envvar>] <command> [<args>]
-
-These are common Git commands used in various situations:
-
-start a working area (see also: git help tutorial)
-   clone     Clone a repository into a new directory
-   init      Create an empty Git repository or reinitialize an existing one
-
-work on the current change (see also: git help everyday)
-   add       Add file contents to the index
-   mv        Move or rename a file, a directory, or a symlink
-   restore   Restore working tree files
-   rm        Remove files from the working tree and from the index
-
-examine the history and state (see also: git help revisions)
-   bisect    Use binary search to find the commit that introduced a bug
-   diff      Show changes between commits, commit and working tree, etc
-   grep      Print lines matching a pattern
-   log       Show commit logs
-   show      Show various types of objects
-   status    Show the working tree status
-
-grow, mark and tweak your common history
-   branch    List, create, or delete branches
-   commit    Record changes to the repository
-   merge     Join two or more development histories together
-   rebase    Reapply commits on top of another base tip
-   reset     Reset current HEAD to the specified state
-   switch    Switch branches
-   tag       Create, list, delete or verify a tag object signed with GPG
-
-collaborate (see also: git help workflows)
-   fetch     Download objects and refs from another repository
-   pull      Fetch from and integrate with another repository or a local branch
-   push      Update remote refs along with associated objects
-
-'git help -a' and 'git help -g' list available subcommands and some
-concept guides. See 'git help <command>' or 'git help <concept>'
-to read about a specific subcommand or concept.
-See 'git help git' for an overview of the system.,  |
-| 2 — Self Operation | System health, diagnostics, resource auto-cleanup | , ,  |
-| 3 — Self Knowledge | 知道自己有咩能力、architecture | , SOUL.md architecture |
-| 4 — Self Extension | 用 LLM 生成新 tools → register → smoke test |  |
-| 5 — Self Hosting | 搬去任何 Linux 機、bootstrap script |  |
+| 1 — Code Management | Git commit/push/build/restart via self-evolution | self-evolve pipeline |
+| 2 — Self Operation | System health, diagnostics, cron scheduler, auto-cleanup | `--doctor`, cron jobs |
+| 3 — Self Knowledge | SOUL.md, ARCHITECTURE.md, capability discovery | `--capabilities`, `--learn-skill` |
+| 4 — Self Extension | LLM-generated tools, auto-register, smoke test | `--learn-skill`, tool registry |
+| 5 — Self Hosting | install.sh bootstrap on any Linux, Docker deployment | install.sh, Docker Compose |
 
 ### One-command install
 ```bash
@@ -686,28 +643,34 @@ baw --setup          # → Guided setup wizard</pre>
 
 <h2>📝 Changelog</h2>
 
-<h3>v0.20.2 — 2026-06-14</h3>
+<h3>v1.14.0 — Latest</h3>
 <ul>
-  <li><strong>新功能</strong>: Tribunal 共識引擎 — 多模型法庭判決</li>
-  <li><strong>新功能</strong>: 現實驗證器 — 零 mock，真實 API + 檔案驗證</li>
-  <li><strong>新功能</strong>: Telegram 測試套件 — /test /validate /tribunal 指令</li>
-  <li><strong>改進</strong>: CLI 安裝流程全面重寫 — 自動裝 uv、Python、加 PATH、即時驗證</li>
-  <li><strong>改進</strong>: Setup 精靈重寫 — API key 即時測試、Plan 說明、每個設定有上下文</li>
+  <li>Full Independence milestone — 5-phase zero-dependency architecture</li>
+  <li>Self-Hosting: install.sh bootstrap on any Linux + Docker deployment</li>
+  <li>Self-Extension: LLM-generated tools with auto-register + smoke test</li>
+  <li>Self-Knowledge: SOUL.md, ARCHITECTURE.md, capability discovery</li>
+  <li>Self-Operation: system health, cron scheduler, auto-cleanup daemon</li>
+  <li>Code Management: self-evolution git commit/push/build/restart loop</li>
 </ul>
 
-<h3>v0.14.0 — 2026-06-13 (穩定版本)</h3>
+<h3>v1.12.0</h3>
 <ul>
-  <li><strong>新功能</strong>: Direct Execution Shortcuts — 常用指令繞過 LLM 直接執行（記憶儲存/搜尋、檔案讀寫）</li>
-  <li><strong>新功能</strong>: Hallucination Guard — 检測並阻止 LLM 假裝執行、空頭支票</li>
-  <li><strong>Bug 修復</strong>: Memory tool 現在正確註冊到 tool registry（之前完全缺失，導致記憶功能無法使用）</li>
-  <li><strong>Bug 修復</strong>: KeyError 'id' 在 capabilities.py / llm.py（使用 .get() 避免 crash）</li>
-  <li><strong>Bug 修復</strong>: Chat Bypass 誤判短指令（Direct Shortcuts 現在跑在 bypass 之前）</li>
-  <li><strong>改進</strong>: Inline executor 現在包含 memory / todo / read_file / write_file / bash 工具</li>
-  <li><strong>改進</strong>: META-RULE 加強 — 禁止 "I will" / "Let me" 等 planning text</li>
-  <li><strong>測試</strong>: V6 對話測試 9/9 Pass (100%)</li>
+  <li>Anti-Stuck mechanism — route replan on execution deadlock</li>
+  <li>Route Plan Engine — step-by-step plan with rollback support</li>
+  <li>Telegram bot deep integration with async message queue</li>
 </ul>
 
-<h3>v0.5.x — Earlier</h3>
+<h3>v1.10.0</h3>
 <ul>
-  <li>BAW 初始版本 — Agent Platform 核心框架</li>
+  <li>Angel/Devil Dual-Soul Court — multi-model adversarial debate</li>
+  <li>Tribunal consensus engine — multi-model court judgment</li>
+  <li>Real-world validator — zero mock, real API + file validation</li>
+  <li>Hallucination Guard — detect &amp; block fake execution promises</li>
+</ul>
+
+<h3>v1.8.0</h3>
+<ul>
+  <li>Direct Execution Shortcuts — bypass LLM for common commands</li>
+  <li>Setup wizard rewrite — API key live test, plan auto-detect</li>
+  <li>CLI install flow overhaul — auto uv, Python, PATH setup</li>
 </ul>
