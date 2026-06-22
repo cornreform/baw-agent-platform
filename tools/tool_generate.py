@@ -76,10 +76,27 @@ Requirements:
 - name="{name}", description="{description}"
 - What it does: {what_it_does}
 - Use json.dumps(..., ensure_ascii=False, indent=2) for output
-- Keep it simple — no external deps beyond stdlib if possible
+
+=== YAGNI DECISION LADDER (follow this before writing any code) ===
+1. Does this code need to exist?          → NO: skip it (YAGNI)
+2. Can stdlib / built-ins handle it?      → YES: use them, NO extra deps
+3. Is there a native platform feature?     → YES: use it
+4. Is there already an installed dep?      → YES: use it, don't add another
+5. Can it be a one-liner?                 → YES: one line
+6. Only then: write the minimum that works
+
+=== NEVER skip (even for YAGNI) ===
+- Input validation / trust-boundary checks
+- Data-loss prevention
+- Security (auth, injection)
+- Clear error messages
+- Proper docstrings and type hints
+
+If you skip something (stdlib handles it, no need for this feature yet),
+leave a # [YAGNI] comment explaining why.
+
 - Risk level: "low" for read-only, "medium" for writes, "high" for destructive ops
-- Include a proper docstring and type hints
-- Use Path from pathlib for file operations
+- Keep it simple — use Path from pathlib for file operations
 - Do NOT include any test or main block
 
 Generate ONLY valid Python code. No markdown fences, no explanations.
