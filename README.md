@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.14.2-blueviolet" alt="v1.14.2">
+  <img src="https://img.shields.io/badge/version-1.14.14-blueviolet" alt="v1.14.14">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -28,7 +28,7 @@
 
 ## 🔄 完全獨立 (Full Independence)
 
-BAW v1.14.2 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
+BAW v1.14.14 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
 
 | Phase | 能力 | Tools |
 |-------|------|-------|
@@ -668,9 +668,48 @@ baw --setup          # → Guided setup wizard</pre>
 <tr><td><code>baw --validate [subcmd]</code></td><td>🧪 Real-world validation</td></tr>
 </table>
 
+<h2>🙏 Acknowledgments / 鳴謝</h2>
+
+<p>BAW 嘅功能受以下開源項目啟發，衷心感謝佢哋嘅貢獻：</p>
+
+<table>
+  <tr>
+    <th>Project / 項目</th>
+    <th>Author / 作者</th>
+    <th>啟發咗我哋嘅功能</th>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/Panniantong/Agent-Reach">🕵️ Agent Reach</a></td>
+    <td><a href="https://github.com/Panniantong">Neo Reid (Panniantong)</a></td>
+    <td>本地 HTML→Markdown 提取（用 html2text 取代咗佢嘅 Jina Reader 方案）、RSS feed 閱讀、platform health doctor 概念。Agent Reach 嘅「每個平台有 preferred + fallback backend」routing 理念啟發咗我哋嘅 web_extract 設計。37K ⭐ 實至名歸。</td>
+  </tr>
+  <tr>
+    <td><a href="https://jina.ai/reader/">📖 Jina AI Reader</a></td>
+    <td><a href="https://jina.ai/">Jina AI</a> (acquired by Elastic)</td>
+    <td>ReaderLM-v2 嘅 HTML→Markdown 轉換理念啟發咗我哋用本地 html2text 實現類似效果。雖然我哋最終選擇咗完全本地方案（唔用 r.jina.ai API），但 Jina Reader 證明咗 clean extraction 嘅價值。</td>
+  </tr>
+  <tr>
+    <td><a href="https://clay.com/">🏢 Clay</a></td>
+    <td><a href="https://clay.com/">Clay</a></td>
+    <td>Waterfall Enrichment pattern（multi-provider lookup with circuit-breaker）啟發咗我哋嘅多源數據檢索思路。雖然我哋嘅實作最終用 delegate_task + web_extract 取代咗專用 enrichment engine，但 Clay 嘅架構理念（sequential provider fallback）係有啟發性嘅參考。</td>
+  </tr>
+</table>
+
+<p>BAW 本身都係 MIT License 開源項目 — 歡迎參考、改進、分享。</p>
+
+---
+
 <h2>📝 Changelog</h2>
 
-<h3>v1.14.2 — Latest</h3>
+<h3>v1.14.14 — 完全本地 web_extract + AI Research + RSS tools</h3>
+<ul>
+  <li>web_extract 重寫：html2text + BeautifulSoup 本地提取，68-78% token 節省，零外部 API</li>
+  <li>ai_research — 新 built-in tool：URL + question → 結構化 JSON research</li>
+  <li>rss_feed — 新 built-in tool：feedparser 本地 RSS/Atom feed 閱讀</li>
+  <li>鳴謝：Agent Reach (Panniantong) 啟發咗本地 extraction + RSS 方案</li>
+  <li>鳴謝：Jina AI Reader 啟發咗 HTML→Markdown 轉換概念</li>
+  <li>鳴謝：Clay 啟發咗 waterfall enrichment 多源查詢思路</li>
+</ul>
 <ul>
   <li>Version sync: all files now report v1.14.2</li>
   <li>Community health files: CONTRIBUTING.md + issue templates added</li>
