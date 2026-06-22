@@ -2179,6 +2179,7 @@ def run_agent(
         logger.warning(f"Memory remember failed: {_e}")
 
     output = _verify_post_turn_claims(output, data_dir)
+    needs_continuation = _extra_info.get("tool_cap_hit", False) or _extra_info.get("cost_cap_hit", False)
     return output, {
         "cost": round(session_cost, 4),
         "model": f"{model.provider}/{model.id}",
@@ -2187,6 +2188,8 @@ def run_agent(
         "adversarial": court_result["agreement_level"] if court_result else None,
         "adversarial_raw": court_result,
         "new_session_messages": _extract_new_msgs(ctx, _pre_prompt_count),
+        "goal_achieved": not needs_continuation,
+        "needs_continuation": needs_continuation,
         **_extra_info,
     }
 

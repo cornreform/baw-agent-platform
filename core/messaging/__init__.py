@@ -2215,6 +2215,23 @@ class BaseConnector(ABC):
                 logger.info(f"[_run_baw] Fusion Mode — rounds={_MAX_AUTO_ROUNDS}, tool_turns={_focus_max_tool_turns}")
             else:
                 _focus_max_tool_turns = 0  # will be set by complexity below
+            # ── Auto-detect development task (無須 [FOCUS MODE] prefix) ──
+            _dev_keywords = ["create", "write.*file", "implement", "build", "開發",
+                             "寫.*碼", "做.*project", "整.*app", "寫.*function",
+                             "建.*系統", "寫.*script", "開發.*tool", "develop",
+                             "git.*commit", "create.*repo", "寫.*test", "write.*test"]
+            if not _is_focus_mode and not _is_fusion_mode:
+                _is_dev_task = False
+                _prompt_lower = (prompt or "").lower()
+                for _kw in _dev_keywords:
+                    if re.search(_kw, _prompt_lower):
+                        _is_dev_task = True
+                        break
+                if _is_dev_task:
+                    _MAX_AUTO_ROUNDS = 8
+                    _MAX_TOTAL_SECONDS = 1200
+                    _focus_max_tool_turns = 100
+                    logger.info(f"[_run_baw] Dev task detected — rounds={_MAX_AUTO_ROUNDS}, tool_turns={_focus_max_tool_turns}")
             # ── Token Killer: adaptive tool cap based on task complexity ──
             from ..token_killer import estimate_task_complexity
             _task_complexity = estimate_task_complexity(prompt) if not _is_focus_mode else "complex"
@@ -2231,7 +2248,7 @@ class BaseConnector(ABC):
             elif _task_complexity == "complex":
                 _MAX_AUTO_ROUNDS = 5
                 if not _focus_max_tool_turns:
-                    _focus_max_tool_turns = 25  # complex tasks need more tools per round
+                    _focus_max_tool_turns = 100  # complex tasks need substantial tool budget per round
                 logger.info(f"[_run_baw] Complex task — tool_turns={_focus_max_tool_turns}")
                 # ── Background task notification: tell user upfront for long tasks ──
                 if chat_id and not _is_focus_mode:
