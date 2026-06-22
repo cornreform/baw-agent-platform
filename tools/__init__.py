@@ -37,7 +37,7 @@ _UTILITY_TOOLS = [
 _SPECIALIZED_TOOLS = [
     "delegate_task", "batch_delegate", "knowledge_graph", "kg_curator", "memory_quality", "session_synthesis", "http_fetch",
     "self_capabilities", "self_migrate", "fusion_analyze",
-    "ai_research",
+    "ai_research", "ponytail_review",
 ]
 
 # -- RARELY-USED / DEBUG TOOLS --

@@ -35,6 +35,11 @@ BAW 開機時讀呢份文件，知道咩情況用咩技能/參考。
 ### 系統架構
 - **用家問 BAW 點運作 / 檔案喺邊 / 技術細節** → `~/.baw/references/ref-system-architecture.md`
 
+### 代碼質量
+- **用家要求 code review / 檢查代碼 / over-engineering audit** → `~/.baw/references/ref-yagni.md`
+- **用家想 generate 新 tool / 寫 code** → 自動注入 YAGNI Decision Ladder（喺 tool_generate.py prompt 入面）
+- **用家話「review my code」「check for bloat」** → 用 `ponytail_review` tool 掃描
+
 ## 原則
 
 1. **SOUL.md 永遠 lean** — 唔好加任何技術細節或 meta 指令入去
