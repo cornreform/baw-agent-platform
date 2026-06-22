@@ -670,7 +670,7 @@ baw --setup          # → Guided setup wizard</pre>
 
 <h2>🙏 Acknowledgments / 鳴謝</h2>
 
-<p>BAW 嘅功能受以下開源項目啟發，衷心感謝佢哋嘅貢獻：</p>
+<p>BAW 嘅開發受以下開源項目同平台啟發，衷心感謝佢哋嘅貢獻。我哋唔想隱瞞任何參考過嘅項目 — 每一樣都為 BAW 帶嚟咗有價值嘅靈感：</p>
 
 <table>
   <tr>
@@ -679,25 +679,35 @@ baw --setup          # → Guided setup wizard</pre>
     <th>啟發咗我哋嘅功能</th>
   </tr>
   <tr>
+    <td><a href="https://hermes-agent.nousresearch.com/">🧞 Hermes Agent</a></td>
+    <td><a href="https://nousresearch.com/">Nous Research</a></td>
+    <td>BAW 本身運行喺 Hermes Agent 之上，用嘅係 Hermes 嘅 profile system、tool execution framework、skills 系統、cron scheduler。我哋嘅 MasterSkills routing 概念亦受 Hermes 嘅 skills loading 機制啟發。Hermes 係我哋嘅 foundation layer。</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/openclaw/openclaw">🦞 OpenClaw</a></td>
+    <td>OpenClaw Team</td>
+    <td>OpenClaw 嘅 agent skill system（SKILL.md router + reference files pattern）直接啟發咗 BAW 嘅 MasterSkills routing + references 設計。Agent Reach 嘅 SKILL.md 三層 router 亦係受 OpenClaw 啟發。</td>
+  </tr>
+  <tr>
     <td><a href="https://github.com/Panniantong/Agent-Reach">🕵️ Agent Reach</a></td>
     <td><a href="https://github.com/Panniantong">Neo Reid (Panniantong)</a></td>
-    <td>本地 HTML→Markdown 提取（用 html2text 取代咗佢嘅 Jina Reader 方案）、RSS feed 閱讀、platform health doctor 概念。Agent Reach 嘅「每個平台有 preferred + fallback backend」routing 理念啟發咗我哋嘅 web_extract 設計。37K ⭐ 實至名歸。</td>
+    <td>本地 HTML→Markdown 提取（用 html2text 取代咗佢嘅 Jina Reader 方案）、RSS feed 閱讀、platform health doctor 概念。Agent Reach 嘅「每個 platform 有 preferred + fallback backend」routing 理念啟發咗我哋嘅 web_extract 多層 fallback 設計。37K ⭐ 實至名歸。</td>
   </tr>
   <tr>
     <td><a href="https://jina.ai/reader/">📖 Jina AI Reader</a></td>
     <td><a href="https://jina.ai/">Jina AI</a> (acquired by Elastic)</td>
-    <td>ReaderLM-v2 嘅 HTML→Markdown 轉換理念啟發咗我哋用本地 html2text 實現類似效果。雖然我哋最終選擇咗完全本地方案（唔用 r.jina.ai API），但 Jina Reader 證明咗 clean extraction 嘅價值。</td>
+    <td>ReaderLM-v2 嘅 HTML→Markdown 轉換理念啟發咗我哋用本地 html2text 實現類似效果。雖然我哋最終選擇咗完全本地方案（唔用 r.jina.ai API），但 Jina Reader 證明咗 clean extraction 嘅價值同 token 節省潛力（75-82%）。</td>
   </tr>
   <tr>
     <td><a href="https://clay.com/">🏢 Clay</a></td>
     <td><a href="https://clay.com/">Clay</a></td>
-    <td>Waterfall Enrichment pattern（multi-provider lookup with circuit-breaker）啟發咗我哋嘅多源數據檢索思路。雖然我哋嘅實作最終用 delegate_task + web_extract 取代咗專用 enrichment engine，但 Clay 嘅架構理念（sequential provider fallback）係有啟發性嘅參考。</td>
+    <td>Waterfall Enrichment pattern（multi-provider lookup with circuit-breaker）啟發咗我哋嘅多源數據檢索思路。雖然我哋嘅實作最終用 delegate_task + web_extract 取代咗專用 enrichment engine，但 Clay 嘅架構理念（sequential provider fallback、circuit-breaker pattern）係重要嘅參考。</td>
   </tr>
 </table>
 
-<p>BAW 本身都係 MIT License 開源項目 — 歡迎參考、改進、分享。</p>
+<p>BAW 本身都係 MIT License 開源項目 — 歡迎參考、改進、分享。我哋嘅理念係：如果一個開源項目幫過我哋，我哋就有責任公開鳴謝，並且將同樣嘅 open 精神傳遞落去。</p>
 
----
+<hr>
 
 <h2>📝 Changelog</h2>
 
