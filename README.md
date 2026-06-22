@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.14.0-blueviolet" alt="v1.14.0">
+  <img src="https://img.shields.io/badge/version-1.14.2-blueviolet" alt="v1.14.2">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -28,7 +28,7 @@
 
 ## 🔄 完全獨立 (Full Independence)
 
-BAW v1.14.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
+BAW v1.14.2 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
 
 | Phase | 能力 | Tools |
 |-------|------|-------|
@@ -93,8 +93,8 @@ Run <code>baw --setup</code> — it walks through Telegram token, default model,
 
 <pre>
 $ baw --version
-BAW (Black And White) Agent Platform v1.14.0
-Commit: 26025dc (v1.14.0-1-g26025dc)
+BAW (Black And White) Agent Platform v1.14.2
+Commit: 807a933 (v1.14.2)
 Home: /app
 Architecture: self-improving loop with Angel/Devil adversarial court
 
@@ -670,14 +670,13 @@ baw --setup          # → Guided setup wizard</pre>
 
 <h2>📝 Changelog</h2>
 
-<h3>v1.14.0 — Latest</h3>
+<h3>v1.14.2 — Latest</h3>
 <ul>
-  <li>Full Independence milestone — 5-phase zero-dependency architecture</li>
-  <li>Self-Hosting: install.sh bootstrap on any Linux + Docker deployment</li>
-  <li>Self-Extension: LLM-generated tools with auto-register + smoke test</li>
-  <li>Self-Knowledge: SOUL.md, ARCHITECTURE.md, capability discovery</li>
-  <li>Self-Operation: system health, cron scheduler, auto-cleanup daemon</li>
-  <li>Code Management: self-evolution git commit/push/build/restart loop</li>
+  <li>Version sync: all files now report v1.14.2</li>
+  <li>Community health files: CONTRIBUTING.md + issue templates added</li>
+  <li>README: GitHub stars/last-commit badges, CLI demo section, humility-toned description</li>
+  <li>CHANGELOG.md: v1.8-v1.14 entries appended with detailed content</li>
+  <li>GitHub: repo description + topics + releases (v1.8-v1.14) all updated</li>
 </ul>
 
 <h3>v1.12.0</h3>

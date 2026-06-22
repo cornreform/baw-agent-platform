@@ -300,6 +300,27 @@ All notable changes to BAW (Black And White) Agent Platform.
 - Inline executor anti-fake output validation.
 - Subprocess repr added to fake markers.
 
+## v1.14.2 — 2026-06-22 (Community files + version sync)
+
+### Version sync
+- All files now report v1.14.2: baw, core/__init__.py, commands.py, setup.py, install.sh, README.md, SETUP.md
+
+### Community health
+- CONTRIBUTING.md: friendly, low-friction guide — open issue first, no CLA
+- Bug report template: 5-field YAML template
+- Feature request template: 3-field YAML template
+
+### README improvements
+- GitHub stars + last-commit badges added
+- Humble description paragraph with discoverable keywords (multi-model, autonomous, built from scratch)
+- CLI demo section showing real `baw --version` output
+- Fixed broken independence roadmap table (was corrupted with git help dump artifact)
+- Replaced old v0.x changelog with current v1.8-v1.14 highlights
+
+### GitHub repo settings
+- Description, topics (7), releases (v1.8-v1.14) all updated
+- v1.14.1 + v1.14.2 releases created
+
 ## v1.14.0 — 2026-06-22 (Raise autonomy limits: tool cap, mode tokens, scaling guard)
 
 ### ⚙️ Autonomy Limits Raised
