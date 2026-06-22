@@ -30,11 +30,12 @@ _UTILITY_TOOLS = [
     "git", "docker", "system", "todo", "install", "background",
     "cronjob", "list_files", "resource_monitor", "execute_code",
     "session_search", "self_diagnose", "codebase_doc",
+    "workspace",
 ]
 
 # -- SPECIALIZED TOOLS (task-specific, less common) --
 _SPECIALIZED_TOOLS = [
-    "delegate_task", "knowledge_graph", "kg_curator", "memory_quality", "session_synthesis", "http_fetch",
+    "delegate_task", "batch_delegate", "knowledge_graph", "kg_curator", "memory_quality", "session_synthesis", "http_fetch",
     "self_capabilities", "self_migrate", "fusion_analyze",
 ]
 
