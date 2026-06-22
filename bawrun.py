@@ -45,7 +45,7 @@ def main():
             model_id=model_id,
             mode="hybrid",
             interactive=False,
-            max_tool_turns=15,
+            max_tool_turns=50,
         )
         (task_dir / "stdout.txt").write_text(str(response), encoding="utf-8")
         (task_dir / "status.txt").write_text("completed", encoding="utf-8")
