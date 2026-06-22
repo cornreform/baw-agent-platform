@@ -213,7 +213,7 @@ def _print_logo():
     for line in logo.strip().split("\n"):
         formatted += line.format(**globals()) + "\n"
     print(formatted)
-    print(f"  {C.DIM}Black And White — Agent Platform v1.14.2{C.RESET}")
+    print(f"  {C.DIM}Black And White — Agent Platform v1.14.13{C.RESET}")
     w, _ = shutil.get_terminal_size()
     print(f"  {C.DIM}{'─' * min(w-2, 40)}{C.RESET}")
     print()

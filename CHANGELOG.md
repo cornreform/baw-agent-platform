@@ -2,6 +2,133 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v1.14.13 — 2026-06-22 (Final fixes: Docker healthcheck + .gitignore)
+
+### 🐳 Docker Healthcheck Fix (Round 2)
+- **Root cause**: `ps aux | grep` 失敗 because slim image 冇 procps。改用 `cat /proc/1/cmdline | grep baw` — 唔需要 procps。
+- **HEALTHCHECK** changed to use `/proc/1/cmdline` instead of `pgrep`
+
+### 🧹 Housekeeping
+- **.gitignore** added to prevent temp/test files from appearing in git status
+- **Workspace tool** (v1.14.12): persistent project state across turns — save/load/list/delete/clear
+- **batch_delegate** (v1.14.12): parallel sub-agent execution up to 5 tasks
+
+---
+
+## v1.14.12 — 2026-06-22 (Workspace tool + batch_delegate)
+
+### 🧰 Workspace Tool
+- New `workspace` tool: save/load/list/delete/clear project state
+- Cross-turn persistence via `~/.baw/workspace.json`
+- Auto-load workspace on BAW start (`load_workspace_on_start=True`)
+- Docker: persistent via bind mount `~/.baw/`
+
+### ⚡ Batch Delegate Tool
+- New `batch_delegate` tool: parallel sub-agent execution (max 5 tasks)
+- Performance: 2 tasks = 15.7s vs sequential ~50s each
+- Each sub-agent gets isolated context and terminal session
+- Returns array of {task, status, output}
+
+---
+
+## v1.14.11 — 2026-06-22 (Docker healthcheck fix + fusion verification)
+
+### 🐳 Docker Healthcheck Fix
+- **Root cause**: `pgrep` was used in HEALTHCHECK but slim image doesn't have procps
+- **Fix**: Changed to `ps aux | grep -q "[b]aw"` — works on any minimal image
+
+### 🧹 Config Clean
+- Removed stale `known_issues` entries (write_file and delegate_task related)
+
+### 🔬 Fusion Verification
+- Sub-agent results now cross-validated by MiniMax-M3
+- Returns: score (1-10) + improvement suggestions
+- Advisory only — doesn't block sub-agent completion
+- Capped at 5K to avoid extra context cost
+
+---
+
+## v1.14.10 — 2026-06-22 (delegate_task fix)
+
+### 🐞 Critical fix: delegate_task 100% failure
+- **Root cause**: executor model `step-3.7-flash` doesn't handle tool calls properly → 30s timeout → retry chain hits `_shutdown_requested` race condition
+- **Fix**: Changed executor model to `deepseek-v4-flash`
+- **Shutdown race condition**: sub-agent now catches "Shutdown in progress" flag, clears it, and retries 2x before giving up
+
+### ✅ Results
+- Hello world: 50.1s ✅
+- write_file: 29.7s ✅
+- read → write → verify (multi-step): 22.2s ✅
+
+---
+
+## v1.14.9 — 2026-06-22 (Auto-continuation fix + dev task detection)
+
+### 🐞 Auto-continuation fix
+- **Root cause**: `run_agent()` never set `goal_achieved: False` after each round → multi-round auto-continuation loop only ran 1 round
+- **Fix**: `goal_achieved: not tool_cap_hit` — now correctly reports when BAW hit the tool cap and should continue
+- **Complex tool turns**: 25→100 (bumped for complex multi-step tasks)
+
+### 🧑‍💻 Dev task auto-detection
+- Auto-detect development tasks (build/develop/write) → 8 rounds, 100 tool turns, 1200s timeout
+- Other tasks: 4 rounds, 75 tool turns
+- Prevents premature stop on code-writing tasks
+
+---
+
+## v1.14.8 — 2026-06-22 (Requirements fix)
+
+### 📦 Dependency fix
+- Added `PyMuPDF` + `pymupdf4llm` to `requirements.txt`
+- These are runtime dependencies for the document_structuring workflow
+- Docker container already had them pip-installed; now they survive image rebuild
+
+---
+
+## v1.14.7 — 2026-06-22 (SOUL.default.md sync)
+
+### 📄 SOUL.default.md sync
+- Synced default template to same lean 56-line version (was 23KB bloat from old architecture docs)
+- New installs won't copy the old bloated version anymore
+
+---
+
+## v1.14.6 — 2026-06-22 (MasterSkills routing system)
+
+### 🧭 MasterSkills routing
+- **SOUL.md** trimmed to pure rules (56 lines): conciseness, language (Cantonese/TC), HTML format, behavior correction, tool routing
+- **MasterSkills** (`~/.baw/references/MASTERSKILLS.md`): comprehensive routing handbook loaded at BAW startup
+- **Reference docs**: 5 docs (self-evolution, fusion-mode, cost-routing, system-architecture, document-structuring)
+- **Install-time deps** bundled: `python-docx`, `pypdf2`
+
+---
+
+## v1.14.5 — 2026-06-22 (Language gate first)
+
+### 🌐 Language gate — first position in system prompt
+- Moved language gate BEFORE evidence_rule and execution_protocol
+- Added: "START in Cantonese/TC. The first word you write decides the language."
+- This prevents DeepSeek's `reasoning_content` from defaulting to English
+
+---
+
+## v1.14.4 — 2026-06-22 (SOUL.md trim — stop self-audit runaway)
+
+### 🧹 SOUL.md 444→48 lines
+- Removed ALL meta-self-analysis instructions that caused BAW to audit itself instead of working
+- Removed: evolution mandate, fusion instructions, system architecture, cost routing, self-deploy, formatting tables, tool loop discipline
+- Kept: output rules (conciseness, language, HTML), behavior correction, evolving preferences (via MasterSkills)
+
+---
+
+## v1.14.3 — 2026-06-22 (Media+caption handling fix)
+
+### 🐞 Critical bug fix: media+routing in Telegram
+- **Bug 1 (routing)**: `_handle_update` ignored `msg['caption']` — PDF+text messages were never routed to document handler
+- **Bug 2 (document handler)**: `_process_document_file` dropped user's caption — always used hardcoded "Analyze this file"
+- **Bug 3 (photo handler)**: `_process_image_file` used caption as afterthought instead of primary instruction
+- All three fixed
+
 ## v1.1.0 — 2026-06-17 (Full Independence 🚀)
 
 ### Phase 1 — Self Code Management (Git + Docker)
