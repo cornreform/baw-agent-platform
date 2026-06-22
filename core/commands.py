@@ -221,7 +221,7 @@ def _cmd_version(data_dir: Path) -> str:
         ).stdout.strip()
     except Exception:
         log = "unknown"
-    return f"BAW v1.14.0\n{log}\nRepo: github.com/cornreform/baw-agent-platform"
+    return f"BAW v1.14.2\n{log}\nRepo: github.com/cornreform/baw-agent-platform"
 
 
 def _cmd_status(config: dict, data_dir: Path) -> str:

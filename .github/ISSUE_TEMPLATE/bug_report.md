@@ -18,7 +18,7 @@ What you expected to happen instead.
 **Environment**
 - OS: (e.g. Ubuntu 24.04, macOS 15.2)
 - Python version: (e.g. 3.11, 3.12)
-- BAW version: (e.g. v1.14.0 — run `baw --version`)
+- BAW version: (e.g. v1.14.2 — run `baw --version`)
 
 **Additional context**
 Any logs, screenshots, or config details that might help.
