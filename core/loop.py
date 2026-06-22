@@ -388,19 +388,9 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
 
     if soul_path.exists():
         soul_text = soul_path.read_text(encoding="utf-8")
-        system_prompt = evidence_rule + execution_protocol + soul_text
-        system_prompt += (
-            "\n\n## COMPLEXITY SELF-JUDGMENT\n"
-            "Self-judge task complexity. Match your processing depth to the task:\n"
-            "- Simple Q&A (greeting, quick question, yes/no) → reply directly. No tools needed.\n"
-            "- Quick fact-check → single tool call, direct answer.\n"
-            "- Multi-step task → use tools as needed, but be proportionate.\n"
-            "You ALREADY know the difference between 'hi' and 'analyze this codebase'. Trust that judgment.\n"
-            "Do NOT over-process simple requests. Do NOT under-process complex ones.\n"
-        )
-        # ── LANGUAGE HARD GATE (always active, before output structure) ──
+        # ── LANGUAGE HARD GATE (ALWAYS FIRST — before any other rule) ──
         lang_gate = (
-            "\\n\\n## HARD GATE — Your output IS your answer\\n"
+            "## HARD GATE — Your output IS your answer\\n"
             "Every line you write reaches the user. There is no hidden thinking space.\\n"
             "NEVER narrate your tool calls. NEVER say 'Let me check', 'I will now', "
             "'First, let me', 'Based on the', 'After checking', 'I have reviewed'.\\n"
@@ -408,18 +398,27 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
             "Your entire response must be a DIRECT answer to the user's question — "
             "not a description of what you did.\\n"
             "\\n"
-            "## LANGUAGE HARD GATE — Cantonese/Trad Chinese ONLY\n"
-            "All output MUST be in Cantonese (廣東話) or Traditional Chinese (繁體中文).\n"
-            "Every line you write is visible to the user — there is no hidden thinking space.\n"
-            "Rules:\n"
-            "- Your reasoning chain MUST also be in Cantonese/TC. No English reasoning at any stage.\n"
-            "- No English summaries, no English labels, no English explanations.\n"
-            "- No 'Let me check...' / 'After analysing...' / 'Based on the results...' in any language.\n"
-            "- If the user writes in English, still respond in Cantonese/TC.\n"
-            "- Exception: code names, file paths, technical terms (e.g. 'config.yaml', 'API', 'Docker') can stay in their original form.\n"
-            "This is a HARD GATE — not a suggestion. First word = first word user sees.\n"
+            "## LANGUAGE HARD GATE — Cantonese/Trad Chinese ONLY — FIRST RULE\\n"
+            "All output MUST be in Cantonese (廣東話) or Traditional Chinese (繁體中文).\\n"
+            "START in Cantonese/TC. The first word you write decides the language.\\n"
+            "Rules:\\n"
+            "- Your reasoning chain MUST also be in Cantonese/TC. No English reasoning at any stage.\\n"
+            "- No English summaries, no English labels, no English explanations.\\n"
+            "- No 'Let me check...' / 'After analysing...' / 'Based on the results...' in any language.\\n"
+            "- If the user writes in English, still respond in Cantonese/TC.\\n"
+            "- Exception: code names, file paths, technical terms (e.g. 'config.yaml', 'API', 'Docker') can stay in their original form.\\n"
+            "This is the FIRST rule you see. Obey it before any task instruction.\\n"
         )
-        system_prompt += lang_gate
+        system_prompt = lang_gate + evidence_rule + execution_protocol + soul_text
+        system_prompt += (
+            "\\n\\n## COMPLEXITY SELF-JUDGMENT\\n"
+            "Self-judge task complexity. Match your processing depth to the task:\\n"
+            "- Simple Q&A (greeting, quick question, yes/no) → reply directly. No tools needed.\\n"
+            "- Quick fact-check → single tool call, direct answer.\\n"
+            "- Multi-step task → use tools as needed, but be proportionate.\\n"
+            "You ALREADY know the difference between 'hi' and 'analyze this codebase'. Trust that judgment.\\n"
+            "Do NOT over-process simple requests. Do NOT under-process complex ones.\\n"
+        )
         system_prompt += output_structure
         system_prompt += delegation_block
     else:
