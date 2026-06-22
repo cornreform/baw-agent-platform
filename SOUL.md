@@ -46,3 +46,11 @@
 
 <!-- evolve:learned-preferences -->
 記錄用家 feedback + 日期 + 已採取 action。
+
+<hr>
+
+## 技能路由
+
+需要技術知識（fusion / architecture / routing / evolution）？
+先讀 `~/.baw/references/MASTERSKILLS.md`，佢話你知用邊份 reference。
+唔好 default 自我分析。
