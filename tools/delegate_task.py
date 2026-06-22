@@ -492,8 +492,64 @@ def delegate_task(goal: str, context: str = "", toolsets: str = "", model_id: st
             # Try next model if available
             continue
 
+        # ── Fusion verification: second model cross-checks the result ──
+        # Uses a DIFFERENT provider (MiniMax-M3) for true cross-validation
+        _fusion_score = None
+        _fusion_feedback = ""
+        try:
+            _judge_model_id = "MiniMax-M3"
+            if _judge_model_id != _fallback_model:
+                # Run judge with a different model
+                _judge_config = _get_minimax_config(goal, model_override=_judge_model_id)
+                _judge_ctx = Context(
+                    system_prompt=(
+                        "You are a VERIFIER. Your job: check if the sub-agent actually "
+                        "DID the work (called tools, created files, modified config). "
+                        "Score 1-10. Be strict but fair: accept alternative approaches "
+                        "(e.g. wrote to /app/ if /tmp/ was blocked). "
+                        "Score 8+ if goal was achieved. Score 4-7 if partially done. "
+                        "Score 1-3 if no real action taken."
+                    )
+                )
+                _judge_ctx.add_user(
+                    f"Goal: {goal}\n\n"
+                    f"Result:\n{result}\n\n"
+                    f"Score (1-10) and brief reason. Format: SCORE: <N>\\nREASON: <text>"
+                )
+                _judge_fb = call_llm_with_fallback(
+                    _judge_config,
+                    _judge_ctx.to_openai_messages(),
+                    tools=None,
+                    temperature=0.3,
+                )
+                _judge_resp = _judge_fb.response
+                if _judge_resp.content:
+                    _judge_text = _judge_resp.content
+                    # Parse score
+                    import re as _re
+                    _score_match = _re.search(r"SCORE:\s*(\d+)", _judge_text)
+                    if _score_match:
+                        _fusion_score = int(_score_match.group(1))
+                    # Extract reason
+                    _reason_match = _re.search(r"REASON:\s*(.+?)(?:\n|$)", _judge_text)
+                    if _reason_match:
+                        _fusion_feedback = _reason_match.group(1).strip()
+                    if _fusion_score is not None and _fusion_score < 6:
+                        import logging as _lg
+                        _lg.getLogger(__name__).warning(
+                            f"[delegate_task] Fusion verifier scored {_fusion_score}/10: "
+                            f"{_fusion_feedback}"
+                        )
+        except Exception as _ve:
+            import logging as _lg
+            _lg.getLogger(__name__).debug(f"[delegate_task] Fusion verifier skipped: {_ve}")
+
         # Success — return with model info
         _model_info = f"model={_fallback_model}"
+        if _fusion_score is not None:
+            _model_info += f" | fusion_verify={_fusion_score}/10"
+            if _fusion_feedback:
+                _model_info += f" | {_fusion_feedback[:60]}"
         return (
             f"╔═══ 巳分工 (Sub-agent) ═══╗\n"
             f"│ Goal: {goal[:80]}\n"

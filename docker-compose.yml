@@ -43,7 +43,7 @@ services:
           memory: 256M
     # ── Healthcheck ──
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health > /dev/null 2>&1 || pgrep -f 'python3.*baw-bot' > /dev/null"]
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep -q 'python3.*baw-bot' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
