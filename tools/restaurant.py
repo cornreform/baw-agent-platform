@@ -160,6 +160,117 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
+def _resolve_bbox(
+    bbox: Optional[tuple],
+    lat: Optional[float],
+    lon: Optional[float],
+    query: Optional[str],
+    max_km: Optional[float],
+    warnings: list,
+) -> tuple[float, float, float, float]:
+    """Resolve bounding box from parameters. Returns (south, west, north, east)."""
+    if not bbox and lat is None and not query:
+        lat0, lon0 = 22.280, 114.175
+        d = 0.01
+        bbox = (lat0 - d, lon0 - d, lat0 + d, lon0 + d)
+        warnings.append("No location given — defaulting to Causeway Bay 1km box.")
+    elif not bbox and lat is None and query:
+        bbox = (22.15, 113.85, 22.55, 114.40)
+        warnings.append("Query without location — defaulting to HK-wide bbox.")
+
+    if bbox is None and lat is not None and lon is not None:
+        d = (max_km or 1.0) / 111.0
+        bbox = (lat - d, lon - d, lat + d, lon + d)
+
+    assert bbox is not None
+    return bbox
+
+
+def _execute_overpass(
+    overpass_q: str,
+) -> tuple[list[dict], str, str]:
+    """Execute Overpass query, return (results, source, error)."""
+    cached = _cache_get(overpass_q)
+    if cached is not None:
+        return cached, "cache", ""
+
+    try:
+        results = _run_overpass(overpass_q)
+        _cache_put(overpass_q, results)
+        return results, "overpass", ""
+    except Exception as e:
+        return [], "error", str(e)
+
+
+def _apply_filters(
+    results: list[dict],
+    cuisine: Optional[str],
+    query: Optional[str],
+    lat: Optional[float],
+    lon: Optional[float],
+    max_km: Optional[float],
+    k: int,
+) -> list[dict]:
+    """Apply cuisine, name query, distance, and k filters to results."""
+    filtered = results
+
+    if cuisine:
+        c = cuisine.lower()
+        filtered = [r for r in filtered if r.get("cuisine")
+                    and c in r["cuisine"].lower()]
+
+    if query:
+        pat = re.compile(re.escape(query), re.IGNORECASE)
+        filtered = [r for r in filtered
+                    if pat.search(r.get("name") or "")
+                    or pat.search(r.get("name_en") or "")
+                    or pat.search(r.get("name_zh") or "")]
+
+    if lat is not None and lon is not None and max_km is not None:
+        filtered = [
+            r for r in filtered
+            if _haversine_km(lat, lon, r["lat"], r["lon"]) <= max_km
+        ]
+        filtered.sort(key=lambda r: _haversine_km(lat, lon, r["lat"], r["lon"]))
+    elif lat is not None and lon is not None:
+        filtered.sort(key=lambda r: _haversine_km(lat, lon, r["lat"], r["lon"]))
+
+    if k and lat is not None and lon is not None:
+        filtered = filtered[:k]
+
+    return filtered
+
+
+def _apply_pet_friendly(
+    results: list[dict],
+    pet_friendly: bool,
+    warnings: list,
+) -> int:
+    """Intersect results with pet-friendly dataset. Returns match count."""
+    pet_match_count = 0
+    if pet_friendly:
+        try:
+            from tools import petrestaurants as _pet
+            ds = _pet._ensure_fresh()
+            if isinstance(ds, dict):
+                pet_items = ds.get("items", [])
+                pet_names = {p["name"].lower() for p in pet_items}
+                for r in results:
+                    if r["name"].lower() in pet_names:
+                        r["pet_friendly"] = True
+                        pet_match_count += 1
+        except Exception as e:
+            warnings.append(f"pet_friendly lookup failed: {e}")
+
+    if pet_friendly:
+        warnings.append(
+            f"pet_friendly=True: {pet_match_count} of {len(results)} match "
+            f"the FEHD 50-restaurant pet-friendly dataset (osm only knows "
+            f"pet_friendly if the operator tagged it)."
+        )
+    return pet_match_count
+
+
 def search(
     *,
     bbox: Optional[Tuple[float, float, float, float]] = None,
@@ -176,89 +287,28 @@ def search(
     """Find restaurants. Returns dict with 'results', 'count', 'source',
     'warnings'."""
     warnings: List[str] = []
-    if not bbox and lat is None and not query:
-        # Default: Causeway Bay 1 km box
-        lat0, lon0 = 22.280, 114.175
-        d = 0.01  # ~1.1 km
-        bbox = (lat0 - d, lon0 - d, lat0 + d, lon0 + d)
-        warnings.append("No location given — defaulting to Causeway Bay 1km box.")
-    elif not bbox and lat is None and query:
-        # Query-only — default to HK-wide bbox
-        bbox = (22.15, 113.85, 22.55, 114.40)
-        warnings.append("Query without location — defaulting to HK-wide bbox.")
 
-    if bbox is None and lat is not None and lon is not None:
-        d = (max_km or 1.0) / 111.0
-        bbox = (lat - d, lon - d, lat + d, lon + d)
-    assert bbox is not None
+    # Resolve bounding box
+    bbox = _resolve_bbox(bbox, lat, lon, query, max_km, warnings)
     south, west, north, east = bbox
 
+    # Query Overpass
     overpass_q = _bbox_query(south, west, north, east, amenity=amenity, limit=limit)
-    cached = _cache_get(overpass_q)
-    if cached is not None:
-        results = cached
-        source = "cache"
-    else:
-        try:
-            results = _run_overpass(overpass_q)
-            _cache_put(overpass_q, results)
-            source = "overpass"
-        except Exception as e:
-            return {
-                "results": [],
-                "count": 0,
-                "source": "error",
-                "error": str(e),
-                "warnings": warnings,
-            }
+    results, source, error = _execute_overpass(overpass_q)
+    if error:
+        return {
+            "results": [],
+            "count": 0,
+            "source": "error",
+            "error": error,
+            "warnings": warnings,
+        }
 
-    # Filters
-    filtered = results
-    if cuisine:
-        c = cuisine.lower()
-        filtered = [r for r in filtered if r.get("cuisine")
-                    and c in r["cuisine"].lower()]
-    if query:
-        pat = re.compile(re.escape(query), re.IGNORECASE)
-        filtered = [r for r in filtered
-                    if pat.search(r.get("name") or "")
-                    or pat.search(r.get("name_en") or "")
-                    or pat.search(r.get("name_zh") or "")]
-    if lat is not None and lon is not None and max_km is not None:
-        filtered = [
-            r for r in filtered
-            if _haversine_km(lat, lon, r["lat"], r["lon"]) <= max_km
-        ]
-        # Sort by distance
-        filtered.sort(key=lambda r: _haversine_km(lat, lon, r["lat"], r["lon"]))
-    elif lat is not None and lon is not None:
-        filtered.sort(key=lambda r: _haversine_km(lat, lon, r["lat"], r["lon"]))
+    # Apply filters
+    filtered = _apply_filters(results, cuisine, query, lat, lon, max_km, k)
 
-    if k and lat is not None and lon is not None:
-        filtered = filtered[:k]
-
-    # Pet-friendly intersection (bonus)
-    pet_match_count = 0
-    if pet_friendly:
-        try:
-            from tools import petrestaurants as _pet
-            ds = _pet._ensure_fresh()
-            if isinstance(ds, dict):
-                pet_items = ds.get("items", [])
-                pet_names = {p["name"].lower() for p in pet_items}
-                for r in filtered:
-                    if r["name"].lower() in pet_names:
-                        r["pet_friendly"] = True
-                        pet_match_count += 1
-        except Exception as e:
-            warnings.append(f"pet_friendly lookup failed: {e}")
-
-    if pet_friendly:
-        warnings.append(
-            f"pet_friendly=True: {pet_match_count} of {len(filtered)} match "
-            f"the FEHD 50-restaurant pet-friendly dataset (osm only knows "
-            f"pet_friendly if the operator tagged it)."
-        )
+    # Pet-friendly intersection
+    _apply_pet_friendly(filtered, pet_friendly, warnings)
 
     return {
         "results": filtered,

@@ -1,1 +1,9 @@
-*.docx\n*.pdf\n*.txt\n!requirements.txt\n*.pyc\n__pycache__/\n.tmp/\n/tmp/\ntmp/\n
+*.docx
+*.pdf
+*.txt
+!requirements.txt
+*.pyc
+__pycache__/
+.tmp/
+/tmp/
+tmp/

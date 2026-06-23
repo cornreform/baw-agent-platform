@@ -29,23 +29,10 @@ def _next_id() -> str:
         return f"bg{_counter}"
 
 
-def start_bg(command: str, workdir: str | None = None) -> str:
-    """Start a command in the background.
-
-    Args:
-        command: Shell command to run.
-        workdir: Working directory (default: current).
-
-    Returns:
-        Confirmation with session ID.
-    """
-    if not command.strip():
-        return "Error: command is required"
-
-    bg_id = _next_id()
-
+def _start_process(command: str, workdir: str | None) -> subprocess.Popen | str:
+    """Start a subprocess. Returns (proc) on success or (error_string) on failure."""
     try:
-        proc = subprocess.Popen(
+        return subprocess.Popen(
             command,
             shell=True,
             stdout=subprocess.PIPE,
@@ -53,27 +40,15 @@ def start_bg(command: str, workdir: str | None = None) -> str:
             stdin=subprocess.DEVNULL,
             cwd=workdir or os.getcwd(),
             text=True,
-            preexec_fn=os.setsid,  # Create process group for easy kill
+            preexec_fn=os.setsid,
         )
     except Exception as e:
         return f"Error starting background process: {e}"
 
-    entry = {
-        "id": bg_id,
-        "command": command,
-        "proc": proc,
-        "started": time.time(),
-        "stdout_lines": [],
-        "stderr_lines": [],
-        "last_read": 0,
-        "done": False,
-        "exit_code": None,
-    }
 
-    with _lock:
-        _processes[bg_id] = entry
+def _start_collector_threads(proc: subprocess.Popen, entry: dict) -> None:
+    """Start daemon threads to collect stdout, stderr, and wait for exit."""
 
-    # Start collector threads
     def _collect_stdout():
         try:
             for line in iter(proc.stdout.readline, ""):
@@ -92,7 +67,6 @@ def start_bg(command: str, workdir: str | None = None) -> str:
 
     def _wait_and_cleanup():
         exit_code = proc.wait()
-        # Signal collectors to stop
         try:
             proc.stdout.close()
         except Exception:
@@ -111,6 +85,44 @@ def start_bg(command: str, workdir: str | None = None) -> str:
     t1.start()
     t2.start()
     t3.start()
+
+
+def start_bg(command: str, workdir: str | None = None) -> str:
+    """Start a command in the background.
+
+    Args:
+        command: Shell command to run.
+        workdir: Working directory (default: current).
+
+    Returns:
+        Confirmation with session ID.
+    """
+    if not command.strip():
+        return "Error: command is required"
+
+    bg_id = _next_id()
+
+    result = _start_process(command, workdir)
+    if isinstance(result, str):
+        return result
+    proc = result
+
+    entry = {
+        "id": bg_id,
+        "command": command,
+        "proc": proc,
+        "started": time.time(),
+        "stdout_lines": [],
+        "stderr_lines": [],
+        "last_read": 0,
+        "done": False,
+        "exit_code": None,
+    }
+
+    with _lock:
+        _processes[bg_id] = entry
+
+    _start_collector_threads(proc, entry)
 
     return f"[OK] Started background process [{bg_id}]: {command[:80]}"
 

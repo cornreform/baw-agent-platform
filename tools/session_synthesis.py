@@ -234,6 +234,73 @@ def _cross_ref(cluster_kw: set[str], kg_topics: dict) -> dict:
     }
 
 
+def _build_recurring_insight(topic: str, n_entries: int, n_days: int,
+                              sentiment: str, xref: dict) -> dict:
+    """Build insight for a recurring topic (>=5 entries, >=3 days)."""
+    insight_text = (
+        f"{topic}: user discussed this {n_entries} times across "
+        f"{n_days} days ({sentiment}). "
+    )
+    if xref["count"] > 0:
+        insight_text += (
+            f"KG has {xref['count']} related triples "
+            f"({xref['signal_count']} signal, {xref['reference_count']} reference)."
+        )
+        return {
+            "text": insight_text,
+            "type": "recurring — strong repeating topic",
+            "topic": topic,
+            "score": n_entries * n_days,
+        }
+    else:
+        insight_text += "This is a blind spot — no KG triples relate to this topic."
+        return {
+            "text": insight_text,
+            "type": "blind_spot",
+            "topic": topic,
+            "score": n_entries * n_days,
+        }
+
+
+def _build_emerging_insight(topic: str, n_entries: int, n_days: int,
+                             sentiment: str, xref: dict) -> dict:
+    """Build insight for an emerging topic (>=3 entries)."""
+    insight_text = (
+        f"{topic}: emerging topic with {n_entries} mentions "
+        f"over {n_days} days ({sentiment}). "
+    )
+    if xref["count"] == 0:
+        insight_text += "Not yet in KG — potential blind spot."
+        return {
+            "text": insight_text,
+            "type": "blind_spot",
+            "topic": topic,
+            "score": n_entries,
+        }
+    return {
+        "text": insight_text,
+        "type": "emerging — discussed multiple times",
+        "topic": topic,
+        "score": n_entries,
+    }
+
+
+def _build_minor_blind_spot(topic: str, n_entries: int, xref: dict) -> dict | None:
+    """Build insight for a small cluster not in KG."""
+    if xref["count"] == 0:
+        insight_text = (
+            f"{topic}: mentioned {n_entries} times but no KG triples. "
+            f"Potential blind spot or new area."
+        )
+        return {
+            "text": insight_text,
+            "type": "blind_spot",
+            "topic": topic,
+            "score": n_entries,
+        }
+    return None  # small cluster with KG coverage — low priority, skip
+
+
 def _generate_insights(
     clusters: list[list[dict]],
     total_entries: int,
@@ -256,77 +323,21 @@ def _generate_insights(
         n_entries = len(group)
         n_days = _days_spread(group)
         sentiment = _cluster_sentiment(group)
-
         cluster_kw = _keywords(topic)
         xref = _cross_ref(cluster_kw, kg_topics)
 
-        # Build insight text based on pattern type
         if n_entries >= 5 and n_days >= 3:
-            pattern_type = "recurring — strong repeating topic"
-            insight_text = (
-                f"{topic}: user discussed this {n_entries} times across "
-                f"{n_days} days ({sentiment}). "
+            insights.append(
+                _build_recurring_insight(topic, n_entries, n_days, sentiment, xref)
             )
-            if xref["count"] > 0:
-                insight_text += (
-                    f"KG has {xref['count']} related triples "
-                    f"({xref['signal_count']} signal, {xref['reference_count']} reference)."
-                )
-            else:
-                insight_text += "This is a blind spot — no KG triples relate to this topic."
-                insights.append({
-                    "text": insight_text,
-                    "type": "blind_spot",
-                    "topic": topic,
-                    "score": n_entries * n_days,
-                })
-                continue
-
-            insights.append({
-                "text": insight_text,
-                "type": pattern_type,
-                "topic": topic,
-                "score": n_entries * n_days,
-            })
-
         elif n_entries >= 3:
-            pattern_type = "emerging — discussed multiple times"
-            insight_text = (
-                f"{topic}: emerging topic with {n_entries} mentions "
-                f"over {n_days} days ({sentiment}). "
+            insights.append(
+                _build_emerging_insight(topic, n_entries, n_days, sentiment, xref)
             )
-            if xref["count"] == 0:
-                insight_text += "Not yet in KG — potential blind spot."
-                insights.append({
-                    "text": insight_text,
-                    "type": "blind_spot",
-                    "topic": topic,
-                    "score": n_entries,
-                })
-                continue
-
-            insights.append({
-                "text": insight_text,
-                "type": pattern_type,
-                "topic": topic,
-                "score": n_entries,
-            })
-
-        elif xref["count"] == 0:
-            # Small cluster, but not in KG — mild blind spot
-            insight_text = (
-                f"{topic}: mentioned {n_entries} times but no KG triples. "
-                f"Potential blind spot or new area."
-            )
-            insights.append({
-                "text": insight_text,
-                "type": "blind_spot",
-                "topic": topic,
-                "score": n_entries,
-            })
         else:
-            # Small cluster with KG coverage — low priority
-            continue
+            ins = _build_minor_blind_spot(topic, n_entries, xref)
+            if ins is not None:
+                insights.append(ins)
 
     # Sort by score descending, return top
     insights.sort(key=lambda x: x["score"], reverse=True)
@@ -334,6 +345,106 @@ def _generate_insights(
 
 
 # ── main API ──────────────────────────────────────────────────────
+
+
+def _build_report_header(days_back: int, total_entries: int,
+                          total_clusters: int, total_insights: int,
+                          stored_count: int) -> list[str]:
+    """Build the report header lines."""
+    return [
+        f"[SESSION_SYNTHESIS] Cross-session Analysis (last {days_back} days)",
+        f"  Memory entries scanned: {total_entries}",
+        f"  Topic clusters found: {total_clusters}",
+        f"  Insights generated: {total_insights}",
+        f"  Insights stored: {stored_count}",
+        "",
+    ]
+
+
+def _build_cluster_description(n_entries: int, n_days: int) -> str:
+    """Build a human-readable frequency description for a cluster."""
+    if n_entries >= 5 and n_days >= 3:
+        return f"recurring — user discussed this {n_entries} times in {n_days} days"
+    elif n_entries >= 3:
+        return f"emerging — user mentioned this {n_entries} times in {n_days} days"
+    elif n_days > 1:
+        return f"occasional — {n_entries} entries across {n_days} days"
+    else:
+        return f"one-off — {n_entries} entries on {n_days} day"
+
+
+def _build_cluster_report_lines(clusters: list[list[dict]], kg_topics: dict,
+                                 all_insights: list[dict]) -> list[str]:
+    """Build report lines for each cluster (max 15)."""
+    lines = []
+    for i, group in enumerate(clusters[:15]):
+        topic = _cluster_topic(group)
+        n_entries = len(group)
+        n_days = _days_spread(group)
+        sentiment = _cluster_sentiment(group)
+        cluster_kw = _keywords(topic)
+        xref = _cross_ref(cluster_kw, kg_topics)
+
+        freq_desc = _build_cluster_description(n_entries, n_days)
+
+        if xref["count"] > 0:
+            kg_line = (
+                f"KG cross-ref: has {xref['count']} related triples "
+                f"({xref['signal_count']} signal, {xref['reference_count']} reference)"
+            )
+        else:
+            kg_line = "KG cross-ref: none — blind spot"
+
+        lines.append(f'Topic Cluster: "{topic}"')
+        lines.append(f"  Entries: {n_entries}")
+        lines.append(f"  Pattern: {freq_desc}")
+        lines.append(f"  Sentiment: {sentiment}")
+        lines.append(f"  KG cross-ref: {kg_line}")
+
+        matching = [ins for ins in all_insights if ins["topic"] == topic]
+        if matching:
+            lines.append(f'  Insight: {matching[0]["text"][:150]}')
+
+        lines.append("")
+    return lines
+
+
+def _store_top_insights(ms: MemoryStore, top_insights: list[dict], store: bool) -> int:
+    """Store top 3 insights back into memory. Returns count stored."""
+    stored_count = 0
+    if store and top_insights:
+        for ins in top_insights:
+            result = ms.remember(
+                content=f"[Session Synthesis] Insight: {ins['text']}",
+                tags=["synthesis", "insight", ins["type"]],
+                source="synthesis",
+            )
+            if result.get("id") != "rejected":
+                stored_count += 1
+    return stored_count
+
+
+def _build_insight_summary(all_insights: list[dict]) -> list[str]:
+    """Build the top insights summary lines."""
+    if not all_insights:
+        return []
+    lines = ["[SESSION_SYNTHESIS] Top Insights:"]
+    for i, ins in enumerate(all_insights[:5], 1):
+        lines.append(f"  {i}. [{ins['type']}] {ins['text'][:200]}")
+    return lines
+
+
+def _append_evolve_context(lines: list[str]) -> list[str]:
+    """Append learned lessons from evolve system if available."""
+    try:
+        lessons = get_learned_lessons_summary()
+        if lessons:
+            lines.append("")
+            lines.append("[SESSION_SYNTHESIS] Evolve context:")
+            lines.append(f"  {lessons}")
+    except Exception:
+        pass
+    return lines
 
 
 def synthesize(days_back: int = 7, store: bool = True) -> str:
@@ -372,83 +483,15 @@ def synthesize(days_back: int = 7, store: bool = True) -> str:
     total_insights = len(all_insights)
 
     # 5. Store top 3 insights back into memory
-    stored_count = 0
     top_insights = all_insights[:3]
-    if store and top_insights:
-        for ins in top_insights:
-            result = ms.remember(
-                content=f"[Session Synthesis] Insight: {ins['text']}",
-                tags=["synthesis", "insight", ins["type"]],
-                source="synthesis",
-            )
-            if result.get("id") != "rejected":
-                stored_count += 1
+    stored_count = _store_top_insights(ms, top_insights, store)
 
     # 6. Build output
-    lines = [
-        f"[SESSION_SYNTHESIS] Cross-session Analysis (last {days_back} days)",
-        f"  Memory entries scanned: {total_entries}",
-        f"  Topic clusters found: {total_clusters}",
-        f"  Insights generated: {total_insights}",
-        f"  Insights stored: {stored_count}",
-        "",
-    ]
-
-    for i, group in enumerate(clusters[:15]):  # Show max 15 clusters
-        topic = _cluster_topic(group)
-        n_entries = len(group)
-        n_days = _days_spread(group)
-        sentiment = _cluster_sentiment(group)
-        cluster_kw = _keywords(topic)
-        xref = _cross_ref(cluster_kw, kg_topics)
-
-        # Pattern description
-        if n_entries >= 5 and n_days >= 3:
-            freq_desc = f"recurring — user discussed this {n_entries} times in {n_days} days"
-        elif n_entries >= 3:
-            freq_desc = f"emerging — user mentioned this {n_entries} times in {n_days} days"
-        elif n_days > 1:
-            freq_desc = f"occasional — {n_entries} entries across {n_days} days"
-        else:
-            freq_desc = f"one-off — {n_entries} entries on {n_days} day"
-
-        # KG cross-ref
-        if xref["count"] > 0:
-            kg_line = (
-                f"KG cross-ref: has {xref['count']} related triples "
-                f"({xref['signal_count']} signal, {xref['reference_count']} reference)"
-            )
-        else:
-            kg_line = "KG cross-ref: none — blind spot"
-
-        lines.append(f'Topic Cluster: "{topic}"')
-        lines.append(f"  Entries: {n_entries}")
-        lines.append(f"  Pattern: {freq_desc}")
-        lines.append(f"  Sentiment: {sentiment}")
-        lines.append(f"  KG cross-ref: {kg_line}")
-
-        # Find matching insight if any
-        matching = [ins for ins in all_insights if ins["topic"] == topic]
-        if matching:
-            lines.append(f'  Insight: {matching[0]["text"][:150]}')
-
-        lines.append("")
-
-    # Add insight summary
-    if all_insights:
-        lines.append(f"[SESSION_SYNTHESIS] Top Insights:")
-        for i, ins in enumerate(all_insights[:5], 1):
-            lines.append(f"  {i}. [{ins['type']}] {ins['text'][:200]}")
-
-    # Add learned lessons context from evolve
-    try:
-        lessons = get_learned_lessons_summary()
-        if lessons:
-            lines.append("")
-            lines.append("[SESSION_SYNTHESIS] Evolve context:")
-            lines.append(f"  {lessons}")
-    except Exception:
-        pass
+    lines = _build_report_header(days_back, total_entries, total_clusters,
+                                  total_insights, stored_count)
+    lines.extend(_build_cluster_report_lines(clusters, kg_topics, all_insights))
+    lines.extend(_build_insight_summary(all_insights))
+    lines = _append_evolve_context(lines)
 
     return "\n".join(lines)
 

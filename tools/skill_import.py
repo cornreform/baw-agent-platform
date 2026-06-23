@@ -35,6 +35,38 @@ def _sanitize_name(name: str) -> str:
     return safe.replace("-", "_")
 
 
+def _parse_frontmatter_line(line: str, result: dict):
+    """Parse a single YAML frontmatter line into result dict."""
+    if ":" not in line or line.startswith("#"):
+        return
+    key, _, val = line.partition(":")
+    key = key.strip()
+    val = val.strip().strip('"').strip("'")
+
+    if key == "name":
+        result["name"] = val
+    elif key == "description":
+        result["description"] = val
+    elif key == "version":
+        result["version"] = val
+    elif key == "author":
+        result["author"] = val
+    elif key == "tags":
+        raw = val.strip("[]")
+        items = [t.strip().strip('"').strip("'") for t in raw.split(",")]
+        result["tags"] = [t for t in items if t]
+    elif key in ("parameters", "params"):
+        result["parameters"]["raw"] = val
+
+
+def _extract_name_from_h1(content: str) -> str:
+    """Fallback: extract name from first H1 heading."""
+    h1 = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+    if h1:
+        return h1.group(1).strip().lower().replace(" ", "-")
+    return ""
+
+
 def _parse_hermes_skill(content: str) -> dict:
     """Parse a Hermes skill.md file into structured data."""
     result = {
@@ -58,54 +90,19 @@ def _parse_hermes_skill(content: str) -> dict:
 
         for line in frontmatter.split("\n"):
             line = line.strip()
-            if ":" in line and not line.startswith("#"):
-                key, _, val = line.partition(":")
-                key = key.strip()
-                val = val.strip().strip('"').strip("'")
-
-                if key == "name":
-                    result["name"] = val
-                elif key == "description":
-                    result["description"] = val
-                elif key == "version":
-                    result["version"] = val
-                elif key == "author":
-                    result["author"] = val
-                elif key == "tags":
-                    # Handle: tags: [foo, bar]  or  tags: [\"foo\", \"bar\"]
-                    # Strip outer brackets, split by comma, clean each
-                    raw = val.strip("[]")
-                    items = [t.strip().strip('"').strip("'") for t in raw.split(",")]
-                    result["tags"] = [t for t in items if t]
-                elif key in ("parameters", "params"):
-                    result["parameters"]["raw"] = val
+            _parse_frontmatter_line(line, result)
     else:
         result["body"] = content.strip()
 
     if not result["name"]:
-        h1 = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
-        if h1:
-            result["name"] = h1.group(1).strip().lower().replace(" ", "-")
+        result["name"] = _extract_name_from_h1(content)
 
     return result
 
 
-def _convert_to_tool_code(skill: dict) -> str:
-    """Convert parsed skill data into BAW tool Python code.
-
-    Uses repr() for all user-controlled content to prevent injection
-    through triple-quotes or other special characters.
-    """
-    name = skill.get("name", "").replace("-", "_").replace(" ", "_") or "imported_skill"
-    description = skill.get("description", f"Imported from skill: {name}")
-    body = skill.get("body", "")
-    tags = skill.get("tags", [])
-    source_name = skill.get("name", "external source")
-
-    # Extract example commands/usage from body
-    examples = re.findall(r"```(?:bash|shell)?\n(.*?)```", body, re.DOTALL)
-
-    # Use repr() to safely embed user content into Python source
+def _build_handler_source(name: str, description: str, tags: list,
+                           body: str, examples: list, source_name: str) -> str:
+    """Build the _handler function source code as a string."""
     desc_escaped = repr(description)
     tags_escaped = json.dumps(tags)
     examples_escaped = json.dumps(examples[:3])
@@ -113,22 +110,7 @@ def _convert_to_tool_code(skill: dict) -> str:
     body_help = repr(body[:500])
     name_escaped = repr(name)
 
-    # Use % formatting instead of f-string to avoid escaping nightmares
-    code = (
-        '# -*- coding: utf-8 -*-\n'
-        f'"""BAW built-in: {name} — {description[:80]}\n'
-        '\n'
-        'Imported from external skill.\n'
-        '"""\n'
-        'import json\n'
-        'import os\n'
-        'import subprocess\n'
-        'from pathlib import Path\n'
-        '\n'
-        '\n'
-        '_BAW_HOME = Path(os.environ.get("BAW_HOME", "/app"))\n'
-        '\n'
-        '\n'
+    return (
         'def _handler(\n'
         '    action: str = "run",\n'
         ') -> str:\n'
@@ -158,24 +140,29 @@ def _convert_to_tool_code(skill: dict) -> str:
         '        return json.dumps({\n'
         '            "ok": True,\n'
         '            "message": "This skill has been imported but not executed. '
-        'Use action=\'help\' for instructions.",\n'
+        "Use action='help' for instructions.\",\n"
         '        }, ensure_ascii=False, indent=2)\n'
         '\n'
         '    return json.dumps({\n'
         '        "ok": False,\n'
         '        "error": f"Unknown action: {action}",\n'
         '    }, ensure_ascii=False)\n'
-        '\n'
-        '\n'
-        'TOOL_DEF = {\n'
+    )
+
+
+def _build_tool_def_source(name: str, description: str, source_name: str,
+                            name_escaped: str) -> str:
+    """Build the TOOL_DEF dict source code as a string."""
+    return (
+        "TOOL_DEF = {\n"
         f'    "name": {name_escaped},\n'
         '    "description": (\n'
         f'        "[IMPORTED] {description[:120]} "\n'
         '        "Imported from external skill: '
         f'{source_name}. "\n'
-        '        "Use action=\'run\' to execute, '
-        '\"describe\" for overview, \"help\" for instructions."\n'
-        '    ),\n'
+        "        \"Use action='run' to execute, "
+        '\"describe" for overview, "help" for instructions."\n'
+        "    ),\n"
         '    "handler": _handler,\n'
         '    "parameters": {\n'
         '        "type": "object",\n'
@@ -191,6 +178,44 @@ def _convert_to_tool_code(skill: dict) -> str:
         '    },\n'
         '    "risk_level": "low",\n'
         '}\n'
+    )
+
+
+def _convert_to_tool_code(skill: dict) -> str:
+    """Convert parsed skill data into BAW tool Python code.
+
+    Uses repr() for all user-controlled content to prevent injection
+    through triple-quotes or other special characters.
+    """
+    name = skill.get("name", "").replace("-", "_").replace(" ", "_") or "imported_skill"
+    description = skill.get("description", f"Imported from skill: {name}")
+    body = skill.get("body", "")
+    tags = skill.get("tags", [])
+    source_name = skill.get("name", "external source")
+
+    # Extract example commands/usage from body
+    examples = re.findall(r"```(?:bash|shell)?\n(.*?)```", body, re.DOTALL)
+
+    name_escaped = repr(name)
+
+    code = (
+        '# -*- coding: utf-8 -*-\n'
+        f'"""BAW built-in: {name} — {description[:80]}\n'
+        '\n'
+        'Imported from external skill.\n'
+        '"""\n'
+        'import json\n'
+        'import os\n'
+        'import subprocess\n'
+        'from pathlib import Path\n'
+        '\n'
+        '\n'
+        '_BAW_HOME = Path(os.environ.get("BAW_HOME", "/app"))\n'
+        '\n'
+        '\n'
+        + _build_handler_source(name, description, tags, body, examples, source_name)
+        + '\n'
+        + _build_tool_def_source(name, description, source_name, name_escaped)
     )
     return code
 
@@ -281,21 +306,8 @@ def _register_tool(name: str):
     init_path.write_text(content)
 
 
-def _handler(
-    source: str = "",
-    dry_run: bool = False,
-) -> str:
-    """Import skills from other systems into BAW tools.
-
-    Reads skill files (Hermes SKILL.md format, or any markdown with YAML frontmatter),
-    parses them, and converts to BAW-compatible tools.
-
-    Args:
-        source: Path to skill file, directory of skills, or 'auto' for auto-detect
-        dry_run: If True, just report what would be imported without modifying
-    """
-    results = {"imported": 0, "skipped": 0, "failed": 0, "items": []}
-
+def _discover_skill_files(source: str) -> list[str]:
+    """Discover skill files to import. Returns list of file paths."""
     files_to_import = []
     if not source or source == "auto":
         candidates = [
@@ -315,22 +327,28 @@ def _handler(
         files_to_import = [source]
 
     # Deduplicate
-    files_to_import = list(dict.fromkeys(files_to_import))
-    results["found"] = len(files_to_import)
+    return list(dict.fromkeys(files_to_import))
 
-    if dry_run:
-        for f in files_to_import:
-            p = Path(f)
-            try:
-                display = str(p.relative_to(Path.home()))
-            except ValueError:
-                display = p.name
-            results["items"].append({
-                "file": display,
-                "would_import": True,
-            })
-        return json.dumps(results, ensure_ascii=False, indent=2)
 
+def _dry_run_results(files_to_import: list[str]) -> str:
+    """Build a dry-run result JSON."""
+    results = {"found": len(files_to_import), "imported": 0, "skipped": 0, "failed": 0, "items": []}
+    for f in files_to_import:
+        p = Path(f)
+        try:
+            display = str(p.relative_to(Path.home()))
+        except ValueError:
+            display = p.name
+        results["items"].append({
+            "file": display,
+            "would_import": True,
+        })
+    return json.dumps(results, ensure_ascii=False, indent=2)
+
+
+def _execute_imports(files_to_import: list[str]) -> dict:
+    """Execute imports for all discovered files. Returns results dict."""
+    results = {"imported": 0, "skipped": 0, "failed": 0, "items": []}
     for f in files_to_import:
         r = _import_file(f)
         results["items"].append(r)
@@ -340,7 +358,29 @@ def _handler(
             results["failed"] += 1
         else:
             results["skipped"] += 1
+    return results
 
+
+def _handler(
+    source: str = "",
+    dry_run: bool = False,
+) -> str:
+    """Import skills from other systems into BAW tools.
+
+    Reads skill files (Hermes SKILL.md format, or any markdown with YAML frontmatter),
+    parses them, and converts to BAW-compatible tools.
+
+    Args:
+        source: Path to skill file, directory of skills, or 'auto' for auto-detect
+        dry_run: If True, just report what would be imported without modifying
+    """
+    files_to_import = _discover_skill_files(source)
+
+    if dry_run:
+        return _dry_run_results(files_to_import)
+
+    results = _execute_imports(files_to_import)
+    results["found"] = len(files_to_import)
     return json.dumps(results, ensure_ascii=False, indent=2)
 
 

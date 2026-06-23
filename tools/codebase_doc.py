@@ -59,32 +59,13 @@ def _relative_to_baw(path: Path) -> str:
         return path.name
 
 
-def _extract_module_info(filepath: Path) -> dict[str, Any]:
-    """Parse a single .py file and return structured module info."""
-    rel_path = _relative_to_baw(filepath)
-    module_name = rel_path.replace("/", ".").replace(".py", "")
-    if module_name.endswith(".__init__"):
-        module_name = module_name[:-9]  # drop .__init__
-    elif module_name == "__init__":
-        module_name = rel_path.replace(".py", "")
-
-    info: dict[str, Any] = {
-        "path": rel_path,
-        "module_name": module_name,
-        "size_lines": 0,
-        "docstring": "",
-        "functions": [],
-        "classes": [],
-        "baw_imports": [],  # imports from core.* or tools.*
-        "all_imports": [],   # every import statement
-        "exports": [],       # functions/classes defined at module top level
-    }
-
+def _read_module_source(filepath: Path, info: dict) -> tuple[list[str] | None, ast.Module | None]:
+    """Read and parse a .py file, filling info with size/docstring on error."""
     try:
         source = filepath.read_text(encoding="utf-8")
     except Exception as e:
         logger.warning("Cannot read %s: %s", filepath, e)
-        return info
+        return None, None
 
     lines = source.splitlines()
     info["size_lines"] = len(lines)
@@ -94,19 +75,29 @@ def _extract_module_info(filepath: Path) -> dict[str, Any]:
     except SyntaxError as e:
         logger.warning("Syntax error in %s: %s", filepath, e)
         info["docstring"] = f"[PARSE ERROR] {e}"
-        return info
+        return None, None
 
-    # Module docstring
+    return lines, tree
+
+
+def _extract_module_docstring(tree: ast.Module) -> str:
+    """Extract module-level docstring from parsed AST."""
     if (
         tree.body
         and isinstance(tree.body[0], ast.Expr)
         and isinstance(tree.body[0].value, ast.Constant)
         and isinstance(tree.body[0].value.value, str)
     ):
-        doc = tree.body[0].value.value.strip()
-        info["docstring"] = doc[:500]  # cap at 500 chars
+        return tree.body[0].value.value.strip()[:500]
+    return ""
 
-    # Walk AST for imports, functions, classes
+
+def _walk_module_ast(tree: ast.Module, filepath: Path, source: str, lines: list[str]) -> dict:
+    """Walk AST to collect imports, functions, and classes into info dict."""
+    info: dict[str, Any] = {
+        "all_imports": [], "baw_imports": [], "functions": [], "classes": [], "exports": [],
+    }
+
     for node in ast.walk(tree):
         # Imports
         if isinstance(node, ast.Import):
@@ -119,14 +110,11 @@ def _extract_module_info(filepath: Path) -> dict[str, Any]:
             if node.module:
                 info["all_imports"].append(node.module)
                 if _is_baw_import(node.module):
-                    # Also add the specific names imported
                     for alias in node.names:
                         qualified = f"{node.module}.{alias.name}"
                         info["baw_imports"].append(qualified)
-                else:
-                    # Still track relative imports that cross BAW boundaries
-                    if not node.level:
-                        info["all_imports"].append(node.module)
+                elif not node.level:
+                    info["all_imports"].append(node.module)
 
         # Top-level functions
         elif isinstance(node, ast.FunctionDef) and isinstance(node, ast.stmt):
@@ -144,9 +132,39 @@ def _extract_module_info(filepath: Path) -> dict[str, Any]:
                 info["classes"].append(cls_info)
                 info["exports"].append(node.name)
 
-    # Deduplicate baw_imports
     info["baw_imports"] = sorted(set(info["baw_imports"]))
     info["all_imports"] = sorted(set(info["all_imports"]))
+    return info
+
+
+def _extract_module_info(filepath: Path) -> dict[str, Any]:
+    """Parse a single .py file and return structured module info."""
+    rel_path = _relative_to_baw(filepath)
+    module_name = rel_path.replace("/", ".").replace(".py", "")
+    if module_name.endswith(".__init__"):
+        module_name = module_name[:-9]  # drop .__init__
+    elif module_name == "__init__":
+        module_name = rel_path.replace(".py", "")
+
+    info: dict[str, Any] = {
+        "path": rel_path,
+        "module_name": module_name,
+        "size_lines": 0,
+        "docstring": "",
+        "functions": [],
+        "classes": [],
+        "baw_imports": [],
+        "all_imports": [],
+        "exports": [],
+    }
+
+    lines, tree = _read_module_source(filepath, info)
+    if lines is None or tree is None:
+        return info
+
+    info["docstring"] = _extract_module_docstring(tree)
+    walked = _walk_module_ast(tree, filepath, source := "\n".join(lines), lines)
+    info.update(walked)
 
     return info
 
@@ -240,6 +258,55 @@ def _discover_files() -> list[Path]:
     return files
 
 
+def _build_dependency_graph(modules: dict[str, dict]) -> tuple[dict[str, list[str]], list[list[str]]]:
+    """Build dependency map and detect circular deps from module info."""
+    deps: dict[str, set[str]] = {}
+    for rel, mod in modules.items():
+        deps[rel] = set()
+        for imp in mod["baw_imports"]:
+            parts = imp.split(".")
+            if len(parts) >= 2 and parts[0] in _SCAN_DIRS:
+                candidate = "/".join(parts) + ".py"
+                if candidate in modules:
+                    deps[rel].add(candidate)
+                    continue
+                candidate_init = "/".join(parts) + "/__init__.py"
+                if candidate_init in modules:
+                    deps[rel].add(candidate_init)
+                    continue
+                candidate_mod = "/".join(parts[:2]) + ".py"
+                if candidate_mod in modules:
+                    deps[rel].add(candidate_mod)
+                    continue
+                for depth in range(len(parts) - 1, 1, -1):
+                    trial = "/".join(parts[:depth]) + ".py"
+                    if trial in modules:
+                        deps[rel].add(trial)
+                        break
+                    trial_init = "/".join(parts[:depth]) + "/__init__.py"
+                    if trial_init in modules:
+                        deps[rel].add(trial_init)
+                        break
+
+    sorted_deps: dict[str, list[str]] = {
+        k: sorted(deps[k]) for k in sorted(deps)
+    }
+    circular = _find_circular_dependencies(deps)
+    return sorted_deps, circular
+
+
+def _cache_scan_result(result: dict) -> None:
+    """Write scan result to JSON cache file."""
+    try:
+        _CACHE_FILE.write_text(
+            json.dumps(result, indent=2, default=str, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info("Cached scan to %s", _CACHE_FILE)
+    except Exception as e:
+        logger.warning("Failed to write cache: %s", e)
+
+
 def scan() -> dict[str, Any]:
     """Scan BAW's own codebase and return structured data.
 
@@ -260,48 +327,7 @@ def scan() -> dict[str, Any]:
         modules[rel] = info
         total_lines += info["size_lines"]
 
-    # Build dependency graph
-    deps: dict[str, set[str]] = {}
-    for rel, mod in modules.items():
-        deps[rel] = set()
-        for imp in mod["baw_imports"]:
-            # Map import like core.llm to core/llm.py
-            parts = imp.split(".")
-            if len(parts) >= 2 and parts[0] in _SCAN_DIRS:
-                # Could be core.llm -> core/llm.py, or core.messaging.telegram -> core/messaging/telegram.py
-                # Try direct path first
-                candidate = "/".join(parts) + ".py"
-                if candidate in modules:
-                    deps[rel].add(candidate)
-                    continue
-                # Try __init__ variant
-                candidate_init = "/".join(parts) + "/__init__.py"
-                if candidate_init in modules:
-                    deps[rel].add(candidate_init)
-                    continue
-                # For module-level imports like core.llm.get_model, try just the module
-                candidate_mod = "/".join(parts[:2]) + ".py"
-                if candidate_mod in modules:
-                    deps[rel].add(candidate_mod)
-                    continue
-                # Try shorter forms
-                for depth in range(len(parts) - 1, 1, -1):
-                    trial = "/".join(parts[:depth]) + ".py"
-                    if trial in modules:
-                        deps[rel].add(trial)
-                        break
-                    trial_init = "/".join(parts[:depth]) + "/__init__.py"
-                    if trial_init in modules:
-                        deps[rel].add(trial_init)
-                        break
-
-    # Sort deps for deterministic output
-    sorted_deps: dict[str, list[str]] = {}
-    for k in sorted(deps):
-        sorted_deps[k] = sorted(deps[k])
-
-    # Circular dependency detection
-    circular = _find_circular_dependencies(deps)
+    sorted_deps, circular = _build_dependency_graph(modules)
 
     result: dict[str, Any] = {
         "modules": modules,
@@ -316,15 +342,7 @@ def scan() -> dict[str, Any]:
         },
     }
 
-    # Cache to JSON
-    try:
-        _CACHE_FILE.write_text(
-            json.dumps(result, indent=2, default=str, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        logger.info("Cached scan to %s", _CACHE_FILE)
-    except Exception as e:
-        logger.warning("Failed to write cache: %s", e)
+    _cache_scan_result(result)
 
     return result
 
@@ -391,31 +409,9 @@ def _format_docstring(doc: str, max_len: int = 100) -> str:
     return first_line
 
 
-def report(scan_data: Optional[dict] = None) -> str:
-    """Generate a structured plain-text report of the codebase.
-
-    Modules scanned, dependency map, interface contracts, circular deps.
-    """
-    if scan_data is None:
-        scan_data = _load_or_scan()
-
-    modules: dict = scan_data["modules"]
-    dep_map: dict = scan_data["dependency_map"]
-    circular: list = scan_data["circular_dependencies"]
-    stats: dict = scan_data["stats"]
-
+def _report_module_map(modules: dict, dep_map: dict) -> list[str]:
+    """Generate Module Map section of the report."""
     lines: list[str] = []
-    lines.append("[DOC] BAW Codebase Analysis")
-    lines.append(f"  Modules scanned: {stats['modules_scanned']}")
-    lines.append(f"  Total lines: {stats['total_lines']}")
-    lines.append(f"  Dependencies tracked: {stats['dependencies_tracked']}")
-    lines.append(f"  Circular deps: {stats['circular_dep_count']}")
-    lines.append("")
-
-    # ── Module Map ──────────────────────────────────────────────────────
-    lines.append("=== Module Map ===")
-
-    # Group by directory
     for scan_dir in _SCAN_DIRS:
         dir_modules = {
             k: v for k, v in modules.items() if k.startswith(scan_dir + "/")
@@ -428,30 +424,29 @@ def report(scan_data: Optional[dict] = None) -> str:
             lines.append(f"{rel_path} ({mod['size_lines']} lines)")
             lines.append(f"  [DOC] {doc}")
 
-            # BAW imports
             baw_imps = mod.get("baw_imports", [])
             if baw_imps:
                 lines.append(f"  [DEP] Imports: {', '.join(sorted(set(baw_imps)))}")
 
-            # Exports (top-level functions + classes)
             exports = mod.get("exports", [])
             if exports:
                 lines.append(f"  [MODULE] Exports: {', '.join(exports)}")
 
-            # Total dependency count
             dep_count = len(dep_map.get(rel_path, []))
             lines.append(f"  [DEP] Dependencies: {dep_count} module(s)")
             lines.append("")
+    return lines
 
-    # ── Interface Contracts ─────────────────────────────────────────────
-    lines.append("=== Interface Contracts ===")
+
+def _report_interface_contracts(modules: dict) -> list[str]:
+    """Generate Interface Contracts section of the report."""
+    lines: list[str] = []
     for rel_path in sorted(modules):
         mod = modules[rel_path]
         funcs = mod.get("functions", [])
         classes = mod.get("classes", [])
 
-        has_contracts = bool(funcs or classes)
-        if not has_contracts:
+        if not funcs and not classes:
             continue
 
         lines.append(f"[CONTRACT] {rel_path}")
@@ -483,11 +478,12 @@ def report(scan_data: Optional[dict] = None) -> str:
                 lines.append(f"    {m['name']}({args_str}){return_str}")
 
         lines.append("")
+    return lines
 
-    # ── Dependency Groups ───────────────────────────────────────────────
-    lines.append("=== Dependency Groups ===")
 
-    # Group: which dirs depend on which
+def _report_dependency_groups(modules: dict, dep_map: dict) -> list[str]:
+    """Generate Dependency Groups section of the report."""
+    lines: list[str] = []
     for scan_dir in _SCAN_DIRS:
         dir_modules = {
             k for k in modules if k.startswith(scan_dir + "/")
@@ -495,7 +491,6 @@ def report(scan_data: Optional[dict] = None) -> str:
         if not dir_modules:
             continue
 
-        # Dependencies from this dir to other dirs
         depends_on: set[str] = set()
         for rel in sorted(dir_modules):
             for dep in dep_map.get(rel, []):
@@ -511,7 +506,12 @@ def report(scan_data: Optional[dict] = None) -> str:
             lines.append(f"{scan_dir}/ (base layer): no intra-module dependencies")
 
     lines.append("")
+    return lines
 
+
+def _report_circular_deps(circular: list) -> list[str]:
+    """Generate Circular Dependency Warnings section."""
+    lines: list[str] = []
     if circular:
         lines.append("=== Circular Dependency Warnings ===")
         for cycle in circular:
@@ -521,8 +521,12 @@ def report(scan_data: Optional[dict] = None) -> str:
     else:
         lines.append("  No circular dependencies found")
         lines.append("")
+    return lines
 
-    # ── Summary stats per directory ─────────────────────────────────────
+
+def _report_per_directory_summary(modules: dict, dep_map: dict) -> list[str]:
+    """Generate Per-Directory Summary section."""
+    lines: list[str] = []
     lines.append("=== Per-Directory Summary ===")
     for scan_dir in _SCAN_DIRS:
         dir_modules = {
@@ -538,18 +542,13 @@ def report(scan_data: Optional[dict] = None) -> str:
             f"  {scan_dir}/: {len(dir_modules)} files, "
             f"{dir_lines} lines, {dir_deps} inter-module deps"
         )
-
-    return "\n".join(lines)
-
-
-# ── Write INDEX.md ─────────────────────────────────────────────────────────
+    return lines
 
 
-def write_index(scan_data: Optional[dict] = None) -> str:
-    """Write INDEX.md to BAW_HOME with complete module inventory and map.
+def report(scan_data: Optional[dict] = None) -> str:
+    """Generate a structured plain-text report of the codebase.
 
-    This acts as a "readme for AI" — when BAW needs to modify its own
-    code, it first reads INDEX.md to understand the architecture.
+    Modules scanned, dependency map, interface contracts, circular deps.
     """
     if scan_data is None:
         scan_data = _load_or_scan()
@@ -559,29 +558,63 @@ def write_index(scan_data: Optional[dict] = None) -> str:
     circular: list = scan_data["circular_dependencies"]
     stats: dict = scan_data["stats"]
 
-    md_lines: list[str] = []
-    md_lines.append("# BAW Codebase Index")
-    md_lines.append("")
-    md_lines.append(
-        "Auto-generated by `tools/codebase_doc.py`. "
-        "AI agents should read this file first before modifying BAW's own code."
-    )
-    md_lines.append("")
-    md_lines.append(f"- Modules scanned: {stats['modules_scanned']}")
-    md_lines.append(f"- Total lines: {stats['total_lines']}")
-    md_lines.append(f"- Dependencies tracked: {stats['dependencies_tracked']}")
-    md_lines.append(f"- Circular dependencies: {stats['circular_dep_count']}")
-    md_lines.append("")
+    lines: list[str] = []
+    lines.append("[DOC] BAW Codebase Analysis")
+    lines.append(f"  Modules scanned: {stats['modules_scanned']}")
+    lines.append(f"  Total lines: {stats['total_lines']}")
+    lines.append(f"  Dependencies tracked: {stats['dependencies_tracked']}")
+    lines.append(f"  Circular deps: {stats['circular_dep_count']}")
+    lines.append("")
 
-    # ── Module Inventory ────────────────────────────────────────────────
-    md_lines.append("## Module Inventory")
-    md_lines.append("")
-    md_lines.append(
-        "| Module | Lines | Docstring | Exports |"
-    )
-    md_lines.append(
-        "|--------|-------|-----------|---------|"
-    )
+    # Module Map
+    lines.append("=== Module Map ===")
+    lines.extend(_report_module_map(modules, dep_map))
+
+    # Interface Contracts
+    lines.append("=== Interface Contracts ===")
+    lines.extend(_report_interface_contracts(modules))
+
+    # Dependency Groups
+    lines.append("=== Dependency Groups ===")
+    lines.extend(_report_dependency_groups(modules, dep_map))
+
+    # Circular Dependencies
+    lines.extend(_report_circular_deps(circular))
+
+    # Per-Directory Summary
+    lines.extend(_report_per_directory_summary(modules, dep_map))
+
+    return "\n".join(lines)
+
+
+# ── Write INDEX.md ─────────────────────────────────────────────────────────
+
+
+def _write_index_header(stats: dict) -> list[str]:
+    """Generate INDEX.md header section."""
+    md_lines = [
+        "# BAW Codebase Index",
+        "",
+        "Auto-generated by `tools/codebase_doc.py`. "
+        "AI agents should read this file first before modifying BAW's own code.",
+        "",
+        f"- Modules scanned: {stats['modules_scanned']}",
+        f"- Total lines: {stats['total_lines']}",
+        f"- Dependencies tracked: {stats['dependencies_tracked']}",
+        f"- Circular dependencies: {stats['circular_dep_count']}",
+        "",
+    ]
+    return md_lines
+
+
+def _write_index_module_inventory(modules: dict) -> list[str]:
+    """Generate Module Inventory table for INDEX.md."""
+    md_lines = [
+        "## Module Inventory",
+        "",
+        "| Module | Lines | Docstring | Exports |",
+        "|--------|-------|-----------|---------|",
+    ]
 
     for rel_path in sorted(modules):
         mod = modules[rel_path]
@@ -592,11 +625,16 @@ def write_index(scan_data: Optional[dict] = None) -> str:
         )
 
     md_lines.append("")
+    return md_lines
 
-    # ── Dependency Map ──────────────────────────────────────────────────
-    md_lines.append("## Dependency Map")
-    md_lines.append("")
-    md_lines.append("```")
+
+def _write_index_dependency_map(dep_map: dict) -> list[str]:
+    """Generate Dependency Map section for INDEX.md."""
+    md_lines = [
+        "## Dependency Map",
+        "",
+        "```",
+    ]
     for rel_path in sorted(dep_map):
         deps = dep_map[rel_path]
         if deps:
@@ -605,10 +643,15 @@ def write_index(scan_data: Optional[dict] = None) -> str:
             md_lines.append(f"  {rel_path}  (no BAW deps)")
     md_lines.append("```")
     md_lines.append("")
+    return md_lines
 
-    # ── Dependency Groups ───────────────────────────────────────────────
-    md_lines.append("## Dependency Groups")
-    md_lines.append("")
+
+def _write_index_dependency_groups(modules: dict, dep_map: dict) -> list[str]:
+    """Generate Dependency Groups section for INDEX.md."""
+    md_lines = [
+        "## Dependency Groups",
+        "",
+    ]
     for scan_dir in _SCAN_DIRS:
         dir_modules = sorted(
             k for k in modules if k.startswith(scan_dir + "/")
@@ -619,46 +662,43 @@ def write_index(scan_data: Optional[dict] = None) -> str:
         md_lines.append("")
         for rel in dir_modules:
             deps = dep_map.get(rel, [])
-            if deps:
-                dep_str = ", ".join(deps)
-            else:
-                dep_str = "(none)"
+            dep_str = ", ".join(deps) if deps else "(none)"
             md_lines.append(f"- `{rel}` depends on: {dep_str}")
         md_lines.append("")
+    return md_lines
 
-    # ── Circular Dependencies ───────────────────────────────────────────
+
+def _write_index_circular(circular: list) -> list[str]:
+    """Generate Circular Dependencies section for INDEX.md."""
+    md_lines = ["## Circular Dependencies", ""]
     if circular:
-        md_lines.append("## Circular Dependencies")
-        md_lines.append("")
         md_lines.append("WARNING: The following circular dependencies exist:")
         md_lines.append("")
         for cycle in circular:
             md_lines.append(f"- {' -> '.join(cycle)}")
         md_lines.append("")
     else:
-        md_lines.append("## Circular Dependencies")
-        md_lines.append("")
         md_lines.append("None found.")
         md_lines.append("")
+    return md_lines
 
-    # ── Interface Contracts (summary) ───────────────────────────────────
-    md_lines.append("## Interface Contracts (Functions with Arguments)")
-    md_lines.append("")
+
+def _write_index_interface_contracts(modules: dict) -> list[str]:
+    """Generate Interface Contracts section for INDEX.md."""
+    md_lines = [
+        "## Interface Contracts (Functions with Arguments)",
+        "",
+    ]
     for rel_path in sorted(modules):
         mod = modules[rel_path]
         funcs = mod.get("functions", [])
         classes = mod.get("classes", [])
 
-        has_contract = False
-        for fn in funcs:
-            if fn.get("args"):
-                has_contract = True
-                break
-        for cls in classes:
-            for m in cls.get("methods", []):
-                if m.get("args"):
-                    has_contract = True
-                    break
+        has_contract = any(
+            fn.get("args") for fn in funcs
+        ) or any(
+            m.get("args") for cls in classes for m in cls.get("methods", [])
+        )
 
         if not has_contract:
             continue
@@ -692,6 +732,30 @@ def write_index(scan_data: Optional[dict] = None) -> str:
                     md_lines.append(f"  - {m['docstring'][:200]}")
 
         md_lines.append("")
+    return md_lines
+
+
+def write_index(scan_data: Optional[dict] = None) -> str:
+    """Write INDEX.md to BAW_HOME with complete module inventory and map.
+
+    This acts as a "readme for AI" — when BAW needs to modify its own
+    code, it first reads INDEX.md to understand the architecture.
+    """
+    if scan_data is None:
+        scan_data = _load_or_scan()
+
+    modules: dict = scan_data["modules"]
+    dep_map: dict = scan_data["dependency_map"]
+    circular: list = scan_data["circular_dependencies"]
+    stats: dict = scan_data["stats"]
+
+    md_lines: list[str] = []
+    md_lines.extend(_write_index_header(stats))
+    md_lines.extend(_write_index_module_inventory(modules))
+    md_lines.extend(_write_index_dependency_map(dep_map))
+    md_lines.extend(_write_index_dependency_groups(modules, dep_map))
+    md_lines.extend(_write_index_circular(circular))
+    md_lines.extend(_write_index_interface_contracts(modules))
 
     # Footer
     md_lines.append("---")
@@ -710,22 +774,19 @@ def write_index(scan_data: Optional[dict] = None) -> str:
 # ── Verify Imports ─────────────────────────────────────────────────────────
 
 
-def verify_imports() -> str:
-    """Verify all imports in core/ and tools/ resolve correctly.
-
-    Returns a plain-text report of broken imports.
-    """
+def _verify_single_module(mod_name: str) -> str | None:
+    """Try to import a module, return error string or None on success."""
     import importlib
+    try:
+        importlib.import_module(mod_name)
+        return None
+    except Exception as e:
+        return f"{mod_name}: {e}"
 
-    lines: list[str] = []
-    lines.append("[CODEBASE] Import verification")
-    lines.append("")
 
-    broken: list[str] = []
-    ok_count = 0
-    broken_count = 0
-
-    # Discover all Python modules in core/ and tools/
+def _discover_modules() -> list[str]:
+    """Return module names for all .py files in core/ and tools/."""
+    modules: list[str] = []
     for scan_dir in _SCAN_DIRS:
         scan_path = _BAW_HOME / scan_dir
         if not scan_path.is_dir():
@@ -734,8 +795,6 @@ def verify_imports() -> str:
             for fn in sorted(fnames):
                 if not fn.endswith(".py"):
                     continue
-
-                # Compute module name as Python would see it
                 rel = Path(root).relative_to(_BAW_HOME)
                 mod_parts = list(rel.parts)
                 if fn == "__init__.py":
@@ -743,13 +802,30 @@ def verify_imports() -> str:
                 else:
                     mod_parts.append(fn[:-3])
                     mod_name = ".".join(mod_parts)
+                modules.append(mod_name)
+    return modules
 
-                try:
-                    importlib.import_module(mod_name)
-                    ok_count += 1
-                except Exception as e:
-                    broken.append(f"{mod_name}: {e}")
-                    broken_count += 1
+
+def verify_imports() -> str:
+    """Verify all imports in core/ and tools/ resolve correctly.
+
+    Returns a plain-text report of broken imports.
+    """
+    lines: list[str] = []
+    lines.append("[CODEBASE] Import verification")
+    lines.append("")
+
+    broken: list[str] = []
+    ok_count = 0
+    broken_count = 0
+
+    for mod_name in _discover_modules():
+        err = _verify_single_module(mod_name)
+        if err:
+            broken.append(err)
+            broken_count += 1
+        else:
+            ok_count += 1
 
     lines.append(f"  Modules OK: {ok_count}")
     lines.append(f"  Modules broken: {broken_count}")

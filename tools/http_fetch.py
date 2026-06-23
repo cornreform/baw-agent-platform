@@ -131,6 +131,64 @@ def fetch_with_requests(url: str, timeout: int = 15) -> Tuple[str, str]:
         return ("error", str(e))
 
 
+def _build_spa_response(body: str, url: str) -> dict:
+    """Build response dict for a client-rendered SPA page."""
+    mirror = _suggest_mirror_path(url)
+    return {
+        "strategy": "BROWSER_REQUIRED",
+        "body": body,
+        "text": "",
+        "is_spa": True,
+        "mirror_path": mirror,
+        "next_steps": (
+            f"Page is a client-rendered SPA (Next.js / Gatsby / React). "
+            f"urllib returned {len(body)} bytes of empty shell. "
+            f"Mirror to {mirror} using a browser-render tool "
+            f"(web_extract, or save the rendered HTML manually), "
+            f"then re-run the parser on the mirror file."
+        ),
+    }
+
+
+def _build_urllib_response(body: str) -> dict:
+    """Build response dict for a successful urllib fetch of a static page."""
+    return {
+        "strategy": "urllib",
+        "body": body,
+        "text": body,
+        "is_spa": False,
+        "mirror_path": None,
+        "next_steps": "urllib returned content; parse it directly.",
+    }
+
+
+def _build_requests_response(body_or_text: str) -> dict:
+    """Build response dict for a successful requests+bs4 fetch."""
+    return {
+        "strategy": "requests",
+        "body": "",
+        "text": body_or_text,
+        "is_spa": False,
+        "mirror_path": None,
+        "next_steps": "requests + bs4 returned content; parse it directly.",
+    }
+
+
+def _build_error_response(urllib_status: str, requests_status: str) -> dict:
+    """Build response dict when all fetch strategies fail."""
+    return {
+        "strategy": "ERROR",
+        "body": "",
+        "text": "",
+        "is_spa": False,
+        "mirror_path": None,
+        "next_steps": (
+            f"All fetch strategies failed. urllib: {urllib_status}. "
+            f"requests: {requests_status}. Check the URL, network, or mirror manually."
+        ),
+    }
+
+
 def http_fetch(url: str, prefer_browser: bool = False) -> Dict[str, Any]:
     """Fetch a URL with the right strategy for the page type.
 
@@ -152,53 +210,15 @@ def http_fetch(url: str, prefer_browser: bool = False) -> Dict[str, Any]:
     status, body = fetch_with_urllib(url)
     if status == "ok":
         if detect_spa(body):
-            mirror = _suggest_mirror_path(url)
-            return {
-                "strategy": "BROWSER_REQUIRED",
-                "body": body,
-                "text": "",
-                "is_spa": True,
-                "mirror_path": mirror,
-                "next_steps": (
-                    f"Page is a client-rendered SPA (Next.js / Gatsby / React). "
-                    f"urllib returned {len(body)} bytes of empty shell. "
-                    f"Mirror to {mirror} using a browser-render tool "
-                    f"(web_extract, or save the rendered HTML manually), "
-                    f"then re-run the parser on the mirror file."
-                ),
-            }
-        return {
-            "strategy": "urllib",
-            "body": body,
-            "text": body,
-            "is_spa": False,
-            "mirror_path": None,
-            "next_steps": "urllib returned content; parse it directly.",
-        }
+            return _build_spa_response(body, url)
+        return _build_urllib_response(body)
 
     # Strategy 2: requests + bs4 (slightly better at cookies/redirects)
     status, body_or_text = fetch_with_requests(url)
     if status == "ok":
-        return {
-            "strategy": "requests",
-            "body": "",
-            "text": body_or_text,
-            "is_spa": False,
-            "mirror_path": None,
-            "next_steps": "requests + bs4 returned content; parse it directly.",
-        }
+        return _build_requests_response(body_or_text)
 
-    return {
-        "strategy": "ERROR",
-        "body": "",
-        "text": "",
-        "is_spa": False,
-        "mirror_path": None,
-        "next_steps": (
-            f"All fetch strategies failed. urllib: {status}. "
-            f"requests: {status}. Check the URL, network, or mirror manually."
-        ),
-    }
+    return _build_error_response(status, status)
 
 
 def _suggest_mirror_path(url: str) -> str:
