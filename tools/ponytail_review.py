@@ -11,17 +11,8 @@ import json
 import os
 
 
-def _check_file(path: str) -> list[dict]:
-    """Check a single Python file for YAGNI violations."""
-    findings = []
-    try:
-        with open(path) as f:
-            source = f.read()
-        tree = ast.parse(source)
-    except (SyntaxError, FileNotFoundError):
-        return findings
-
-    # Check 1: Unnecessary imports (stdlib alternatives exist)
+def _check_unnecessary_imports(tree: ast.AST, path: str) -> list[dict]:
+    """Check 1: Flag third-party imports where stdlib alternative exists."""
     imports = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -31,72 +22,100 @@ def _check_file(path: str) -> list[dict]:
             module = node.module or ""
             for alias in node.names:
                 imports.append(f"{module}.{alias.name}")
-
-    # Flag imports that are NOT in stdlib
     import sys as _sys
     stdlib_modules = set()
     if hasattr(_sys, 'stdlib_module_names'):
         stdlib_modules = _sys.stdlib_module_names
-    # Fallback common stdlib prefixes
-    stdlib_prefixes = (
-        "os.", "sys.", "json.", "re.", "math.", "datetime.", "collections.",
-        "typing.", "functools.", "itertools.", "hashlib.", "base64.", "uuid.",
-        "csv.", "io.", "textwrap.", "inspect.", "logging.", "argparse.",
-        "subprocess.", "ast.", "pathlib.", "copy.", "enum.", "random.",
-        "statistics.", "string.", "struct.", "tempfile.", "time.", "traceback.",
-        "types.", "warnings.", "weakref.", "pprint.", "pickle.", "sqlite3.",
-        "xml.", "html.", "http.", "urllib.", "email.", "json",
-    )
-
-    third_party = []
+    _skip_libs = {
+        "yaml", "faster_whisper", "whisper", "fitz", "pymupdf4llm",
+        "feedparser", "html2text", "markdownify", "rich", "textual",
+        "fastapi", "uvicorn", "httpx", "requests",
+    }
+    findings = []
     for imp in imports:
-        # Get the top-level module name
         top_level = imp.split(".")[0]
-        # Check if it's a known stdlib module
-        if top_level in stdlib_modules:
+        if top_level in stdlib_modules or top_level in _skip_libs:
             continue
-        # Check prefix-based fallback
-        if any(imp.startswith(p) for p in stdlib_prefixes):
-            continue
-        # Skip if it's clearly a local module (no dot, lowercase)
-        if "." not in imp and imp.islower() and imp not in stdlib_modules:
-            third_party.append(imp)
+        if "." not in imp and imp.islower() and top_level not in stdlib_modules:
+            findings.append({
+                "type": "unnecessary_dep", "file": path,
+                "detail": f"Third-party import '{imp}' — consider if stdlib can do this", "line": 0,
+            })
+    return findings
 
-    for imp in third_party:
-        findings.append({
-            "type": "unnecessary_dep",
-            "file": path,
-            "detail": f"Third-party import '{imp}' — consider if stdlib can do this",
-            "line": 0,
-        })
 
-    # Check 2: Overly long functions (>50 lines)
+def _check_long_functions(tree: ast.AST, path: str) -> list[dict]:
+    """Check 2: Flag functions over 50 lines."""
+    findings = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             line_count = node.end_lineno - node.lineno if node.end_lineno else 0
             if line_count > 50:
                 findings.append({
-                    "type": "long_function",
-                    "file": path,
+                    "type": "long_function", "file": path,
                     "detail": f"Function '{node.name}' is {line_count} lines — could it be split?",
                     "line": node.lineno,
                 })
+    return findings
 
-    # Check 3: Classes where a simple function would do
+
+def _check_overengineered_classes(tree: ast.AST, path: str) -> list[dict]:
+    """Check 3: Flag classes where a simple function would do."""
+    findings = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef):
             methods = [n for n in ast.walk(node) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
             if len(methods) <= 1 and methods:
-                # Class with only __init__ + one method → could be a function
                 if any(m.name == "__init__" for m in methods) and len(methods) <= 2:
                     findings.append({
-                        "type": "over_engineered",
-                        "file": path,
+                        "type": "over_engineered", "file": path,
                         "detail": f"Class '{node.name}' has only __init__ + {len(methods)-1} methods — could be a function",
                         "line": node.lineno,
                     })
-
     return findings
+
+
+def _check_file(path: str) -> list[dict]:
+    """Check a single Python file for YAGNI violations."""
+    try:
+        with open(path) as f:
+            source = f.read()
+        tree = ast.parse(source)
+    except (SyntaxError, FileNotFoundError):
+        return []
+    findings = _check_unnecessary_imports(tree, path)
+    findings.extend(_check_long_functions(tree, path))
+    findings.extend(_check_overengineered_classes(tree, path))
+    return findings
+
+
+def _walk_python_files(path: str) -> list[str]:
+    """Walk a path (file or directory) and return list of .py files."""
+    if os.path.isfile(path):
+        return [path]
+    files = []
+    for root, dirs, fnames in os.walk(path):
+        dirs[:] = [d for d in dirs if not d.startswith((".", "__pycache__", "venv", "node_modules"))]
+        for f in fnames:
+            if f.endswith(".py"):
+                files.append(os.path.join(root, f))
+    return files
+
+
+def _scan_yagni_comments(fpath: str) -> list[dict]:
+    """Scan a file for existing [YAGNI] comments."""
+    try:
+        results = []
+        with open(fpath) as f:
+            for i, line in enumerate(f, 1):
+                if "[YAGNI]" in line:
+                    results.append({
+                        "type": "deferred_yagni", "file": fpath,
+                        "detail": line.strip(), "line": i,
+                    })
+        return results
+    except (OSError, UnicodeDecodeError):
+        return []
 
 
 def ponytail_review(path: str = ".") -> str:
@@ -116,48 +135,20 @@ def ponytail_review(path: str = ".") -> str:
         Structured report of YAGNI findings.
     """
     findings = []
-
-    if os.path.isfile(path):
-        files = [path]
-    else:
-        files = []
-        for root, dirs, fnames in os.walk(path):
-            dirs[:] = [d for d in dirs if not d.startswith((".", "__pycache__", "venv", "node_modules"))]
-            for f in fnames:
-                if f.endswith(".py"):
-                    files.append(os.path.join(root, f))
-
-    for fpath in files:
+    for fpath in _walk_python_files(path):
         findings.extend(_check_file(fpath))
-
-        # Also scan for existing [YAGNI] comments (deferred decisions)
-        try:
-            with open(fpath) as f:
-                for i, line in enumerate(f, 1):
-                    if "[YAGNI]" in line:
-                        findings.append({
-                            "type": "deferred_yagni",
-                            "file": fpath,
-                            "detail": line.strip(),
-                            "line": i,
-                        })
-        except (OSError, UnicodeDecodeError):
-            pass
+        findings.extend(_scan_yagni_comments(fpath))
 
     if not findings:
         return json.dumps({"status": "clean", "message": "No YAGNI violations found."}, ensure_ascii=False, indent=2)
 
-    # Summarize
     by_type = {}
     for f in findings:
         by_type.setdefault(f["type"], []).append(f)
 
-    result = {
-        "total_findings": len(findings),
-        "summary": {k: len(v) for k, v in by_type.items()},
-        "details": findings,
-    }
-
+    result = {"total_findings": len(findings),
+              "summary": {k: len(v) for k, v in by_type.items()},
+              "details": findings}
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 

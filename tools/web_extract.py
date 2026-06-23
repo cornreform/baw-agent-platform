@@ -111,6 +111,22 @@ def _convert_to_markdown(html: str) -> str:
     return "\n".join(lines).strip()
 
 
+_HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+}
+
+
+def _fetch_and_parse(url: str) -> tuple[str, BeautifulSoup]:
+    """Fetch URL and return (raw_html, BeautifulSoup soup)."""
+    resp = requests.get(url, headers=_HTTP_HEADERS, timeout=15)
+    resp.raise_for_status()
+    return resp.text, BeautifulSoup(resp.text, "html.parser")
+
+
 def web_extract(
     url: str,
     max_chars: int = 8000,
@@ -133,33 +149,19 @@ def web_extract(
     Returns:
         Clean Markdown content from the web page.
     """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        )
-    }
-
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp.raise_for_status()
+        html_text, soup = _fetch_and_parse(url)
     except requests.exceptions.Timeout:
         return f"Error: request to {url} timed out"
     except requests.exceptions.RequestException as e:
         return f"Error: {e}"
 
-    # Parse + clean HTML
-    soup = BeautifulSoup(resp.text, "html.parser")
     _strip_navigation_bars(soup)
-
-    # Convert to Markdown
     result = _convert_to_markdown(str(soup))
 
     if not result:
         return f"No extractable content found at {url}"
 
-    # Truncate if needed
     if max_chars > 0 and len(result) > max_chars:
         result = result[:max_chars] + "\n\n[... truncated, full content exceeds limit]"
 

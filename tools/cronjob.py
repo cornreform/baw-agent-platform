@@ -176,6 +176,124 @@ def _next_run(schedule: str) -> float:
     return now.timestamp() + 3600  # Fallback: 1 hour
 
 
+def _cronjob_list(cron_dir: Path) -> str:
+    """List all cron jobs."""
+    jobs = _load_jobs(cron_dir)
+    if not jobs:
+        return "[cronjob] No jobs scheduled."
+    lines = [f"<b>Cron Jobs</b> ({len(jobs)}/{_MAX_JOBS})"]
+    for j in jobs:
+        status = "▶" if j.get("enabled", True) else "⏸"
+        lines.append(
+            f"  {status} <b>{j.get('name', '?')}</b> — `{j.get('schedule', '?')}`"
+            f"\n      → {j.get('prompt', '')[:80]}"
+        )
+    return "\n".join(lines)
+
+
+def _cronjob_remove(cron_dir: Path, name: str) -> str:
+    """Remove a cron job by name."""
+    if not name:
+        return "[cronjob] Error: 'name' required for remove."
+    jobs = _load_jobs(cron_dir)
+    before = len(jobs)
+    jobs = [j for j in jobs if j.get("name") != name]
+    if len(jobs) == before:
+        return f"[cronjob] Job '{name}' not found."
+    _save_jobs(cron_dir, jobs)
+    return f"[cronjob] Removed: {name}"
+
+
+def _cronjob_toggle(cron_dir: Path, name: str, enabled: bool) -> str:
+    """Pause or resume a cron job by name."""
+    verb = "Paused" if not enabled else "Resumed"
+    if not name:
+        return f"[cronjob] Error: 'name' required for {verb.lower()}."
+    jobs = _load_jobs(cron_dir)
+    found = False
+    for j in jobs:
+        if j.get("name") == name:
+            j["enabled"] = enabled
+            found = True
+            break
+    if not found:
+        return f"[cronjob] Job '{name}' not found."
+    _save_jobs(cron_dir, jobs)
+    return f"[cronjob] {verb}: {name}"
+
+
+def _cronjob_create(cron_dir: Path, schedule: str, prompt: str, name: str) -> str:
+    """Create a new cron job."""
+    if not schedule:
+        return "[cronjob] Error: 'schedule' required for create."
+    if not prompt:
+        return "[cronjob] Error: 'prompt' required for create."
+
+    err = _parse_schedule(schedule)
+    if err:
+        return f"[cronjob] {err}"
+
+    jobs = _load_jobs(cron_dir)
+    if len(jobs) >= _MAX_JOBS:
+        return f"[cronjob] Error: max {_MAX_JOBS} jobs reached."
+
+    if not name:
+        name = f"job-{len(jobs) + 1}"
+
+    if any(j.get("name") == name for j in jobs):
+        return f"[cronjob] Error: job '{name}' already exists."
+
+    job = {
+        "name": name,
+        "schedule": schedule,
+        "prompt": prompt,
+        "enabled": True,
+        "created": time.time(),
+        "next_run": _next_run(schedule),
+        "last_run": None,
+        "last_result": None,
+    }
+    jobs.append(job)
+    _save_jobs(cron_dir, jobs)
+    return (
+        f"[cronjob] Created: <b>{name}</b>\n"
+        f"  Schedule: `{schedule}`\n"
+        f"  Prompt: {prompt[:120]}"
+    )
+
+
+def _cronjob_run(cron_dir: Path, name: str) -> str:
+    """Execute a cron job once immediately."""
+    if not name:
+        return "[cronjob] Error: 'name' required for run."
+    jobs = _load_jobs(cron_dir)
+    job = next((j for j in jobs if j.get("name") == name), None)
+    if not job:
+        return f"[cronjob] Job '{name}' not found."
+    if not job.get("enabled", True):
+        return f"[cronjob] Job '{name}' is paused. Resume first."
+
+    # Log run
+    log_dir = cron_dir / "logs"
+    log_file = log_dir / f"{name}.jsonl"
+    entry = {
+        "action": "run",
+        "trigger": "manual",
+        "time": time.time(),
+        "result": f"Queued: {job.get('prompt', '')[:100]}",
+    }
+    try:
+        with open(log_file, "a") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except IOError:
+        pass
+
+    job["last_run"] = time.time()
+    job["next_run"] = _next_run(job.get("schedule", ""))
+    _save_jobs(cron_dir, jobs)
+    return f"[cronjob] Run queued: <b>{name}</b> — {job.get('prompt', '')[:120]}"
+
+
 def cronjob(
     action: str,
     schedule: str = "",
@@ -198,134 +316,18 @@ def cronjob(
     cron_dir = _get_cron_dir(data_dir)
     action = action.lower()
 
-    # ── list ──
     if action == "list":
-        jobs = _load_jobs(cron_dir)
-        if not jobs:
-            return "[cronjob] No jobs scheduled."
-        lines = [f"<b>Cron Jobs</b> ({len(jobs)}/{_MAX_JOBS})"]
-        for j in jobs:
-            status = "▶" if j.get("enabled", True) else "⏸"
-            lines.append(
-                f"  {status} <b>{j.get('name', '?')}</b> — `{j.get('schedule', '?')}`"
-                f"\n      → {j.get('prompt', '')[:80]}"
-            )
-        return "\n".join(lines)
-
-    # ── remove ──
+        return _cronjob_list(cron_dir)
     if action == "remove":
-        if not name:
-            return "[cronjob] Error: 'name' required for remove."
-        jobs = _load_jobs(cron_dir)
-        before = len(jobs)
-        jobs = [j for j in jobs if j.get("name") != name]
-        if len(jobs) == before:
-            return f"[cronjob] Job '{name}' not found."
-        _save_jobs(cron_dir, jobs)
-        return f"[cronjob] Removed: {name}"
-
-    # ── pause ──
+        return _cronjob_remove(cron_dir, name)
     if action == "pause":
-        if not name:
-            return "[cronjob] Error: 'name' required for pause."
-        jobs = _load_jobs(cron_dir)
-        found = False
-        for j in jobs:
-            if j.get("name") == name:
-                j["enabled"] = False
-                found = True
-                break
-        if not found:
-            return f"[cronjob] Job '{name}' not found."
-        _save_jobs(cron_dir, jobs)
-        return f"[cronjob] Paused: {name}"
-
-    # ── resume ──
+        return _cronjob_toggle(cron_dir, name, enabled=False)
     if action == "resume":
-        if not name:
-            return "[cronjob] Error: 'name' required for resume."
-        jobs = _load_jobs(cron_dir)
-        found = False
-        for j in jobs:
-            if j.get("name") == name:
-                j["enabled"] = True
-                found = True
-                break
-        if not found:
-            return f"[cronjob] Job '{name}' not found."
-        _save_jobs(cron_dir, jobs)
-        return f"[cronjob] Resumed: {name}"
-
-    # ── create ──
+        return _cronjob_toggle(cron_dir, name, enabled=True)
     if action == "create":
-        if not schedule:
-            return "[cronjob] Error: 'schedule' required for create."
-        if not prompt:
-            return "[cronjob] Error: 'prompt' required for create."
-
-        err = _parse_schedule(schedule)
-        if err:
-            return f"[cronjob] {err}"
-
-        jobs = _load_jobs(cron_dir)
-        if len(jobs) >= _MAX_JOBS:
-            return f"[cronjob] Error: max {_MAX_JOBS} jobs reached."
-
-        if not name:
-            name = f"job-{len(jobs) + 1}"
-
-        # Check for duplicate name
-        if any(j.get("name") == name for j in jobs):
-            return f"[cronjob] Error: job '{name}' already exists."
-
-        job = {
-            "name": name,
-            "schedule": schedule,
-            "prompt": prompt,
-            "enabled": True,
-            "created": time.time(),
-            "next_run": _next_run(schedule),
-            "last_run": None,
-            "last_result": None,
-        }
-        jobs.append(job)
-        _save_jobs(cron_dir, jobs)
-        return (
-            f"[cronjob] Created: <b>{name}</b>\n"
-            f"  Schedule: `{schedule}`\n"
-            f"  Prompt: {prompt[:120]}"
-        )
-
-    # ── run (once immediately) ──
+        return _cronjob_create(cron_dir, schedule, prompt, name)
     if action == "run":
-        if not name:
-            return "[cronjob] Error: 'name' required for run."
-        jobs = _load_jobs(cron_dir)
-        job = next((j for j in jobs if j.get("name") == name), None)
-        if not job:
-            return f"[cronjob] Job '{name}' not found."
-        if not job.get("enabled", True):
-            return f"[cronjob] Job '{name}' is paused. Resume first."
-
-        # Log run
-        log_dir = cron_dir / "logs"
-        log_file = log_dir / f"{name}.jsonl"
-        entry = {
-            "action": "run",
-            "trigger": "manual",
-            "time": time.time(),
-            "result": f"Queued: {job.get('prompt', '')[:100]}",
-        }
-        try:
-            with open(log_file, "a") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except IOError:
-            pass
-
-        job["last_run"] = time.time()
-        job["next_run"] = _next_run(job.get("schedule", ""))
-        _save_jobs(cron_dir, jobs)
-        return f"[cronjob] Run queued: <b>{name}</b> — {job.get('prompt', '')[:120]}"
+        return _cronjob_run(cron_dir, name)
 
     return f"[cronjob] Unknown action: '{action}'. Use: create, list, remove, pause, resume, run."
 

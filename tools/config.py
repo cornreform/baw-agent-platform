@@ -123,35 +123,10 @@ def config_get(path: str) -> str:
     return str(value)
 
 
-def config_set(path: str, value: str) -> str:
-    """Set a config value by dotted path. Auto-validates YAML after write.
-
-    Creates a backup before writing. On validation failure, restores backup.
-
-    HARD GATE: If the path targets a protected setting (model/provider/endpoint
-    etc.) and the write is NOT user-initiated, a PermissionError is raised.
-    BAW's LLM must use request_config_change() instead.
-
-    Args:
-        path: Dotted path, e.g. 'model.default'
-        value: Value to set (string — will be parsed: "true"/"false"→bool, "123"→int)
-
-    Returns:
-        Confirmation or error.
+def _parse_config_value(value: str) -> bool | int | float | str | dict | list:
+    """Parse a config value string into its typed equivalent.
+    Supports: true/false → bool, numeric strings → int/float, JSON → dict/list.
     """
-    if not path.strip():
-        return "Error: path and value are required."
-
-    # ── HARD GATE: check thread-local write guard ──
-    try:
-        from core.config import check_config_write_guard
-        check_config_write_guard(path)
-    except PermissionError as e:
-        return str(e)
-    except ImportError:
-        pass
-
-    # Parse value type — only parse if value is a string
     parsed: bool | int | float | str | dict | list = value
     if isinstance(value, str):
         if value.lower() == "true":
@@ -178,24 +153,13 @@ def config_set(path: str, value: str) -> str:
                         parsed = value  # keep as string
     elif isinstance(value, (dict, list)):
         parsed = value  # Pass through structured values as-is
+    return parsed
 
-    # Backup
-    backup = _backup_config()
-    backup_note = f" (backup: {backup.name})" if backup else ""
 
-    cfg, err = _load_cfg()
-    if err:
-        return f"Cannot read config: {err}"
-
-    parent, last_key = _navigate(cfg, path, create_missing=True)
-    if parent is False:
-        return f"Error navigating to '{path}'"
-
-    parent[last_key] = parsed
-
+def _save_and_invalidate(cfg: dict, backup: Path | None) -> str | None:
+    """Save config and invalidate cache. Returns error string or None on success."""
     save_err = _save_cfg(cfg)
     if save_err:
-        # Rollback
         if backup and backup.exists():
             shutil.copy2(backup, _CFG_PATH)
             return f"Save failed (rolled back): {save_err}"
@@ -207,6 +171,66 @@ def config_set(path: str, value: str) -> str:
         load_config(reload=True)
     except Exception:
         pass
+    return None
+
+
+def _check_write_guard(path: str) -> str | None:
+    """Check the config write guard. Returns error string or None if OK."""
+    try:
+        from core.config import check_config_write_guard
+        check_config_write_guard(path)
+    except PermissionError as e:
+        return str(e)
+    except ImportError:
+        pass
+    return None
+
+
+def config_set(path: str, value: str) -> str:
+    """Set a config value by dotted path. Auto-validates YAML after write.
+
+    Creates a backup before writing. On validation failure, restores backup.
+
+    HARD GATE: If the path targets a protected setting (model/provider/endpoint
+    etc.) and the write is NOT user-initiated, a PermissionError is raised.
+    BAW's LLM must use request_config_change() instead.
+
+    Args:
+        path: Dotted path, e.g. 'model.default'
+        value: Value to set (string — will be parsed: "true"/"false"→bool, "123"→int)
+
+    Returns:
+        Confirmation or error.
+    """
+    if not path.strip():
+        return "Error: path and value are required."
+
+    # ── HARD GATE: check thread-local write guard ──
+    guard_err = _check_write_guard(path)
+    if guard_err:
+        return guard_err
+
+    # Parse value type
+    parsed = _parse_config_value(value)
+
+    # Backup
+    backup = _backup_config()
+    backup_note = f" (backup: {backup.name})" if backup else ""
+
+    cfg, err = _load_cfg()
+    if err:
+        return f"Cannot read config: {err}"
+    assert isinstance(cfg, dict)
+
+    parent, last_key = _navigate(cfg, path, create_missing=True)
+    if parent is False:
+        return f"Error navigating to '{path}'"
+
+    parent[last_key] = parsed
+
+    err = _save_and_invalidate(cfg, backup)
+    if err:
+        return err
 
     return f"config.{path} = {parsed}{backup_note}"
 

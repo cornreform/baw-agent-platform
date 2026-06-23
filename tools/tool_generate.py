@@ -30,18 +30,8 @@ def _syntax_check(path: Path) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def _generate_code(name: str, description: str, what_it_does: str) -> str:
-    """Use LLM to generate tool code."""
-    try:
-        sys.path.insert(0, str(_BAW_HOME))
-        from core.llm import call_llm_with_fallback
-        from core.tools import list_tools
-
-        # Get existing tools for reference
-        existing = list_tools()
-
-        prompt = f"""You are a Python code generator for BAW agent tools.
-Generate a complete, working Python tool file at: {_BAW_HOME}/tools/{name}.py
+_GENERATE_PROMPT_TEMPLATE = """You are a Python code generator for BAW agent tools.
+Generate a complete, working Python tool file at: {tools_dir}/{name}.py
 
 The tool must follow this exact pattern (a working example from the codebase):
 
@@ -103,26 +93,49 @@ Generate ONLY valid Python code. No markdown fences, no explanations.
 Start with \"\"\"BAW built-in: {name}\"\"\"
 """
 
-        sys_prompt = (
-            "You are a code generator for BAW agent tools. "
-            "Generate clean, working Python. No markdown formatting, no explanations — just the code."
-        )
 
-        result = call_llm_with_fallback(
-            {},  # config from environment
-            [{"role": "system", "content": sys_prompt},
-             {"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=4000,
-        )
-        code = result.response.content.strip() if result.response else ""
-        # Strip markdown fences if present
-        if code.startswith("```"):
-            code = code.split("\n", 1)[1] if "\n" in code else code
-            code = code.rsplit("```", 1)[0] if "```" in code else code
-        # Remove trailing/leading whitespace
-        code = code.strip()
-        return code
+def _build_generate_prompt(name: str, description: str, what_it_does: str) -> str:
+    """Build the LLM prompt for generating tool code."""
+    return _GENERATE_PROMPT_TEMPLATE.format(
+        tools_dir=str(_BAW_HOME / "tools"),
+        name=name,
+        description=description,
+        what_it_does=what_it_does,
+    )
+
+
+def _call_llm_for_code(prompt: str) -> str:
+    """Call LLM to generate tool code from a prompt."""
+    from core.llm import call_llm_with_fallback
+
+    sys_prompt = (
+        "You are a code generator for BAW agent tools. "
+        "Generate clean, working Python. No markdown formatting, no explanations — just the code."
+    )
+
+    result = call_llm_with_fallback(
+        {},
+        [{"role": "system", "content": sys_prompt},
+         {"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=4000,
+    )
+    code = result.response.content.strip() if result.response else ""
+    # Strip markdown fences if present
+    if code.startswith("```"):
+        code = code.split("\n", 1)[1] if "\n" in code else code
+        code = code.rsplit("```", 1)[0] if "```" in code else code
+    # Remove trailing/leading whitespace
+    code = code.strip()
+    return code
+
+
+def _generate_code(name: str, description: str, what_it_does: str) -> str:
+    """Use LLM to generate tool code."""
+    try:
+        sys.path.insert(0, str(_BAW_HOME))
+        prompt = _build_generate_prompt(name, description, what_it_does)
+        return _call_llm_for_code(prompt)
     except Exception as e:
         return f"# ERROR generating code: {e}\n"
 
@@ -137,6 +150,41 @@ def _write_code(name: str, code: str) -> dict:
         return {"ok": True, "path": str(path)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def _update_existing_import_line(content: str, name: str) -> str:
+    """Update an existing 'from . import (...' line to include the new tool name."""
+    lines = content.split("\n")
+    new_lines = []
+    for line in lines:
+        if "from . import (" in line and "bash" in line and name not in line:
+            if line.strip().endswith("("):
+                new_lines.append(line)
+                new_lines.append(f"               {name},")
+            elif line.strip().endswith(")"):
+                new_lines.append(line[:-1] + f", {name})")
+            else:
+                new_lines.append(line.rstrip() + f",\n               {name}")
+        else:
+            new_lines.append(line)
+    return "\n".join(new_lines)
+
+
+def _add_new_import_section(content: str, name: str) -> str:
+    """Add a new import line and registration for a tool not in the existing import block."""
+    content = content.replace(
+        "def register_all():",
+        f"from . import {name}\n\n\ndef register_all():",
+    )
+    lines = content.split("\n")
+    last_reg = -1
+    for i, line in enumerate(lines):
+        if "register(**" in line:
+            last_reg = i
+    if last_reg >= 0:
+        lines.insert(last_reg + 1, f"    register(**{name}.TOOL_DEF)")
+        content = "\n".join(lines)
+    return content
 
 
 def _update_init(name: str) -> dict:
@@ -157,42 +205,9 @@ def _update_init(name: str) -> dict:
     # Add import (modify the import line)
     import_line = "from . import (bash, read_file, write_file, web_search, image_generate, tts, todo,"
     if import_line in content:
-        # Find the import line and append name
-        lines = content.split("\n")
-        new_lines = []
-        for line in lines:
-            if "from . import (" in line and "bash" in line and name not in line:
-                # Add name before closing paren
-                if line.strip().endswith("("):
-                    new_lines.append(line)
-                    new_lines.append(f"               {name},")
-                elif line.strip().endswith(")"):
-                    new_lines.append(line[:-1] + f", {name})")
-                else:
-                    new_lines.append(line.rstrip() + f",\n               {name}")
-            else:
-                new_lines.append(line)
-        content = "\n".join(new_lines)
+        content = _update_existing_import_line(content, name)
     else:
-        # Add new import line and registration line before register_all()
-        content = content.replace(
-            "def register_all():",
-            f"from . import {name}\n\n\ndef register_all():",
-        )
-        # Add registration
-        content = content.replace(
-            "def register_all():",
-            f"def register_all():",
-        )
-        # Find the last register line and add ours
-        lines = content.split("\n")
-        last_reg = -1
-        for i, line in enumerate(lines):
-            if "register(**" in line:
-                last_reg = i
-        if last_reg >= 0:
-            lines.insert(last_reg + 1, f"    register(**{name}.TOOL_DEF)")
-            content = "\n".join(lines)
+        content = _add_new_import_section(content, name)
 
     try:
         init_path.write_text(content)
@@ -222,6 +237,62 @@ def _smoke_test(name: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def _get_or_generate_code(name: str, description: str, what_it_does: str,
+                          skip_generate: bool, code: str) -> tuple[str | None, str | None]:
+    """Get provided code or generate via LLM. Returns (code, error_json_or_None)."""
+    if skip_generate and code:
+        return code, None
+    if what_it_does:
+        tool_code = _generate_code(name, description, what_it_does)
+        if tool_code.startswith("# ERROR"):
+            return None, json.dumps({"ok": False, "error": tool_code}, ensure_ascii=False)
+        return tool_code, None
+    return None, json.dumps(
+        {"ok": False, "error": "Either what_it_does or code is required"}, ensure_ascii=False)
+
+
+def _build_tool_result(ok: bool, name: str, tool_code: str,
+                       error: str | None = None) -> str:
+    """Build the final JSON result for tool creation."""
+    if ok:
+        return json.dumps({
+            "ok": True,
+            "message": f"Tool '{name}' created successfully",
+            "path": str(_TOOLS_DIR / f"{name}.py"),
+            "generated_code": tool_code[:200],
+        }, ensure_ascii=False, indent=2)
+    return json.dumps({
+        "ok": False,
+        "error": error,
+        "generated_code": tool_code[:500],
+    }, ensure_ascii=False)
+
+
+def _execute_create_pipeline(name: str, tool_code: str) -> str:
+    """Run write → syntax check → init registration → smoke test pipeline."""
+    write_result = _write_code(name, tool_code)
+    if not write_result["ok"]:
+        return json.dumps(write_result, ensure_ascii=False)
+
+    syntax = _syntax_check(Path(write_result["path"]))
+    if not syntax["ok"]:
+        Path(write_result["path"]).unlink(missing_ok=True)
+        return _build_tool_result(False, name, tool_code,
+                                  f"Syntax error: {syntax['error']}")
+
+    init_result = _update_init(name)
+    if not init_result["ok"]:
+        return _build_tool_result(False, name, tool_code,
+                                  init_result["error"])
+
+    test = _smoke_test(name)
+    if not test["ok"]:
+        return _build_tool_result(False, name, tool_code,
+                                  f"Smoke test failed: {test['error']}")
+
+    return _build_tool_result(True, name, tool_code)
+
+
 def _handler(
     name: str = "",
     description: str = "",
@@ -230,13 +301,6 @@ def _handler(
     code: str = "",
 ) -> str:
     """Generate a new BAW tool from a prompt.
-
-    Steps:
-    1. LLM generates tool code based on description
-    2. Writes code to tools/<name>.py
-    3. Updates tools/__init__.py with import + registration
-    4. Syntax check + smoke test
-    5. Reports result
 
     Args:
         name: Tool name (lowercase, no spaces, e.g. 'weather')
@@ -248,49 +312,12 @@ def _handler(
     if not name:
         return json.dumps({"ok": False, "error": "Tool name is required"}, ensure_ascii=False)
 
-    # Step 1: Generate or use provided code
-    if skip_generate and code:
-        tool_code = code
-    elif what_it_does:
-        tool_code = _generate_code(name, description, what_it_does)
-        if tool_code.startswith("# ERROR"):
-            return json.dumps({"ok": False, "error": tool_code}, ensure_ascii=False)
-    else:
-        return json.dumps({"ok": False, "error": "Either what_it_does or code is required"}, ensure_ascii=False)
+    tool_code, err = _get_or_generate_code(name, description, what_it_does, skip_generate, code)
+    if err:
+        return err
+    assert isinstance(tool_code, str)
 
-    # Step 2: Write code file
-    write_result = _write_code(name, tool_code)
-    if not write_result["ok"]:
-        return json.dumps(write_result, ensure_ascii=False)
-
-    # Step 3: Syntax check
-    syntax = _syntax_check(Path(write_result["path"]))
-    if not syntax["ok"]:
-        # Clean up broken file
-        Path(write_result["path"]).unlink(missing_ok=True)
-        return json.dumps({"ok": False, "error": f"Syntax error: {syntax['error']}",
-                          "generated_code": tool_code[:500]}, ensure_ascii=False)
-
-    # Step 4: Register in __init__.py
-    init_result = _update_init(name)
-    if not init_result["ok"]:
-        return json.dumps(init_result | {"generated_code": tool_code[:500]}, ensure_ascii=False)
-
-    # Step 5: Smoke test
-    test = _smoke_test(name)
-    if not test["ok"]:
-        return json.dumps({
-            "ok": False,
-            "error": f"Smoke test failed: {test['error']}",
-            "generated_code": tool_code[:500],
-        }, ensure_ascii=False)
-
-    return json.dumps({
-        "ok": True,
-        "message": f"Tool '{name}' created successfully",
-        "path": str(_TOOLS_DIR / f"{name}.py"),
-        "generated_code": tool_code[:200],
-    }, ensure_ascii=False, indent=2)
+    return _execute_create_pipeline(name, tool_code)
 
 
 TOOL_DEF = {

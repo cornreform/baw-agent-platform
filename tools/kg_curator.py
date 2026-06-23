@@ -69,6 +69,110 @@ def stats() -> str:
     return "\n".join(lines)
 
 
+def _classify_triples(triples: list[dict], noise_rels: set
+                      ) -> tuple[list[dict], list[dict], list[dict], int]:
+    """Classify triples into signal, noise, and mentioned_in. Returns (signal_triples, noise_triples, mentioned_in, tagged_count)."""
+    signal_triples = [t for t in triples if t.get("r", "") not in noise_rels]
+    noise_triples = [t for t in triples if t.get("r", "") in noise_rels]
+    tagged_count = len([t for t in noise_triples if t.get("r") == "tagged"])
+    mentioned_in = [t for t in noise_triples if t.get("r") == "mentioned_in"]
+    return signal_triples, noise_triples, mentioned_in, tagged_count
+
+
+def _consolidate_mentions(mentioned_in: list[dict],
+                           max_mentions: int = 3) -> tuple[list[dict], int]:
+    """Consolidate mentioned_in triples by subject. Returns (consolidated, removed_count)."""
+    mention_by_subject: dict[str, list[dict]] = defaultdict(list)
+    for t in mentioned_in:
+        subj = t.get("s", "")
+        if subj:
+            mention_by_subject[subj].append(t)
+
+    consolidated = []
+    total_removed = 0
+    for subj, entries in mention_by_subject.items():
+        entries.sort(key=lambda e: e.get("ts", ""), reverse=True)
+        kept_count = min(len(entries), max_mentions)
+        kept = entries[:kept_count]
+        for k in kept:
+            k["count"] = 1
+            consolidated.append(k)
+        total_removed += len(entries) - kept_count
+    return consolidated, total_removed
+
+
+def _build_curation_report(
+    total_before: int,
+    signal_triples: list[dict],
+    noise_triples: list[dict],
+    consolidated: list[dict],
+    removed_tagged: int,
+    total_mentions_removed: int,
+    dry_run: bool,
+    achieved: bool,
+    signal_pct_after: int,
+) -> list[str]:
+    """Build the curation summary report lines."""
+    total_after = len(signal_triples) + len(consolidated)
+    signal_after = len(signal_triples)
+
+    changes = []
+    if removed_tagged > 0:
+        changes.append(f"Removed all {removed_tagged} 'tagged' triples (redundant)")
+    if total_mentions_removed > 0:
+        changes.append(f"Consolidated {total_mentions_removed + len(consolidated)} 'mentioned_in' -> {len(consolidated)} triples (removed {total_mentions_removed} duplicates)")
+
+    pct_line = (
+        f"  Signal ratio: {signal_pct_after}% — MET"
+        if achieved
+        else f"  Signal ratio: {signal_pct_after}% — NOT MET (target >=50%)"
+    )
+
+    lines = [
+        f"[KG_CURATOR] {'DRY RUN — ' if dry_run else ''}Curation Summary",
+        f"  Before: {total_before} triples ({len(signal_triples)} signal, {len(noise_triples)} noise)",
+        f"  After:  {total_after} triples ({signal_after} signal, {len(consolidated)} mentions)",
+        pct_line,
+    ]
+    if changes:
+        lines.append("")
+    lines.extend(changes)
+    return lines
+
+
+def _apply_curation(data: dict, signal_triples: list[dict],
+                     consolidated: list[dict],
+                     removed_tagged: int,
+                     total_mentions_removed: int) -> dict:
+    """Apply curation to the data dict and save. Returns updated data."""
+    new_triples = signal_triples + consolidated
+    for i, t in enumerate(new_triples):
+        t["id"] = f"t{i+1}"
+
+    connected = set()
+    for t in new_triples:
+        connected.add(t.get("s", ""))
+        connected.add(t.get("o", ""))
+    entities = data.get("entities", {})
+    orphans = [k for k in entities if k not in connected]
+    for o in orphans:
+        entities.pop(o, None)
+
+    data["triples"] = new_triples
+    data["entities"] = entities
+    data["_curated_at"] = datetime.now(timezone.utc).isoformat()
+    data["_curation_summary"] = {
+        "before": len(signal_triples) + (removed_tagged + total_mentions_removed + len(consolidated)),
+        "after": len(new_triples),
+        "removed_tagged": removed_tagged,
+        "consolidated_mentions": total_mentions_removed,
+        "removed_orphans": len(orphans),
+        "signal_ratio": len(signal_triples) * 100 // len(new_triples) if new_triples else 0,
+    }
+    _save(data)
+    return data
+
+
 def curate(action: str = "report", dry_run: bool = True) -> str:
     """Curate the KG: consolidate noise, retain signal.
 
@@ -85,87 +189,28 @@ def curate(action: str = "report", dry_run: bool = True) -> str:
     noise_rels = _noise_relations()
 
     # Classify triples
-    signal_triples = [t for t in triples if t.get("r", "") not in noise_rels]
-    noise_triples = [t for t in triples if t.get("r", "") in noise_rels]
+    signal_triples, noise_triples, mentioned_in, removed_tagged = _classify_triples(
+        triples, noise_rels
+    )
 
-    # ── Remove ALL tagged triples (redundant) ──
-    tagged_count = len([t for t in noise_triples if t.get("r") == "tagged"])
+    # Consolidate mentioned_in
+    consolidated, total_mentions_removed = _consolidate_mentions(mentioned_in)
 
-    # ── Aggressively prune mentioned_in ──
-    # Group by subject entity → keep only last N mentions
-    mentioned_in = [t for t in noise_triples if t.get("r") == "mentioned_in"]
-    mention_by_subject: dict[str, list[dict]] = defaultdict(list)
-    for t in mentioned_in:
-        subj = t.get("s", "")
-        if subj:
-            mention_by_subject[subj].append(t)
-
-    _MAX_MENTIONS_PER_ENTITY = 3
-    consolidated = []
-    total_mentions_removed = 0
-    for subj, entries in mention_by_subject.items():
-        # Sort by timestamp (newest first)
-        entries.sort(key=lambda e: e.get("ts", ""), reverse=True)
-        # Keep only the N most recent
-        kept_count = min(len(entries), _MAX_MENTIONS_PER_ENTITY)
-        kept = entries[:kept_count]
-        for k in kept:
-            k["count"] = 1  # single reference
-            consolidated.append(k)
-        total_mentions_removed += len(entries) - kept_count
-
-    # ── Calculate new totals ──
-    total_consolidated_mentions = len(consolidated)
-    removed_tagged = tagged_count
-    total_after = len(signal_triples) + total_consolidated_mentions
+    # Calculate new totals
     signal_after = len(signal_triples)
+    total_after = signal_after + len(consolidated)
     signal_pct_after = signal_after * 100 // total_after if total_after else 0
     achieved = signal_pct_after >= _KEEP_SIGNAL_RATIO * 100
 
-    # ── Exec ──
-    changes = []
-    if removed_tagged > 0:
-        changes.append(f"Removed all {removed_tagged} 'tagged' triples (redundant)")
-    if total_mentions_removed > 0:
-        changes.append(f"Consolidated {total_mentions_removed + len(consolidated)} 'mentioned_in' -> {len(consolidated)} triples (removed {total_mentions_removed} duplicates)")
-
-    lines = [
-        f"[KG_CURATOR] {'DRY RUN — ' if dry_run else ''}Curation Summary",
-        f"  Before: {total_before} triples ({len(signal_triples)} signal, {len(noise_triples)} noise)",
-        f"  After:  {total_after} triples ({signal_after} signal, {total_consolidated_mentions} mentions)",
-        f"  Signal ratio: {signal_pct_after}% — MET" if achieved else f"  Signal ratio: {signal_pct_after}% — NOT MET (target >=50%)",
-    ]
-    changes and lines.append("")
-    lines.extend(changes)
+    # Build report
+    lines = _build_curation_report(
+        total_before, signal_triples, noise_triples, consolidated,
+        removed_tagged, total_mentions_removed, dry_run, achieved, signal_pct_after,
+    )
 
     if not dry_run and action == "curate":
-        new_triples = signal_triples + consolidated
-        # Re-index
-        for i, t in enumerate(new_triples):
-            t["id"] = f"t{i+1}"
-
-        # Clean orphan entities
-        connected = set()
-        for t in new_triples:
-            connected.add(t.get("s", ""))
-            connected.add(t.get("o", ""))
-        entities = data.get("entities", {})
-        orphans = [k for k in entities if k not in connected]
-        for o in orphans:
-            entities.pop(o, None)
-
-        data["triples"] = new_triples
-        data["entities"] = entities
-        data["_curated_at"] = datetime.now(timezone.utc).isoformat()
-        data["_curation_summary"] = {
-            "before": total_before,
-            "after": total_after,
-            "removed_tagged": removed_tagged,
-            "consolidated_mentions": total_mentions_removed,
-            "removed_orphans": len(orphans),
-            "signal_ratio": signal_pct_after,
-        }
-        _save(data)
+        _apply_curation(data, signal_triples, consolidated,
+                        removed_tagged, total_mentions_removed)
         lines.append(f"\n  Curation executed")
     else:
         lines.append(f"\n  → Run with dry_run=False & action='curate' to apply")

@@ -2,6 +2,17 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v1.14.16 — 2026-06-23 (Ponytail refactoring — bulk long-function split)
+
+### 🔧 Long Function Refactoring (Ponytail Batch 1-3 + Final)
+- **18 tools files** refactored via parallel sub-agents: every `>50` line function split into ≤50 line helpers
+- **Files refactored**: `delegate_task.py` (415→44 + helpers), `tool_generate.py` (94→8 / 68→25), `image_generate.py` (90→40), `fusion_analyze.py`, `background.py`, `config.py`, `http_fetch.py`, `batch_delegate.py`, `cronjob.py`, `install.py`, `session_synthesis.py`, `restaurant.py`, `skill_import.py`, `kg_curator.py`, `codebase_doc.py`, `ponytail_review.py`, `web_extract.py`
+- **Impact**: -545 lines net, zero logic change, all imports verified
+
+### 🧹 Housekeeping
+- **YAGNI Decision Ladder** injected into `tool_generate.py` prompt — every new tool auto-considers YAGNI before generation
+- **README updates**: 16 open-source projects credited
+
 ## v1.14.13 — 2026-06-22 (Final fixes: Docker healthcheck + .gitignore)
 
 ### 🐳 Docker Healthcheck Fix (Round 2)

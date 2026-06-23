@@ -20,29 +20,8 @@ import time
 _BAW_ROOT = str(Path(__file__).resolve().parent.parent)
 
 
-def batch_delegate(tasks: list[dict]) -> str:
-    """Run multiple delegate_task calls in parallel.
-
-    Each task in the list is a dict with:
-      goal: str (required) — what the sub-agent should do
-      context: str (optional) — background info
-      toolsets: str (optional) — comma-separated tool names
-
-    Max 5 parallel tasks. Results are combined in order.
-
-    Args:
-        tasks: List of task dicts. Each has 'goal' (required), 'context' (optional).
-    """
-    if not tasks:
-        return "⚠️ No tasks provided."
-    if len(tasks) > 5:
-        tasks = tasks[:5]
-        import logging as _lg
-        _lg.getLogger(__name__).warning("[batch_delegate] Truncated to 5 tasks")
-
-    # Import delegate_task (lazy, thread-safe)
-    if _BAW_ROOT not in sys.path:
-        sys.path.insert(0, _BAW_ROOT)
+def _submit_tasks(tasks: list[dict]) -> tuple[list[tuple], list[tuple], float, int]:
+    """Submit all tasks to the thread pool and collect results/errors."""
     from tools.delegate_task import delegate_task
 
     results = []
@@ -78,11 +57,15 @@ def batch_delegate(tasks: list[dict]) -> str:
     results.sort(key=lambda x: x[0])
     errors.sort(key=lambda x: x[0])
 
-    _elapsed = time.time() - _start
-    lines = [f"╔═══ Batch Delegate ({len(results)}/{_task_count} done, {_elapsed:.1f}s) ═══╗"]
+    return results, errors, time.time() - _start, _task_count
+
+
+def _format_batch_results(results: list[tuple], errors: list[tuple],
+                          task_count: int, elapsed: float) -> str:
+    """Format batch delegate results into a readable string."""
+    lines = [f"╔═══ Batch Delegate ({len(results)}/{task_count} done, {elapsed:.1f}s) ═══╗"]
 
     for i, result in results:
-        # Extract the content between the box markers
         _content = result
         if "│ " in _content:
             _parts = _content.split("│ ")
@@ -97,8 +80,36 @@ def batch_delegate(tasks: list[dict]) -> str:
         for i, err in errors:
             lines.append(f"│ Task {i + 1}: {err[:200]}")
 
-    lines.append(f"╚═══ {_elapsed:.1f}s ═══════════════════════════╝")
+    lines.append(f"╚═══ {elapsed:.1f}s ═══════════════════════════╝")
     return "\n".join(lines)
+
+
+def batch_delegate(tasks: list[dict]) -> str:
+    """Run multiple delegate_task calls in parallel.
+
+    Each task in the list is a dict with:
+      goal: str (required) — what the sub-agent should do
+      context: str (optional) — background info
+      toolsets: str (optional) — comma-separated tool names
+
+    Max 5 parallel tasks. Results are combined in order.
+
+    Args:
+        tasks: List of task dicts. Each has 'goal' (required), 'context' (optional).
+    """
+    if not tasks:
+        return "⚠️ No tasks provided."
+    if len(tasks) > 5:
+        tasks = tasks[:5]
+        import logging as _lg
+        _lg.getLogger(__name__).warning("[batch_delegate] Truncated to 5 tasks")
+
+    # Import delegate_task (lazy, thread-safe)
+    if _BAW_ROOT not in sys.path:
+        sys.path.insert(0, _BAW_ROOT)
+
+    results, errors, elapsed, task_count = _submit_tasks(tasks)
+    return _format_batch_results(results, errors, task_count, elapsed)
 
 
 def handler(tasks: str) -> str:
