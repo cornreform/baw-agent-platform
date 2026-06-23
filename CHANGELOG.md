@@ -2,6 +2,22 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v1.14.17 — 2026-06-23 (Auto-provider-fallback for all LLM calls)
+
+### 🔄 Auto-Provider-Fallback System
+- **`call_llm_with_fallback(config, ...)`** — new function: tries primary model with exponential backoff (3 retries), then configured fallback, then scans ALL providers for any working chat model, then tries last-resort auto-recovery
+- **`get_fallback_model(config, failed_model_id)`** — new helper: resolves next suitable model from config
+- **`FallbackResult` dataclass** — returns which model_used ("primary"/"fallback"/"fallback2:X"/"last-resort:X"/"auto-recovery:X")
+- **Circuit breaker integration into `call_llm()`** — blacklisted provider → immediate RuntimeError; circuit-open provider → skip without trying
+- **Smart skip**: if primary AND its configured fallback are on unhealthy providers, skip both and scan all providers
+- **Request-format error detection** — corrupt tool_call messages raise Chinese diagnostic instead of cryptic error
+
+### 🩺 Investigation
+- DeepSeek provider ✅ working fine (no actual failure found)
+- Knowledge Graph ✅ healthy (9 triples, 100% signal, 0 noise)
+- Quality tools ✅ both operational (memory_quality + kg_curator)
+- All cron jobs ran successfully
+
 ## v1.14.16 — 2026-06-23 (Ponytail refactoring — bulk long-function split)
 
 ### 🔧 Long Function Refactoring (Ponytail Batch 1-3 + Final)

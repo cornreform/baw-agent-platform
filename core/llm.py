@@ -308,6 +308,21 @@ def call_llm(
     max_tokens: Optional[int] = None,
 ) -> LLMResponse:
     """Call LLM via configured protocol. Falls back to openai-chat if protocol unknown."""
+    # ── Circuit breaker: skip if provider is blacklisted or circuit open ──
+    if _is_provider_blacklisted(model.provider):
+        raise RuntimeError(
+            f"Provider '{model.provider}' is permanently blacklisted "
+            f"(fatal auth error). Check API keys in ~/.baw/.env"
+        )
+    with _CIRCUIT_LOCK:
+        _cb_state = _CIRCUIT_STATE.get(model.provider)
+    if _cb_state and _cb_state.get("open_until", 0) > time.time():
+        _cb_remain = int(_cb_state["open_until"] - time.time())
+        raise RuntimeError(
+            f"Circuit breaker open for provider '{model.provider}' "
+            f"({_cb_state['failures']} failures, {_cb_remain}s cooldown remaining)"
+        )
+
     if not model.api_key:
         raise ValueError(
             f"API key missing for provider '{model.provider}'. "
@@ -902,6 +917,47 @@ def call_llm_with_fallback(
         f"4. 使用 /doctor 指令檢查系統狀態"
     )
     raise RuntimeError(_friendly)
+
+
+def get_fallback_model(config: dict, failed_model_id: str) -> Optional[ModelDef]:
+    """Find the next suitable model when a model fails.
+
+    Resolution order:
+      1. Use ``model.fallback`` from config if set and different from ``failed_model_id``.
+      2. Search ``model.cost_tiers`` for another model in the same tier as the failed model.
+      3. Return ``None`` if no fallback is available.
+
+    Args:
+        config: The loaded BAW config dict.
+        failed_model_id: The model ID that just failed.
+
+    Returns:
+        A ``ModelDef`` for the next model to try, or ``None``.
+    """
+    model_cfg = config.get("model", {})
+
+    # Step 1: explicit fallback from config
+    fallback_id = model_cfg.get("fallback", "")
+    if fallback_id and fallback_id != failed_model_id:
+        try:
+            return get_model(config, fallback_id)
+        except ValueError:
+            pass  # fallback model not in config — try cost_tiers
+
+    # Step 2: same cost_tier search
+    cost_tiers = model_cfg.get("cost_tiers", {})
+    if cost_tiers:
+        for tier_name, models in cost_tiers.items():
+            if failed_model_id in models:
+                for mid in models:
+                    if mid != failed_model_id:
+                        try:
+                            return get_model(config, mid)
+                        except ValueError:
+                            continue
+                break
+
+    return None
 
 
 def _call_with_timeout(model, messages, tools, temperature, max_tokens):
