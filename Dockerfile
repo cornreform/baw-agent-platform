@@ -11,7 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # useradd cached (never changes)
-RUN useradd -m baw && mkdir -p /home/baw/.baw && chown -R baw:baw /home/baw/.baw
+RUN useradd -m baw && \
+    mkdir -p /home/baw/.baw /home/baw/.local && \
+    chown -R baw:baw /home/baw/
 
 WORKDIR /app
 
