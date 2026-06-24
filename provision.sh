@@ -206,14 +206,14 @@ if [ -d "$BAW_DIR" ]; then
     done 2>/dev/null || true
     # Fix Python 3.9 compat: default to _chat_response instead of _run_baw
     # (prevents memory-save loop taking over all conversations)
-    sed -i 's/return self\._run_baw(text, chat_id=chat_id)/return self._chat_response(text, chat_id=chat_id)/' \
+#    sed -i 's/return self\\._run_baw(text, chat_id=chat_id)/return self._run_baw(text, chat_id=chat_id)/' \\
         core/messaging/__init__.py 2>/dev/null || true
     # Fix Python 3.9 compat: chat-first routing (skip DirectShortcuts for conversations)
     python3 -c "
 with open('core/messaging/__init__.py','r') as f:
     c=f.read()
 old='# ── Direct execution shortcuts'
-new='# ── Chat-first: conversational -> LLM directly\n        _lower = text.strip().lower()\n        _is_cmd = any(_lower.startswith(p) for p in [\"/\", \"search \", \"read \", \"write \", \"create \", \"run \", \"exec \", \"git \", \"ssh \", \"docker \"])\n        if not _is_cmd:\n            return self._chat_response(text, chat_id=chat_id)\n\n' + old
+new='# ── Chat-first: conversational -> LLM directly\n        _lower = text.strip().lower()\n        _is_cmd = any(_lower.startswith(p) for p in [\"/\", \"search \", \"read \", \"write \", \"create \", \"run \", \"exec \", \"git \", \"ssh \", \"docker \"])\n        if not _is_cmd:\n            return self._run_baw(text, chat_id=chat_id)\n\n' + old
 c=c.replace(old,new,1)
 with open('core/messaging/__init__.py','w') as f:
     f.write(c)
