@@ -2,9 +2,34 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
-## v1.16.0 — 2026-06-23 (Conversational tone + batch file processing)
+## v1.17.0 — 2026-06-24 (Plan Context Layer)
+
+### 🧠 Plan Context Layer (New)
+- **`core/plan.py`** — Brand new Plan entity with YAML persistence: create, load, get_active, add_artifact, add_step, complete_step, deactivate
+- **`core/messaging/__init__.py`** — Auto-detect plan signals in `_run_baw()`: keywords ("計劃/project/plan") or 5+ batch files trigger plan creation
+- **`core/messaging/telegram.py`** — `/plan` command handler: `new`, `status`, `add`, `done`, `close`
+- **`core/loop.py`** — `build_system_prompt()` injects active plan context via `Plan.get_active().status_block()`
+- **`core/messaging/__init__.py`** — Softened intent-shift detection: when plan is active, context is NOT reset on topic shift
+- **`core/messaging/__init__.py`** — Plan artifact tracking: files in batch prompts auto-registered as plan artifacts
+- **`tests/unit/test_plan.py`** — 23 unit tests, 100% passing (create, load, get_active, artifacts, steps, summary, detect, deactivate)
 
 ### 🗣️ Conversational Tone (SOUL Personality Guide)
+- **`SOUL.md` / `SOUL.default.md`** — Rewrote from rigid rulebook to personality guide: "自然對話，句式多變，夠資料就收"
+- **`~/.baw/references/communication-style.md`** — Extracted natural conversational style reference (Cantonese, variable structures, no emoji checklist)
+- **`MASTERSKILLS.md`** — Added communication-style routing for new users
+
+### 📦 Batch File Processing (Media Group + Rapid Fire)
+- **`core/messaging/telegram.py`** — `_process_media_group()` now downloads ALL files first, then submits ONE BAW task instead of queuing each file individually
+- **`core/messaging/telegram.py`** — Added `_buffer_rapid_msg()` / `_process_rapid_batch()` — detects rapid-fire 3s window and processes as one batch
+- **`core/messaging/telegram.py`** — Fixed audio media group crash: `audio` field now handled individually instead of "全部檔案下載失敗"
+- **`core/messaging/telegram.py`** — Better error logging for batch download failures
+
+### 🔧 Self-Evolution Enhancement
+- **`core/evolve.py`** — P6 SOUL-to-Skill offload: auto-detect procedural SOUL.md sections, generate skill YAML, leave reference link
+
+## v1.16.0 — 2026-06-23 (Conversational tone + batch file processing)
+
+### 🗣️ Conversational Tone
 - **`SOUL.md` / `SOUL.default.md`** — Rewrote from rigid rulebook to personality guide: "自然對話，句式多變，夠資料就收"
 - **`~/.baw/references/communication-style.md`** — Extracted natural conversational style reference (Cantonese, variable structures, no emoji checklist)
 - **`MASTERSKILLS.md`** — Added communication-style routing for new users
