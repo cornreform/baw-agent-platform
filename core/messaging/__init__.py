@@ -2395,6 +2395,25 @@ class BaseConnector(ABC):
 
                 output = response or ""
 
+                # ── Post-LLM Plan Detection: parse <!--plan:Name--> marker ──
+                if output and "<!--plan:" in output:
+                    _plan_marker = re.search(r'<!--plan:\s*(.+?)\s*-->', output)
+                    if _plan_marker:
+                        _plan_name = _plan_marker.group(1).strip()
+                        # Strip marker from output (invisible to user)
+                        output = re.sub(r'<!--plan:\s*.+?\s*-->', '', output).strip()
+                        if _plan_name:
+                            from core.plan import Plan as _PlanCls
+                            # Create plan if none active, or link to existing
+                            if not self._plan:
+                                self._plan = _PlanCls.create(name=_plan_name)
+                                if session:
+                                    session["plan_id"] = self._plan.plan_id
+                                    self._plan.add_session(session["id"])
+                                logger.info(f"[Plan] Auto-detected via LLM: {_plan_name} ({self._plan.plan_id})")
+                            else:
+                                logger.info(f"[Plan] Marker seen but plan already active: {self._plan.name}")
+
                 # Collect plan recaps
                 if info and info.get("plan_recap"):
                     all_plan_recaps.append(info["plan_recap"])
