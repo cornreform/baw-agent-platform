@@ -29,7 +29,8 @@ RUN pip install --no-cache-dir \
     html2text \
     websocket-client \
     croniter \
-    requests
+    requests \
+    beautifulsoup4
 
 # Code copy with inline chown (single layer, no trailing chown -R)
 COPY --chown=baw:baw . .
