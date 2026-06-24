@@ -78,4 +78,4 @@ def format_tone_confirmation(old_tone: str, new_tone: str) -> str:
         "stepwise": "逐步執行 — 每步報 result、等 confirm 先繼續",
     }
     desc = descriptions.get(new_tone, "")
-    return f"🎭 Tone switched: **{old_tone}** → **{new_tone}**\n_{desc}_"
+    return f"[Tone] {old_tone} → {new_tone}\n{desc}" if desc else f"[Tone] {old_tone} → {new_tone}"
