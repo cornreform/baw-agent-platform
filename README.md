@@ -8,21 +8,48 @@
 
 <br>
 <p align="center">
+  <img src="docs/baa-social-preview.png" alt="BAW Social Preview" width="80%">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/version-1.15.0-blueviolet" alt="v1.15.0">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
-  <img src="https://img.shields.io/badge/voice-STT-brightgreen" alt="Voice STT Support">
   <img src="https://img.shields.io/github/stars/cornreform/baw-agent-platform?style=flat&label=stars" alt="GitHub stars">
   <img src="https://img.shields.io/github/last-commit/cornreform/baw-agent-platform?style=flat&label=updated" alt="last commit">
 </p>
 
 <h1 align="center">⚫ BAW — Black And White ⚪</h1>
-<p align="center"><strong>Built from scratch agent platform • 由零打造嘅 Agent Platform</strong></p>
+<p align="center"><strong>No LangChain. No AutoGPT. Just a courtroom of Angels and Devils debating every agent call.</strong></p>
+<p align="center"><sub><em>Built from scratch • 由零打造 • 100% vendor-agnostic • Cost-transparent</em></sub></p>
+
 <p align="center">
-  🤍🖤 Angel/Devil Dual-Soul Court • Route Plan + Anti-Stuck • Self-Config Tools<br>
-  🤍🖤 Angel/Devil 雙魂法庭 • 路線圖執行+防死步 • 自我配置工具
+  🤍🖤 Angel/Devil Dual-Soul Court • Self-Evolution • Multi-Model Fusion • Telegram Bot<br>
+  🤍🖤 Angel/Devil 雙魂法庭 • 自我進化 • 多模型融合 • Telegram Bot
 </p>
+
+---
+
+## ⚔️ Why BAW? (vs The Alternatives)
+
+<p align="center">
+  <img src="docs/demo-terminal.png" alt="BAW Terminal Demo" width="90%">
+  <br><em>BAW in action — CLI setup wizard + project analysis with built-in Angel/Devil court</em>
+</p>
+
+| | BAW (this) | LangChain / LangGraph | CrewAI | AutoGen | OpenAI Agents SDK |
+|---|---|---|---|---|---|
+| **Architecture** | 100% from scratch | Wraps dozens of libs | Wraps LangChain | Wraps OpenAI | Proprietary |
+| **Lock-in** | Zero — swap any provider | Heavy framework lock-in | Heavy framework lock-in | Heavy OpenAI lock-in | Total OpenAI lock-in |
+| **Execution Guard** | 🤍🖤 Angel/Devil adversarial court | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Code size** | ~15K LOC | 500K+ LOC | ~100K LOC | ~100K LOC | Closed |
+| **Cost Transparency** | ✅ Token cost per message | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Self-Evolution** | ✅ Learn skills + optimize | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Auto-Heal** | ✅ 3-layer ModuleNotFoundError auto-fix | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Multi-Platform Bot** | Telegram / Discord / Slack / Signal | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Setup** | `pip install` + `baw --setup` | Complex chains | Complex setup | Multiple installs | API-dependent |
+| **License** | MIT | MIT | MIT | MIT (older) | Proprietary |
 
 ---
 
