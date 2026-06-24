@@ -210,7 +210,6 @@ if [ -d "$BAW_DIR" ]; then
         core/messaging/__init__.py 2>/dev/null || true
     # Fix Python 3.9 compat: chat-first routing (skip DirectShortcuts for conversations)
     python3 -c "
-import re
 with open('core/messaging/__init__.py','r') as f:
     c=f.read()
 old='# ── Direct execution shortcuts'
@@ -218,6 +217,19 @@ new='# ── Chat-first: conversational -> LLM directly\n        _is_cmd = any(
 c=c.replace(old,new,1)
 with open('core/messaging/__init__.py','w') as f:
     f.write(c)
+" 2>/dev/null || true
+    # Fix Python 3.9 compat: remove keyword-based DirectShortcuts (LLM handles intent)
+    python3 -c "
+with open('core/messaging/__init__.py','r') as f:
+    lines=f.readlines()
+s=e=None
+for i,l in enumerate(lines):
+    if 'Direct execution shortcuts' in l: s=i
+    if s is not None and 'return _direct_result' in l: e=i; break
+if s and e:
+    del lines[s:e+1]
+    with open('core/messaging/__init__.py','w') as f:
+        f.writelines(lines)
 " 2>/dev/null || true
     deactivate
     
