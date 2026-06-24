@@ -15,9 +15,16 @@ RUN useradd -m baw && mkdir -p /home/baw/.baw && chown -R baw:baw /home/baw/.baw
 
 WORKDIR /app
 
-# pip layer cached (only rebuilds when requirements.txt changes)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# pip layer cached (only rebuilds when this line changes)
+RUN pip install --no-cache-dir \
+    docx2txt \
+    httpx \
+    pyyaml \
+    pptx2md \
+    python-pptx \
+    python-docx \
+    schedule \
+    html2text
 
 # Code copy with inline chown (single layer, no trailing chown -R)
 COPY --chown=baw:baw . .
