@@ -18,13 +18,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /usr/bin/docker:/usr/bin/docker:ro
       - /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro
-      - ~/.baw:/home/baw/.baw
-      - ~/.mmx:/home/baw/.mmx
-      - /home/radxa/baw:/app                                    # live code mount — no rebuild needed
+      - /home/sunnycsl/.baw:/home/baw/.baw
+      - /home/sunnycsl/.mmx:/home/baw/.mmx
+      - /home/sunnycsl/baw:/app                                    # live code mount — no rebuild needed
     # Load Telegram token + API keys from BAW's own env files
     env_file:
-      - ~/.baw/telegram.env
-      - ~/.baw/.env
+      - /home/sunnycsl/.baw/telegram.env
+      - /home/sunnycsl/.baw/.env
     network_mode: bridge
     group_add:
       - "988"  # docker group GID — install.sh auto-detects this; change if your Docker GID differs (run: getent group docker | cut -d: -f3)
