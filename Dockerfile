@@ -27,7 +27,8 @@ RUN pip install --no-cache-dir \
     python-docx \
     schedule \
     html2text \
-    websocket-client
+    websocket-client \
+    croniter
 
 # Code copy with inline chown (single layer, no trailing chown -R)
 COPY --chown=baw:baw . .

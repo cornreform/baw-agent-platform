@@ -103,14 +103,56 @@ Examples:
             logging.getLogger(_noisy).setLevel(logging.WARNING)
     logging.info(f"[baw-bot] log level: {log_level_name.upper()}")
 
-    # Load messaging connectors
+    # ── Auto-heal startup imports ──
+    # If a connector's dependency is missing (ModuleNotFoundError),
+    # auto-install via pip and retry before giving up.
+    _KNOWN_EXTRA_DEPS = {
+        "websocket": "websocket-client",
+        "croniter": "croniter",
+        "beautifulsoup4": "beautifulsoup4",
+        "bs4": "beautifulsoup4",
+        "PIL": "pillow",
+        "feedparser": "feedparser",
+        "markdownify": "markdownify",
+        "rich": "rich",
+    }
+
+    def _safe_import(import_stmt: str) -> bool:
+        """Execute an import statement, auto-install missing deps, retry."""
+        try:
+            exec(import_stmt)
+            return True
+        except ModuleNotFoundError as _e:
+            _mod = str(_e).split("'")[1] if "'" in str(_e) else ""
+            _pip_name = _KNOWN_EXTRA_DEPS.get(_mod, _mod)
+            logging.warning(f"[AutoHeal] Missing module '{_mod}' → pip install {_pip_name}")
+            import subprocess as _sp
+            _r = _sp.run(
+                [sys.executable, "-m", "pip", "install", _pip_name, "--quiet"],
+                capture_output=True, text=True, timeout=60,
+            )
+            if _r.returncode == 0:
+                logging.info(f"[AutoHeal] ✅ Installed '{_pip_name}', retrying import...")
+                try:
+                    exec(import_stmt)
+                    return True
+                except ModuleNotFoundError as _e2:
+                    logging.error(f"[AutoHeal] ❌ Still missing after install: {_e2}")
+            else:
+                logging.error(f"[AutoHeal] ❌ pip install {_pip_name} failed: {_r.stderr[:200]}")
+            return False
+
+    # Load messaging connectors (with auto-heal)
     from core.messaging import list_connectors, get_connector
-    from core.messaging.telegram import TelegramConnector
-    from core.messaging.discord import DiscordConnector
-    from core.messaging.signal import SignalConnector
-    from core.messaging.whatsapp import WhatsAppConnector
-    from core.messaging.matrix import MatrixConnector
-    from core.messaging.slack import SlackConnector
+    _safe_import("from core.messaging.telegram import TelegramConnector")
+    _safe_import("from core.messaging.discord import DiscordConnector")
+    _safe_import("from core.messaging.signal import SignalConnector")
+    _safe_import("from core.messaging.whatsapp import WhatsAppConnector")
+    _safe_import("from core.messaging.matrix import MatrixConnector")
+    _safe_import("from core.messaging.slack import SlackConnector")
+
+    # Also ensure croniter for the scheduler
+    _safe_import("import croniter")
 
     # Force registration by importing all connector modules
     # (The @register decorator auto-registers them)
