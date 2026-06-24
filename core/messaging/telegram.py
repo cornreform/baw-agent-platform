@@ -770,8 +770,19 @@ class TelegramConnector(BaseConnector):
 
         total = len(msgs)
         is_photo = bool(msgs[0].get("photo"))
-        label = "📸 圖片" if is_photo else "📎 檔案"
+        is_audio = bool(msgs[0].get("audio"))
+        is_voice = bool(msgs[0].get("voice"))
+        label = "📸 圖片" if is_photo else ("🎵 音頻" if is_audio else "📎 檔案")
         self.send(chat_id, f"{label}組共 {total} 個 — 全部下載中...")
+
+        # Audio in media group — handle individually (STT is per-file)
+        if is_audio or is_voice:
+            self.send(chat_id, f"🎵 音頻唔支援 batch — 逐一處理")
+            for msg in msgs:
+                user_id = str(msg["from"]["id"])
+                user_name = msg["from"].get("first_name", "User")
+                self._handle_media_msg(chat_id, user_id, user_name, msg, "voice")
+            return
 
         # ── Step 1: Download + extract ALL files first ──
         import tempfile as _tempfile

@@ -13,6 +13,7 @@ All notable changes to BAW (Black And White) Agent Platform.
 - **`core/messaging/telegram.py`** — `_process_media_group()` now downloads ALL files first, then submits ONE BAW task instead of queuing each file individually
 - **`core/messaging/telegram.py`** — Added `_buffer_rapid_msg()` / `_process_rapid_batch()` — detects rapid-fire messages (any type) within 3s window and processes as one batch
 - **`core/messaging/telegram.py`** — Voice messages still handled individually (STT is per-file), documents/photos batch together
+- **`core/messaging/telegram.py`** — Fixed audio media group crash: media groups with `audio` field now handled individually instead of failing with "全部檔案下載失敗"
 - **`core/messaging/telegram.py`** — Better error logging for batch download failures
 
 ### 🔧 Self-Evolution Enhancement
