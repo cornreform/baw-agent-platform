@@ -26,7 +26,8 @@ RUN pip install --no-cache-dir \
     python-pptx \
     python-docx \
     schedule \
-    html2text
+    html2text \
+    websocket-client
 
 # Code copy with inline chown (single layer, no trailing chown -R)
 COPY --chown=baw:baw . .
