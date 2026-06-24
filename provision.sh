@@ -332,6 +332,8 @@ for n, c, p in tasks:
 print('Scheduler: 5 tasks initialized')
 " 2>/dev/null || true
     deactivate
+    # Fix: clean synthesis for _run_baw (strip tool artifacts from Telegram output)
+    python3 /home/sunnycsl/qb-a7s-setup/patch_runbaw_clean.py 2>/dev/null || true
     echo ""
     echo "Nexi migration:"
     echo "  Copy ~/nexi-migration-pack/ content -> ~/.baw/ after first BAW setup"
