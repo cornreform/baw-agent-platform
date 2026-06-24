@@ -867,6 +867,26 @@ class TelegramConnector(BaseConnector):
             self.send(chat_id, response)
             self._record_batch_result(chat_id, response[:200], "document")
 
+            # ── Inject document interaction into session history ──
+            # Without this, BAW loses context when user later refers to "that file"
+            try:
+                session = self._get_or_create_session(chat_id)
+                session["messages"].append({
+                    "role": "user",
+                    "content": f"[Sent file: {file_name}] {caption if caption else '請分析呢份文件'}"
+                })
+                session["messages"].append({
+                    "role": "assistant",
+                    "content": response[:2000]  # keep summary, not full response
+                })
+                # Clean up: remove progress messages, keep only meaningful history
+                if len(session["messages"]) > self._MAX_SESSION_MSGS:
+                    session["messages"] = session["messages"][-self._MAX_SESSION_MSGS:]
+                session["updated"] = __import__('time').time()
+                self._save_session_to_disk(session)
+            except Exception as _se:
+                logger.warning(f"[Telegram] Could not inject doc session: {_se}")
+
         except BaseException as e:
             if isinstance(e, (KeyboardInterrupt, SystemExit)):
                 logger.warning(f"[Telegram] Document processing interrupted: {type(e).__name__}")
