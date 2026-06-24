@@ -237,6 +237,15 @@ if s and e:
     # Fix: add user-facing output rule (hide tool traces from user)
     sed -i "/Use \\\`todo\\\` tool internally to track progress/a\\        \"\\\\n\"\\\n        \"### OUTPUT RULE — User-facing only\\\\n\"\\\n        \"Your text output goes DIRECTLY to the user. Never show:\\\\n\"\\\n        \"- tool call traces, file paths, tool results\\\\n\"\\\n        \"- numbered step lists, progress updates, execution plans\\\\n\"\\\n        \"- internal diagnostics, debug info, or system status\\\\n\"\\\n        \"\\\\n\"\\\n        \"Only the FINAL answer reaches the user.\\\\n\"" \
         core/loop.py 2>/dev/null || true
+    # Fix: only use _resp.content for output when no tool_calls
+    sed -i 's/output += (_resp.content or "")/if not _resp.tool_calls:\n        output += (_resp.content or "")/' \
+        core/loop.py 2>/dev/null || true
+    # Fix: add self-healing rule
+    sed -i "/### Core rules/a\        \"- SELF-HEALING: After detecting an issue\\\\n\"\\\n        \"(audit, broken import, config drift, tool failure),\\\\n\"\\\n        \"ATTEMPT to fix it before reporting. Use patch/write_file/bash\\\\n\"\\\n        \"to modify your own source. Only report if fix fails.\\\\n\"" \
+        core/loop.py 2>/dev/null || true
+    # Fix: add natural language output rule
+    sed -i "/### OUTPUT RULE/a\        \"- Write like a human assistant, not a tool report.\\\\n\"\\\n        \"- Use natural Cantonese. No numbered lists, no headings, no markdown tables.\\\\n\"\\\n        \"- Short paragraphs or single sentences. Like chatting with a friend.\\\\n\"" \
+        core/loop.py 2>/dev/null || true
     deactivate
     sed -i 's/if score <= 5:/if score <= -1:/' core/router.py 2>/dev/null || true
     deactivate
