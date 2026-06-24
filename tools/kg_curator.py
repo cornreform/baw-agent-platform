@@ -80,7 +80,7 @@ def _classify_triples(triples: list[dict], noise_rels: set
 
 
 def _consolidate_mentions(mentioned_in: list[dict],
-                           max_mentions: int = 3) -> tuple[list[dict], int]:
+                           max_mentions: int = 0) -> tuple[list[dict], int]:
     """Consolidate mentioned_in triples by subject. Returns (consolidated, removed_count)."""
     mention_by_subject: dict[str, list[dict]] = defaultdict(list)
     for t in mentioned_in:
