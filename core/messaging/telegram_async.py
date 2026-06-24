@@ -247,8 +247,19 @@ async def _start_async(self):
         # Use `close` (not `logOut`) — logOut logs the bot out entirely.
         # `close` just releases the long-poll connection without invalidating the token.
         async with httpx.AsyncClient(timeout=10) as _reset:
-            await _reset.post(f"{self._api_base}/close")
-            await _reset.get(f"{self._api_base}/deleteWebhook?drop_pending_updates=true")
+            try:
+                resp = await _reset.post(f"{self._api_base}/close")
+                if resp.status_code == 429:
+                    retry_after = resp.json().get("parameters", {}).get("retry_after", 30)
+                    logger.warning(f"[Telegram] close() rate-limited, retry after {retry_after}s — proceeding anyway")
+                elif resp.status_code != 200:
+                    logger.warning(f"[Telegram] close() returned HTTP {resp.status_code}: {resp.text[:200]}")
+            except Exception as exc:
+                logger.warning(f"[Telegram] close() failed: {exc} — proceeding anyway")
+            try:
+                await _reset.get(f"{self._api_base}/deleteWebhook?drop_pending_updates=true")
+            except Exception:
+                pass
         logger.info("[Telegram] Cleaned stale sessions before poll loop")
         await _poll_loop_async(self)
 
