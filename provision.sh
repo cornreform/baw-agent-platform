@@ -231,6 +231,9 @@ if s and e:
     with open('core/messaging/__init__.py','w') as f:
         f.writelines(lines)
 " 2>/dev/null || true
+    # Fix Python 3.9 compat: SOUL.md FIRST in system prompt (was buried after rules)
+    sed -i 's/system_prompt = lang_gate + evidence_rule + execution_protocol + soul_text/system_prompt = soul_text + lang_gate + evidence_rule + execution_protocol/' \
+        core/loop.py 2>/dev/null || true
     deactivate
     
     # Create BAW config directory
