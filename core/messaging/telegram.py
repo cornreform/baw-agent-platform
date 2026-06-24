@@ -54,6 +54,10 @@ class TelegramConnector(BaseConnector):
         self._media_group_buffers: dict[str, dict[str, list]] = {}  # {chat_id: {group_id: [msgs]}}
         self._media_group_timers: dict[str, threading.Timer] = {}
         self._media_group_wait = 2.5  # seconds to wait for all media in a group
+        # ── Rapid-fire batch buffer (any msg type) ──
+        self._rapid_batches: dict[str, list] = {}   # {chat_id: [msg]}
+        self._rapid_timers: dict[str, threading.Timer] = {}
+        self._rapid_wait = 3.0  # seconds to wait for more rapid-fire msgs
 
     def _load_offset(self):
         """Load Telegram update offset from disk (survives restarts)."""
@@ -756,7 +760,7 @@ class TelegramConnector(BaseConnector):
         self.send(chat_id, f"{label} {count} 收到 — 等埋其他同組檔案...")
 
     def _process_media_group(self, chat_id: str, group_id: str):
-        """Timer fired — all media in this group should have arrived. Queue them all."""
+        """Timer fired — all media in this group should have arrived. Process as ONE batch."""
         msgs = self._media_group_buffers.get(chat_id, {}).pop(group_id, [])
         timer_key = f"{chat_id}:{group_id}"
         self._media_group_timers.pop(timer_key, None)
@@ -767,13 +771,239 @@ class TelegramConnector(BaseConnector):
         total = len(msgs)
         is_photo = bool(msgs[0].get("photo"))
         label = "📸 圖片" if is_photo else "📎 檔案"
-        self.send(chat_id, f"{label}組共 {total} 個 — 開始排隊處理...")
+        self.send(chat_id, f"{label}組共 {total} 個 — 全部下載中...")
 
-        for msg in msgs:
+        # ── Step 1: Download + extract ALL files first ──
+        import tempfile as _tempfile
+        file_entries = []
+        for i, msg in enumerate(msgs):
+            try:
+                if is_photo:
+                    photo_data = max(msg.get("photo", []), key=lambda p: p.get("file_size", 0))
+                    file_id = photo_data["file_id"]
+                    file_name = f"photo_{file_id[:8]}.jpg"
+                else:
+                    doc = msg.get("document")
+                    if not doc:
+                        # Maybe it's a video or other type in a media group
+                        video = msg.get("video")
+                        if video:
+                            file_id = video["file_id"]
+                            file_name = video.get("file_name", f"video_{video['file_id'][:8]}.mp4")
+                            logger.info(f"[Telegram] Batch msg {i}: is video — skipping (unsupported)")
+                            continue
+                        logger.warning(f"[Telegram] Batch msg {i}: no document/video field, keys={list(msg.keys())[:15]}")
+                        continue
+                    file_id = doc["file_id"]
+                    file_name = doc.get("file_name", "document")
+
+                logger.info(f"[Telegram] Batch downloading {i+1}/{total}: {file_name} (fid={file_id[:12]}...)")
+                local_path = self._download_file(file_id, file_name)
+                content = self._extract_file_content(local_path)
+                _extracted_path = Path(_tempfile.gettempdir()) / f"baw_extracted_{file_name}.txt"
+                _extracted_path.write_text(content, encoding="utf-8")
+
+                file_entries.append({
+                    "name": file_name,
+                    "path": str(_extracted_path),
+                    "size": len(content),
+                    "pages": content.count("--- Page"),
+                })
+            except Exception as e:
+                logger.error(f"[Telegram] Batch download failed for msg {i}: {type(e).__name__}: {e}")
+                continue
+
+        if not file_entries:
+            self.send(chat_id, "❌ 全部檔案下載失敗")
+            return
+
+        # ── Step 2: Build batch prompt ──
+        files_section = "\n\n".join(
+            f"<b>File {i+1}:</b> {f['name']}  "
+            f"<code>{f['size']} chars, ~{f['pages']} pages</code>\n"
+            f"  Path: <code>{f['path']}</code>"
+            for i, f in enumerate(file_entries)
+        )
+
+        caption = (msgs[0].get("caption", "") or "").strip()
+        user_instruction = f"\n\nUser instruction: {caption}" if caption else ""
+
+        prompt = (
+            f"<b>[Batch — {len(file_entries)} reference files]</b>\n\n"
+            f"{files_section}\n\n"
+            f"These files were sent together as one batch. "
+            f"Use <code>read_file</code> with offset/limit to read each file. "
+            f"Analyze them as a <b>group</b> — compare, cross-reference, "
+            f"and synthesize findings across all files.\n\n"
+            f"<b>TASK:</b> Produce a consolidated analysis of ALL files above.\n"
+            f"DO NOT echo raw file content. DO produce cross-referenced insights."
+            f"{user_instruction}"
+        )
+
+        # ── Step 3: Acquire slot + run once ──
+        self.send(chat_id, f"🤔 Analyzing <b>{len(file_entries)} files</b> together...")
+        self._mark_chat_busy(chat_id)
+        self._cancel_event.clear()
+        response = self._run_baw(prompt, chat_id=chat_id)
+        self.send(chat_id, response)
+        self._release_slot(chat_id)
+
+
+    def _buffer_rapid_msg(self, chat_id: str, msg: dict):
+        """Buffer a rapid-fire media message (no media_group_id). 
+        Reset timer each time a new msg arrives from same chat.
+        When timer fires, process ALL buffered msgs as one batch."""
+        if chat_id not in self._rapid_batches:
+            self._rapid_batches[chat_id] = []
+        self._rapid_batches[chat_id].append(msg)
+        count = len(self._rapid_batches[chat_id])
+
+        # Cancel existing timer for this chat
+        if chat_id in self._rapid_timers:
+            self._rapid_timers[chat_id].cancel()
+
+        timer = threading.Timer(self._rapid_wait, self._process_rapid_batch, args=[chat_id])
+        timer.daemon = True
+        self._rapid_timers[chat_id] = timer
+        timer.start()
+
+        # Determine type label
+        has_voice = bool(msg.get("voice") or msg.get("audio"))
+        has_doc = bool(msg.get("document"))
+        has_photo = bool(msg.get("photo"))
+        if has_voice:
+            label = "🎵 語音"
+        elif has_doc:
+            label = "📎 檔案"
+        elif has_photo:
+            label = "📸 圖片"
+        else:
+            label = "📎 媒體"
+        self.send(chat_id, f"{label} {count} 收到 — 等埋其他...")
+
+    def _process_rapid_batch(self, chat_id: str):
+        """Timer fired — process all buffered rapid-fire msgs as ONE batch."""
+        msgs = self._rapid_batches.pop(chat_id, [])
+        timer = self._rapid_timers.pop(chat_id, None)
+        if timer:
+            timer.cancel()
+
+        if not msgs:
+            return
+
+        total = len(msgs)
+        if total == 1:
+            # Single msg — fall through to original handler flow
+            msg = msgs[0]
             user_id = str(msg["from"]["id"])
             user_name = msg["from"].get("first_name", "User")
-            msg_type = "photo" if msg.get("photo") else "document"
-            self._handle_media_msg(chat_id, user_id, user_name, msg, msg_type)
+            if msg.get("voice") or msg.get("audio"):
+                self._handle_media_msg(chat_id, user_id, user_name, msg, "voice")
+            elif msg.get("document"):
+                self._handle_media_msg(chat_id, user_id, user_name, msg, "document")
+            elif msg.get("photo"):
+                self._handle_media_msg(chat_id, user_id, user_name, msg, "photo")
+            elif msg.get("video"):
+                self.send(chat_id, "🎬 收到影片，但 BAW 暫時未支援影片處理。")
+            return
+
+        # Batch: download/process all as one task
+        logger.info(f"[RapidBatch] Processing {total} msgs from {chat_id}")
+        has_voice = any(msg.get("voice") or msg.get("audio") for msg in msgs)
+        has_doc = any(msg.get("document") for msg in msgs)
+        has_photo = any(msg.get("photo") for msg in msgs)
+
+        # Voice files: always handle individually (STT flow is per-file)
+        if has_voice:
+            for msg in msgs:
+                if msg.get("voice") or msg.get("audio"):
+                    user_id = str(msg["from"]["id"])
+                    user_name = msg["from"].get("first_name", "User")
+                    self._handle_media_msg(chat_id, user_id, user_name, msg, "voice")
+                else:
+                    # Non-voice in same batch — re-buffer with shorter timer
+                    self._buffer_rapid_msg(chat_id, msg)
+            return
+        label = "📎 檔案" if has_doc else ("🎵 語音" if has_voice else "📸 圖片")
+
+        self.send(chat_id, f"{label} 組共 {total} 個 — 全部下載中...")
+
+        import tempfile as _tempfile
+        entries = []
+        for msg in msgs:
+            try:
+                if msg.get("voice") or msg.get("audio"):
+                    audio_data = msg.get("audio") or msg.get("voice")
+                    local_path = self._download_file(audio_data["file_id"], f"voice_{audio_data['file_id'][:8]}.ogg")
+                    # Voice: transcribe
+                    from core.tts import asr_file
+                    text = asr_file(local_path)
+                    if text:
+                        entries.append({"type": "voice", "content": text})
+                elif msg.get("document"):
+                    doc = msg["document"]
+                    local_path = self._download_file(doc["file_id"], doc.get("file_name", "document"))
+                    content = self._extract_file_content(local_path)
+                    _extracted_path = Path(_tempfile.gettempdir()) / f"baw_extracted_{doc.get('file_name', 'file')}.txt"
+                    _extracted_path.write_text(content, encoding="utf-8")
+                    entries.append({
+                        "type": "document",
+                        "name": doc.get("file_name", "document"),
+                        "path": str(_extracted_path),
+                        "size": len(content),
+                        "pages": content.count("--- Page"),
+                    })
+                elif msg.get("video"):
+                    logger.info(f"[RapidBatch] Skipping video (unsupported)")
+                    continue
+                elif msg.get("photo"):
+                    photo_data = max(msg["photo"], key=lambda p: p.get("file_size", 0))
+                    local_path = self._download_file(photo_data["file_id"], f"photo_{photo_data['file_id'][:8]}.jpg")
+                    # Photo: save path for vision-capable model
+                    entries.append({"type": "photo", "path": local_path, "name": f"photo_{photo_data['file_id'][:8]}.jpg"})
+            except Exception as e:
+                logger.error(f"[RapidBatch] Download failed: {type(e).__name__}: {e}")
+                continue
+
+        if not entries:
+            self.send(chat_id, "❌ 全部處理失敗")
+            return
+
+        # Build batch prompt
+        sections = []
+        for i, e in enumerate(entries):
+            if e["type"] == "voice":
+                sections.append(f"<b>語音 {i+1}:</b> {e['content']}")
+            elif e["type"] == "document":
+                sections.append(
+                    f"<b>檔案 {i+1}:</b> {e['name']}  "
+                    f"<code>{e['size']} chars, ~{e['pages']} pages</code>\n"
+                    f"  Path: <code>{e['path']}</code>"
+                )
+            elif e["type"] == "photo":
+                sections.append(
+                    f"<b>圖片 {i+1}:</b> {e.get('name', 'photo')}\n"
+                    f"  Path: <code>{e['path']}</code> (use vision-capable model)"
+                )
+
+        prompt = (
+            f"<b>[Batch — {len(entries)} messages]</b>\n\n"
+            + "\n\n".join(sections)
+            + "\n\nAnalyze these together. Cross-reference if they relate."
+        )
+
+        caption = (msgs[0].get("caption", "") or "").strip()
+        if caption:
+            prompt += f"\n\nUser instruction: {caption}"
+
+        self.send(chat_id, f"🤔 Analyzing <b>{len(entries)} items</b> together...")
+        self._mark_chat_busy(chat_id)
+        self._cancel_event.clear()
+        response = self._run_baw(prompt, chat_id=chat_id)
+        self.send(chat_id, response)
+        self._record_batch_result(chat_id, response[:200], "batch")
+        self._release_slot(chat_id)
+
 
     # ─────────────────────────────────────────────────────────────
     #  File processors
@@ -1543,17 +1773,8 @@ class TelegramConnector(BaseConnector):
                 self._buffer_media_group(chat_id, media_group_id, msg)
                 return
 
-            # ── Single media message (no group) — queue if busy, else process ──
-            if doc:
-                self._handle_media_msg(chat_id, user_id, user_name, msg, "document")
-            elif photo:
-                self._handle_media_msg(chat_id, user_id, user_name, msg, "photo")
-            elif video:
-                self.send(chat_id, "🎬 收到影片，但 BAW 暫時未支援影片處理。")
-            elif audio or voice:
-                self._handle_media_msg(chat_id, user_id, user_name, msg, "voice")
-            # else: silent ignore for unknown types
-            return
+            # ── Single media (no group) — buffer for rapid-fire batching ──
+            self._buffer_rapid_msg(chat_id, msg)
 
         if not text:
             # Truly empty message — silently ignore

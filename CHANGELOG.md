@@ -2,6 +2,23 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v1.16.0 — 2026-06-23 (Conversational tone + batch file processing)
+
+### 🗣️ Conversational Tone (SOUL Personality Guide)
+- **`SOUL.md` / `SOUL.default.md`** — Rewrote from rigid rulebook to personality guide: "自然對話，句式多變，夠資料就收"
+- **`~/.baw/references/communication-style.md`** — Extracted natural conversational style reference (Cantonese, variable structures, no emoji checklist)
+- **`MASTERSKILLS.md`** — Added communication-style routing for new users
+
+### 📦 Batch File Processing (Media Group + Rapid Fire)
+- **`core/messaging/telegram.py`** — `_process_media_group()` now downloads ALL files first, then submits ONE BAW task instead of queuing each file individually
+- **`core/messaging/telegram.py`** — Added `_buffer_rapid_msg()` / `_process_rapid_batch()` — detects rapid-fire messages (any type) within 3s window and processes as one batch
+- **`core/messaging/telegram.py`** — Voice messages still handled individually (STT is per-file), documents/photos batch together
+- **`core/messaging/telegram.py`** — Better error logging for batch download failures
+
+### 🔧 Self-Evolution Enhancement
+- **`core/evolve.py`** — P6 SOUL-to-Skill offload: auto-detect procedural SOUL.md sections (>80 lines or >3KB), generate skill YAML, leave reference link
+- **`core/evolve.py`** — Weekly evolution pipeline step 6: `_run_soul_offload()` with git snapshot + verify + rollback safety
+
 ## v1.15.0 — 2026-06-24 (Self-healing dependencies + resilient Telegram polling)
 
 ### 🛡️ Self-Healing Dependency System

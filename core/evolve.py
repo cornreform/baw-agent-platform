@@ -1448,6 +1448,179 @@ def _apply_soul_revisions(revisions: list[dict]) -> dict:
         return {"ok": False, "error": str(e)[:200], "applied": 0}
 
 
+# ── P6: SOUL-to-Skill Offload ───────────────────────────────────
+
+
+def _detect_soul_offload_candidates() -> list[dict]:
+    """Scan SOUL.md for sections that can be offloaded to skills.
+
+    Criteria for offloading:
+    1. Section is procedural/how-to (NOT personality/behavior/rules)
+    2. SOUL.md exceeds 80 lines or 3000 chars (prevents fragmentation)
+    3. Section has not changed since last check (stable)
+
+    Returns list of {section_idx, title, content, type: "procedural"}
+    """
+    soul_path = _data_dir() / "SOUL.md"
+    if not soul_path.exists():
+        return []
+
+    text = soul_path.read_text(encoding="utf-8").strip()
+    lines = text.split("\n")
+
+    # Threshold: only trigger if SOUL is getting bloated
+    if len(lines) <= 80 and len(text) <= 3000:
+        return []
+
+    KEEP_KEYWORDS = [
+        "鐵則", "identity", "語言", "對話感", "行為矯正",
+        "禁止", "唔准", "META-RULE", "EXECUTION PROTOCOL",
+        "防 Fabrication", "技能路由", "Evolving Preferences",
+        "Telegram HTML", "自我進化", "AUTO-EVOLVE",
+    ]
+
+    sections = re.split(r'\n<hr>\n', text)
+    candidates = []
+
+    for idx, section in enumerate(sections):
+        lines_cnt = len(section.strip().split("\n"))
+        if lines_cnt < 5:
+            continue
+
+        title_match = re.search(r'^##\s+(.+)$', section, re.MULTILINE)
+        title = title_match.group(1).strip() if title_match else f"Section {idx}"
+
+        is_personality = any(kw.lower() in section.lower() for kw in KEEP_KEYWORDS)
+        if is_personality:
+            continue
+
+        procedural_signals = [
+            "步驟", "step", "方法", "做法",
+            "```",
+            "安裝", "setup", "install", "配置",
+            "執行", "run", "execute",
+            "注意", "備註", "note",
+        ]
+        signal_count = sum(1 for s in procedural_signals if s.lower() in section.lower())
+
+        if signal_count >= 2:
+            candidates.append({
+                "section_idx": idx,
+                "title": title,
+                "content": section.strip(),
+                "type": "procedural",
+                "lines": lines_cnt,
+                "signals": signal_count,
+            })
+
+    return candidates
+
+
+def _section_to_skill_name(title: str) -> str:
+    name = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fff_-]', '', title)
+    name = re.sub(r'[_\s]+', '-', name.strip()).lower()
+    if not name:
+        name = "soul-rule"
+    return name[:40]
+
+
+def _section_to_skill_yaml(title: str, content: str) -> str:
+    desc = title[:60]
+    skill = {
+        "name": _section_to_skill_name(title),
+        "description": desc,
+        "tools": [],
+        "config": {"mode": "quick"},
+        "steps": [{"name": "read-rule", "prompt": f"參考以下規則：\n\n{content.strip()}"}],
+        "error_handling": {"on_failure": "abort"},
+    }
+    import yaml as _yaml
+    return _yaml.dump(skill, default_flow_style=False, allow_unicode=True)
+
+
+def _write_soul_reference(soul_path: Path, section_idx: int, skill_name: str) -> bool:
+    """Replace offloaded section in SOUL.md with a brief skill reference."""
+    text = soul_path.read_text(encoding="utf-8")
+    sections = re.split(r'\n<hr>\n', text)
+
+    if section_idx >= len(sections):
+        return False
+
+    reference = (
+        f"<!-- auto-offloaded -->\n"
+        f"<i>呢個規則已 offload 去 skill → <code>{skill_name}</code></i>\n"
+        f"當需要呢啲規則時，用 <code>skill_view(name=\"{skill_name}\")</code> 載入。"
+    )
+    sections[section_idx] = reference
+
+    new_text = "\n<hr>\n".join(sections)
+    soul_path.write_text(new_text, encoding="utf-8")
+    return True
+
+
+def _offload_to_skill(candidate: dict) -> dict:
+    skill_name = _section_to_skill_name(candidate["title"])
+    skills_dir = _data_dir() / "skills"
+    skill_path = skills_dir / f"{skill_name}.yaml"
+
+    try:
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        if skill_path.exists():
+            return {"skill_name": skill_name, "ok": True, "exists": True}
+    except Exception:
+        pass
+
+    yaml_content = _section_to_skill_yaml(candidate["title"], candidate["content"])
+    skill_path.write_text(yaml_content, encoding="utf-8")
+    return {"skill_name": skill_name, "ok": True, "exists": False}
+
+
+def _run_soul_offload() -> dict:
+    """Run the SOUL-to-Skill offload detection and execution.
+
+    Safety: git snapshot → offload → verify → commit/rollback.
+    Returns offload report.
+    """
+    result = {
+        "offloaded": 0,
+        "sections_offloaded": [],
+        "skills_created": [],
+        "ok": True,
+    }
+
+    candidates = _detect_soul_offload_candidates()
+    if not candidates:
+        return result
+
+    soul_path = _data_dir() / "SOUL.md"
+    snapshot = _git_snapshot(tag_reason="soul-offload")
+
+    for candidate in candidates:
+        offload_result = _offload_to_skill(candidate)
+        if not offload_result.get("ok"):
+            continue
+
+        skill_name = offload_result["skill_name"]
+        written = _write_soul_reference(soul_path, candidate["section_idx"], skill_name)
+
+        if written:
+            result["offloaded"] += 1
+            result["sections_offloaded"].append(candidate["title"])
+            if not offload_result.get("exists"):
+                result["skills_created"].append(skill_name)
+
+    if result["offloaded"] > 0:
+        v = _verify_soul(soul_path)
+        if not v["ok"]:
+            if snapshot.get("ok"):
+                _git_rollback(snapshot["commit"], reason="offload-verify-failure")
+            result["ok"] = False
+            result["error"] = "; ".join(v["errors"])
+            result["offloaded"] = 0
+
+    return result
+
+
 def run_weekly_evolution() -> dict:
     """Unified weekly self-evolution pipeline.
 
@@ -1456,7 +1629,8 @@ def run_weekly_evolution() -> dict:
     3. LLM-assisted correction classification (B1 enhancement)
     4. Behavior pattern analysis: tool success rate, corrections, trends
     5. Auto-optimization with apply (not dry-run)
-    6. Generate consolidated summary report
+    6. SOUL-to-Skill offload (P6): move procedural sections to skills
+    7. Generate consolidated summary report
     """
     result = {
         "ok": True,
@@ -1591,6 +1765,18 @@ def run_weekly_evolution() -> dict:
     except Exception as e:
         result["court_drift"] = {"error": str(e)}
 
+    # ── P6: SOUL-to-Skill offload ──
+    try:
+        offload = _run_soul_offload()
+        result["soul_offload"] = offload
+        if offload.get("offloaded", 0) > 0:
+            for s in offload.get("sections_offloaded", []):
+                result.setdefault("auto_optimize", {}).setdefault("patches", []).append(
+                    f"[P6] SOUL → Skill: '{s}' offloaded"
+                )
+    except Exception as e:
+        result["soul_offload"] = {"error": str(e), "offloaded": 0}
+
     # ── Step 5.5: Code-level auto-patching ──
     try:
         code_result = _auto_patch_code(pattern)
@@ -1630,6 +1816,9 @@ def run_weekly_evolution() -> dict:
     lines.append(f"  系統: {pattern.get('success_rate', 0)}% success, "
                  f"{pattern.get('tool_calls', 0)} tool calls, "
                  f"{pattern.get('corrections', 0)} corrections")
+    if result.get("soul_offload", {}).get("offloaded", 0) > 0:
+        lines.append(f"  Offload: {result['soul_offload']['offloaded']} sections → skills "
+                     f"({', '.join(result['soul_offload']['skills_created'][:3])})")
 
     result["summary"] = "\n".join(lines)
     return result
