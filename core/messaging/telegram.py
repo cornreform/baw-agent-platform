@@ -825,7 +825,8 @@ class TelegramConnector(BaseConnector):
                     f"  Size: {_content_size} chars, ~{_content_pages} pages\n\n"
                     f"Use `read_file` with offset/limit to read it in chunks (500 lines at a time).\n"
                     f"Use `search_files` with regex to find keywords across the document.\n"
-                    f"Do NOT try to read the entire file at once — read and analyze section by section.\n\n"
+                    f"Do NOT try to read the entire file at once — read and analyze section by section.\n"
+
                     f"User instruction: {caption}"
                 )
             else:
@@ -839,9 +840,18 @@ class TelegramConnector(BaseConnector):
                     f"Use `read_file` with offset/limit to read it in chunks (500 lines at a time).\n"
                     f"Use `search_files` with regex to find keywords across the document.\n"
                     f"Do NOT try to read the entire file at once — read and analyze section by section.\n\n"
-                    f"Task: Analyze this file. Summarize its key content in Traditional Chinese. "
-                    f"If it's a technical document, identify the main topics. "
-                    f"Annotate key findings with page numbers from the extracted text."
+                    f"TASK: Analyze this document and produce a real analysis.\n"
+                    f"1. After reading enough to understand the document's structure and content,\n"
+                    f"2. Produce a structured summary in Traditional Chinese that covers:\n"
+                    f"   - What type of document this is and who it involves\n"
+                    f"   - Key data points, figures, dates, or findings\n"
+                    f"   - Any patterns, anomalies, or notable items\n"
+                    f"   - A brief conclusion\n"
+                    f"DO NOT echo the raw file content back to the user.\n"
+                    f"DO NOT just describe the file format.\n"
+                    f"DO produce actual insights — totals, trends, outliers, summaries.\n"
+                    f"Imagine the user paid someone to read this document for them and\n"
+                    f"report back what matters. Be that person."
                 )
 
             self.send(chat_id, f"🤔 Analyzing **{file_name}** (~{_content_pages} pages)...", edit_msg_id=status_id)
