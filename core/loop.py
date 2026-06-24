@@ -212,7 +212,7 @@ class CostTracker:
             n = len(self.calls)
             label = "call" if n == 1 else "calls"
             return (
-                f"📊 {n} {label}{model_tag} — total: {_human_tokens(total)} tokens"
+                f"{n} {label}{model_tag} — total: {_human_tokens(total)} tokens"
             )
 
     def html_summary(self) -> str:

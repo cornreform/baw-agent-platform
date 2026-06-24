@@ -95,6 +95,9 @@ def validate_output(output: str, *, prompt: str = "") -> str:
     # Phase 4: Anti-duplication — strip trailing summary sections
     result = _strip_summary_sections(result)
 
+    # Phase 4b: Strip emoji — system prompt says no emoji but some models ignore
+    result = _strip_emoji(result)
+
     # Phase 5: Hallucination guard
     result = _check_hallucination(result, prompt)
 
@@ -127,6 +130,29 @@ def validate_output(output: str, *, prompt: str = "") -> str:
 
 # ── Allowed HTML tags that Telegram renders with parse_mode=HTML ──
 _ALLOWED_HTML_TAGS = {'b', 'i', 'u', 's', 'code', 'pre', 'a', 'em', 'strong'}
+
+# Common emoji Unicode ranges used by LLMs
+_EMOJI_PATTERN = re.compile(
+    '[' 
+    '\U0001F300-\U0001F9FF'  # Misc symbols, emoticons, supplemental
+    '\U0001FA00-\U0001FA6F'  # Chess symbols
+    '\U0001FA70-\U0001FAFF'  # Symbols extended-A
+    '\U00002702-\U000027B0'  # Dingbats
+    '\U000024C2-\U0001F251'  # Enclosed
+    '\U0001F600-\U0001F64F'  # Emoticons
+    '\U00002600-\U000026FF'  # Misc symbols
+    '\U0001F680-\U0001F6FF'  # Transport
+    '\U0001F1E0-\U0001F1FF'  # Flags
+    '\U0000FE00-\U0000FE0F'  # Variation selectors
+    '\U0000200D'            # Zero-width joiner
+    ']', flags=re.UNICODE
+)
+
+def _strip_emoji(text: str) -> str:
+    """Strip emoji characters from text. Final safety net — system prompt
+    already instructs BAW not to use emoji, but some models ignore this."""
+    return _EMOJI_PATTERN.sub('', text)
+
 
 def _strip_html(text: str) -> str:
     """Strip dangerous HTML tags, preserve safe formatting tags.
