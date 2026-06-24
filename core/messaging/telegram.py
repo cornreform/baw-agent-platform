@@ -782,6 +782,10 @@ class TelegramConnector(BaseConnector):
     def _process_document_file(self, chat_id: str, doc: dict, msg: dict):
         """Download, extract, and analyze a document via BAW. Inline edit — one message."""
         try:
+            if not doc:
+                logger.warning(f"[Telegram] _process_document_file called with doc=None — skipping")
+                self.send(chat_id, f"❌ Error: missing document data. Try sending the file again.")
+                return
             file_id = doc["file_id"]
             file_name = doc.get("file_name", "document")
 
