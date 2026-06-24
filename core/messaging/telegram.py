@@ -79,102 +79,55 @@ class TelegramConnector(BaseConnector):
         return httpx.Client(timeout=120)
 
     def connect(self) -> bool:
-        """Test connection by fetching bot info."""
+        """Test connection by fetching bot info.
+
+        Resilient flow:
+          1. Try getMe directly (fast path)
+          2. If it fails — call close() + deleteWebhook to reset stale
+             Telegram sessions, then retry getMe once.
+          3. If retry fails — this is a real problem (bad token, network
+             issue, etc.), so return False with a diagnostic message.
+
+        This design is fundamentally safe: we NEVER call logOut() which
+        permanently invalidates the bot token. close() just releases the
+        current long-poll connection without side effects.
+        """
         if not self._token:
             logger.error("[Telegram] No token configured")
             return False
         try:
             self._client = httpx.Client(timeout=10)
 
-            # ── Reset stale sessions before getMe ──
-            # Prevents HTTP 409 conflicts and "Logged out" errors from
-            # a previous logOut call. `close()` releases long-poll without
-            # invalidating the token. `deleteWebhook` clears any webhook
-            # leftovers from older configs.
+            # ── Attempt 1: direct getMe ──
+            r = self._client.get(f"{self._api_base}/getMe")
+            if r.status_code == 200:
+                info = r.json()
+                if info.get("ok"):
+                    return self._on_connect_success(info)
+
+            # ── Attempt 2: close stale sessions + retry ──
+            # Telegram may hold a stale long-poll connection from a prior
+            # instance. `close()` releases it without invalidating the token.
+            # We NEVER use `logOut()` — that permanently kills the bot token
+            # and requires a new one from @BotFather.
+            logger.warning(f"[Telegram] getMe failed ({r.status_code}), closing stale session and retrying...")
             try:
                 _reset = httpx.Client(timeout=10)
                 _reset.post(f"{self._api_base}/close")
                 _reset.get(f"{self._api_base}/deleteWebhook?drop_pending_updates=true")
                 _reset.close()
+                import time as _t
+                _t.sleep(1)
             except Exception:
-                pass  # non-fatal — just proceed
-
+                pass
             r = self._client.get(f"{self._api_base}/getMe")
             if r.status_code == 200:
                 info = r.json()
                 if info.get("ok"):
-                    bot_name = info["result"].get("first_name", "BAW Bot")
-                    logger.info(f"[Telegram] Connected as @{info['result'].get('username', '?')}")
+                    logger.info("[Telegram] Reconnected after stale session cleanup")
+                    return self._on_connect_success(info)
 
-                    # Register slash command menu
-                    self._register_commands()
-
-                    # ── Key Vault: backup .env keys to secure storage ──
-                    try:
-                        from ..key_vault import backup as _kv_backup, restore as _kv_restore
-                        _kv_restore()  # auto-restore if .env is missing keys
-                        _kv_backup()   # sync vault with current .env
-                    except Exception as _kve:
-                        logger.warning(f"[KeyVault] init failed: {_kve}")
-
-                    # ── Provider health ping (startup check) + dead-provider notification ──
-                    try:
-                        from ..llm import ping_provider_health
-                        from ..config import load_config as _load_full_cfg
-                        _full_cfg = _load_full_cfg(reload=True)
-                        _health = ping_provider_health(_full_cfg)
-                        _dead = {k: v for k, v in _health.items() if v not in ("healthy", "key_set", "no_key", "no_key_config", "auth_error")}
-                        if _dead:
-                                logger.warning(f"[Telegram] Dead providers at startup: {list(_dead.keys())}")
-                                
-                                # Build user notification with fix suggestions
-                                _dead_list = "\n".join(f"  • {k}: {v}" for k, v in _dead.items())
-                                _fix_lines = []
-                                
-                                # Check if any dead provider is referenced in config
-                                _def_model = _full_cfg.get("model", {}).get("default", "")
-                                _fallback = _full_cfg.get("model", {}).get("fallback", "")
-                                _caps = _full_cfg.get("capabilities", {})
-                                
-                                for _pname in _dead:
-                                    # Check which models on this provider are in use
-                                    _models = [m.get("id","?") for m in _full_cfg.get("providers",{}).get(_pname,{}).get("models",[])]
-                                    
-                                    if _def_model in _models:
-                                        _fix_lines.append(f"  /set model.default deepseek-v4-flash  ← default 指向死 provider「{_pname}」")
-                                    if _fallback in _models:
-                                        _fix_lines.append(f"  /set model.fallback deepseek-v4-pro  ← fallback 指向死 provider「{_pname}」")
-                                    for _cap, _cc in _caps.items():
-                                        if isinstance(_cc, dict) and _cc.get("model") in _models:
-                                            _fix_lines.append(f"  /set capabilities.{_cap}.model deepseek-v4-flash  ← {_cap} 指向死 provider「{_pname}」")
-                                
-                                _fix_section = "\n".join(_fix_lines) if _fix_lines else "  冇 config reference — 毋須改動"
-                                
-                                _admin_id = os.environ.get("BAW_ADMIN_CHAT_ID", "")
-                                _notify_text = (
-                                    f"<b>⚠️  Provider Health Alert</b>\n\n"
-                                    f"以下 provider 無法連線：\n{_dead_list}\n\n"
-                                    f"<b>建議修改：</b>\n{_fix_section}\n\n"
-                                    f"系統已自動 blacklist 死 provider，"
-                                    f"BAW 會自動 fallback 到可用 provider。"
-                                )
-                                if _admin_id:
-                                    try:
-                                        self._client.post(
-                                            f"{self._api_base}/sendMessage",
-                                            json={"chat_id": _admin_id, "text": _notify_text, "parse_mode": "HTML"},
-                                            timeout=10,
-                                        )
-                                    except Exception:
-                                        pass
-                    except Exception as _he:
-                        logger.warning(f"[Telegram] Provider health ping failed: {_he}")
-
-                    # ── Back-online notification after restart ──
-                    self._notify_restart()
-
-                    return True
-            logger.error(f"[Telegram] getMe failed: {r.status_code} {r.text[:200]}")
+            logger.error(f"[Telegram] getMe failed after retry: {r.status_code} {r.text[:200]}")
             # ── User-friendly fatal error notification ──
             _err_msg = ""
             if r.status_code == 401:
@@ -211,6 +164,75 @@ class TelegramConnector(BaseConnector):
         except Exception as e:
             logger.error(f"[Telegram] Connection error: {e}")
             return False
+
+    def _on_connect_success(self, info: dict) -> bool:
+        """Handle a successful getMe response — init services, notify admin."""
+        bot_name = info["result"].get("first_name", "BAW Bot")
+        logger.info(f"[Telegram] Connected as @{info['result'].get('username', '?')}")
+
+        # Register slash command menu
+        self._register_commands()
+
+        # ── Key Vault: backup .env keys to secure storage ──
+        try:
+            from ..key_vault import backup as _kv_backup, restore as _kv_restore
+            _kv_restore()  # auto-restore if .env is missing keys
+            _kv_backup()   # sync vault with current .env
+        except Exception as _kve:
+            logger.warning(f"[KeyVault] init failed: {_kve}")
+
+        # ── Provider health ping (startup check) + dead-provider notification ──
+        try:
+            from ..llm import ping_provider_health
+            from ..config import load_config as _load_full_cfg
+            _full_cfg = _load_full_cfg(reload=True)
+            _health = ping_provider_health(_full_cfg)
+            _dead = {k: v for k, v in _health.items() if v not in ("healthy", "key_set", "no_key", "no_key_config", "auth_error")}
+            if _dead:
+                logger.warning(f"[Telegram] Dead providers at startup: {list(_dead.keys())}")
+
+                _dead_list = "\n".join(f"  • {k}: {v}" for k, v in _dead.items())
+                _fix_lines = []
+
+                _def_model = _full_cfg.get("model", {}).get("default", "")
+                _fallback = _full_cfg.get("model", {}).get("fallback", "")
+                _caps = _full_cfg.get("capabilities", {})
+
+                for _pname in _dead:
+                    _models = [m.get("id", "?") for m in _full_cfg.get("providers", {}).get(_pname, {}).get("models", [])]
+                    if _def_model in _models:
+                        _fix_lines.append(f"  /set model.default deepseek-v4-flash  ← default 指向死 provider「{_pname}」")
+                    if _fallback in _models:
+                        _fix_lines.append(f"  /set model.fallback deepseek-v4-pro  ← fallback 指向死 provider「{_pname}」")
+                    for _cap, _cc in _caps.items():
+                        if isinstance(_cc, dict) and _cc.get("model") in _models:
+                            _fix_lines.append(f"  /set capabilities.{_cap}.model deepseek-v4-flash  ← {_cap} 指向死 provider「{_pname}」")
+
+                _fix_section = "\n".join(_fix_lines) if _fix_lines else "  冇 config reference — 毋須改動"
+
+                _admin_id = os.environ.get("BAW_ADMIN_CHAT_ID", "")
+                _notify_text = (
+                    f"<b>⚠️  Provider Health Alert</b>\n\n"
+                    f"以下 provider 無法連線：\n{_dead_list}\n\n"
+                    f"<b>建議修改：</b>\n{_fix_section}\n\n"
+                    f"系統已自動 blacklist 死 provider，"
+                    f"BAW 會自動 fallback 到可用 provider。"
+                )
+                if _admin_id:
+                    try:
+                        self._client.post(
+                            f"{self._api_base}/sendMessage",
+                            json={"chat_id": _admin_id, "text": _notify_text, "parse_mode": "HTML"},
+                            timeout=10,
+                        )
+                    except Exception:
+                        pass
+        except Exception as _he:
+            logger.warning(f"[Telegram] Provider health ping failed: {_he}")
+
+        # ── Back-online notification after restart ──
+        self._notify_restart()
+        return True
 
     def _notify_restart(self):
         """Send 'Back Online' notification if this was a restart."""
