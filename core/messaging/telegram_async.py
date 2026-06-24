@@ -242,6 +242,14 @@ async def _start_async(self):
         await server_task
     else:
         # ── Async long polling mode (default) ──
+        # Reset stale sessions on startup to prevent HTTP 409 conflicts.
+        # Telegram only allows one active getUpdates connection per token.
+        # Use `close` (not `logOut`) — logOut logs the bot out entirely.
+        # `close` just releases the long-poll connection without invalidating the token.
+        async with httpx.AsyncClient(timeout=10) as _reset:
+            await _reset.post(f"{self._api_base}/close")
+            await _reset.get(f"{self._api_base}/deleteWebhook?drop_pending_updates=true")
+        logger.info("[Telegram] Cleaned stale sessions before poll loop")
         await _poll_loop_async(self)
 
 
