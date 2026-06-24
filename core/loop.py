@@ -770,29 +770,15 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     # ── Plan Auto-Detection (LLM-based, no keywords) ────────
     system_prompt += (
         "\n\n## Plan Auto-Detection\n"
-        "You can proactively detect when the user is describing a multi-step "
-        "project or long-term plan — entirely from natural conversation.\n"
-        "When you sense the user is talking about something that involves "
-        "multiple steps, files across sessions, or a sustained goal, "
-        "include the following marker at the VERY END of your response "
-        "(before any MEDIA: tags):\n"
-        "  <code>&lt;!--plan:Project Name--&gt;</code>\n"
-        "Replace 'Project Name' with a concise name that captures the plan.\n"
-        "BAW will then create a Plan entity, inject context into every "
-        "subsequent turn, and track files/steps automatically.\n"
+        "When the user describes a multi-step project (build X, redesign Y, "
+        "client onboarding), append to your response:\n"
+        "  <code>&lt;!--plan:Short Name--&gt;</code>\n"
         "Rules:\n"
-        "- Include the marker silently — do NOT announce or ask the user "
-        "about it.\n"
-        "- No keyword matching needed. Use your judgment from conversation "
-        "context.\n"
-        "- Examples of plan signals:\n"
-        "  • '我打算做一個...' / 'I want to build a...'\n"
-        "  • Multiple file uploads that form a coherent body of work\n"
-        "  • Following up over multiple messages on a single goal\n"
-        "  • Discussing steps, milestones, or a timeline\n"
-        "- Do NOT create plans for one-off questions or simple tasks.\n"
-        "- If a plan is already active (see below), extend it — do NOT "
-        "create a duplicate.\n\n"
+        "- Silent — do NOT announce or ask. No keyword needed. Sense from context.\n"
+        "- Signals: 'I want to build/do/create', multiple files, "
+        "follow-ups on same goal, step-by-step discussion.\n"
+        "- Skip one-off questions. If plan active, extend it — no duplicate.\n"
+        "BAW auto-creates Plan entity, injects context, tracks artifacts.\n\n"
     )
 
     # ── Active Plan context injection ──
@@ -1275,6 +1261,36 @@ def run_agent(
         logger.debug(f"[startup] KG auto-curation skipped: {_ke}")
 
     system_prompt = build_system_prompt(config, data_dir, fresh_start=fresh_start)
+
+    # ── Fusion pre-check: parallel inference for complex tasks ──
+    if mode in ("auto", "fusion") and not fresh_start:
+        try:
+            from .fusion_router import should_fuse, classify_task, route, run_parallel, synthesize
+            if should_fuse(prompt, mode):
+                task_type = classify_task(prompt)
+                fusion_models = route(task_type)
+                # Build messages from system prompt + prompt
+                _fusion_msgs = [{"role": "system", "content": system_prompt}]
+                if conversation_history:
+                    _fusion_msgs.extend(conversation_history)
+                _fusion_msgs.append({"role": "user", "content": prompt})
+                logger.info(f"[Fusion] Running {len(fusion_models)} models in parallel ({task_type})")
+                fusion_results = run_parallel(fusion_models, _fusion_msgs, config, timeout=45)
+                if fusion_results:
+                    _synthesized = synthesize(fusion_results, prompt, config)
+                    if _synthesized and len(_synthesized) > 100:
+                        # Inject synthesized result as pre-loaded context
+                        system_prompt += (
+                            f"\n\n## Fusion Pre-Context\n"
+                            f"The following was synthesized from "
+                            f"{len([r for r in fusion_results if r.get('status') == 'ok'])} "
+                            f"models responding to the user's request. Use this as a starting point:\n"
+                            f"{_synthesized[:3000]}\n\n"
+                            f"You may build on this or refine it. Do NOT simply repeat it — add value.\n"
+                        )
+                        logger.info(f"[Fusion] Injected synthesized context ({len(_synthesized)} chars)")
+        except Exception as _fe:
+            logger.warning(f"[Fusion] Pre-check failed: {_fe}")
 
     # ── Tier-based routing decision ──
     from .router import route_task, INLINE_DIRECT, INLINE_WITH_HINT

@@ -342,8 +342,7 @@ def _handler(
     else:
         # Auto-detect: check common locations
         candidates = [
-            str(Path.home() / ".hermes" / "skills"),
-            str(Path.home() / ".hermes" / "profiles"),
+            str(Path.home() / ".baw" / "skills"),
             "/app/tools",
         ]
         for c in candidates:

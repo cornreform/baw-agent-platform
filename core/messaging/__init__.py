@@ -361,7 +361,7 @@ class BaseConnector(ABC):
         ...
 
     # ── Session management ──────────────────────────────────────
-    _MAX_SESSION_MSGS = 60  # ~30 user/assistant exchanges
+    _MAX_SESSION_MSGS = 40  # ~20 user/assistant exchanges, keeps input <20K avg
 
     def _load_session_index(self):
         """Load all saved session file IDs into memory (not full history)."""
@@ -1425,8 +1425,8 @@ class BaseConnector(ABC):
         except Exception as e:
             logger.warning(f"[Context] Memory save failed: {e}")
 
-        # Compress session: keep last 8 msgs + summary header
-        _keep = 8
+        # Compress session: keep last 6 msgs + summary header
+        _keep = 6
         _compressed = conv_history[-_keep:]
         _compressed.insert(0, {
             "role": "user",
