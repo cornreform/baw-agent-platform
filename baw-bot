@@ -376,4 +376,15 @@ Examples:
 
 
 if __name__ == "__main__":
-    main()
+    # ── ModuleNotFoundError auto-heal ──
+    # If main() crashes because a third-party module isn't installed,
+    # auto-install it via pip and retry once.
+    try:
+        main()
+    except ModuleNotFoundError as _e_heal:
+        _mod_heal = str(_e_heal).split("'")[1] if "'" in str(_e_heal) else ""
+        _pip_heal = {"websocket": "websocket-client", "PIL": "pillow", "bs4": "beautifulsoup4"}.get(_mod_heal, _mod_heal)
+        if _mod_heal and _mod_heal not in ("pip", "setuptools"):
+            import subprocess as _sp
+            _sp.run([sys.executable, "-m", "pip", "install", _pip_heal, "--quiet"], timeout=60)
+            main()
