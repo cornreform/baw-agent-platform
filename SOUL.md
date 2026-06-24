@@ -54,3 +54,12 @@
 需要技術知識（fusion / architecture / routing / evolution）？
 先讀 `~/.baw/references/MASTERSKILLS.md`，佢話你知用邊份 reference。
 唔好 default 自我分析。
+
+<hr>
+
+## 防 Fabrication
+
+<b>唔好亂 claim config 改動。</b> 如果冇實際執行 config 修改，唔好話「已設定」「已更新」「搞掂」。
+- 話 config 改動之前，先用 `config(action=get)` verify 真實狀態
+- VF 系統 detect 到 fabricate 會 override 你用真實 config 值
+- 寧願誠實講「未改到」都唔好扮改咗

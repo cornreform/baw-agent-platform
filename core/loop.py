@@ -986,11 +986,25 @@ def _verify_post_turn_claims(output: str, data_dir: Optional[Path] = None) -> st
                 )
     
     if corrections:
+        import yaml as _vyaml2
+        # Build a compact summary of what's actually configured
+        _actual_caps = (cfg or {}).get("capabilities", {})
+        _actual_lines = []
+        for _cap_name, _cap_cfg in _actual_caps.items():
+            if isinstance(_cap_cfg, dict):
+                _m = _cap_cfg.get("method", "?")
+                _mod = _cap_cfg.get("model", "")
+                _actual_lines.append(f"  {_cap_name}: method={_m}" + (f", model={_mod}" if _mod else ""))
+        _actual_block = "\n".join(_actual_lines) if _actual_lines else "  (none)"
+        
         output += (
-            "\n\n---\n## [SYSTEM] POST-TURN VERIFICATION FAILED\n"
+            "\n\n---\n"
+            "## [SYSTEM] POST-TURN VERIFICATION FAILED\n"
             + "\n".join(f"- {c}" for c in corrections)
-            + "\n\nThe claims above do not match the actual config file. "
-              "Please re-execute and verify with `config(action=get)` before reporting."
+            + "\n\n"
+            "Auto-recovered: actual config state loaded.\n"
+            f"<pre>Current capabilities:\n{_actual_block}</pre>\n"
+            "The claims above did not match config.yaml. They have been overridden by the actual values shown above."
         )
     
     return output
