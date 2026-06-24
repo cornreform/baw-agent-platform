@@ -247,6 +247,37 @@ if s and e:
     sed -i "/### OUTPUT RULE/a\        \"- Write like a human assistant, not a tool report.\\\\n\"\\\n        \"- Use natural Cantonese. No numbered lists, no headings, no markdown tables.\\\\n\"\\\n        \"- Short paragraphs or single sentences. Like chatting with a friend.\\\\n\"" \
         core/loop.py 2>/dev/null || true
     deactivate
+    # Fix: clean final synthesis — strip tool artifacts from final output
+    python3 -c "
+with open('core/loop.py','r') as f:
+    c=f.read()
+idx=c.find('    # Return final synthesized response')
+if idx>0:
+    end=c.find('    output = _verify_post_turn_claims', idx)
+    if end>0:
+        old=c[idx:end]
+        new='    # ── Final output with clean synthesis ──\n'
+        new+='    output = \"\"\n'
+        new+='    if _resp.content and not _resp.tool_calls:\n'
+        new+='        output += _resp.content.strip()\n'
+        new+='    if not output.strip() or \"##\" in output or len(output.strip()) < 50:\n'
+        new+='        try:\n'
+        new+='            _cs = build_system_prompt(config, data_dir, fresh_start=fresh_start)\n'
+        new+='            from ..context import Context as _Ctx\n'
+        new+='            _cc = _Ctx(system_prompt=_cs, temperature=0.7)\n'
+        new+='            _cc.add_user(prompt or \"\")\n'
+        new+='            _sfb = call_llm_with_fallback(config, _cc.to_openai_messages(), tools=None)\n'
+        new+='            if _sfb.response and _sfb.response.content:\n'
+        new+='                output = _sfb.response.content.strip()\n'
+        new+='        except Exception:\n'
+        new+='            pass\n'
+        new+='    if not output:\n'
+        new+='        output = \"\"\n'
+        c=c[:idx]+new+c[end:]
+        with open('core/loop.py','w') as f:
+            f.write(c)
+        print('CLEAN SYNTHESIS ADDED')
+" 2>/dev/null || true
     sed -i 's/if score <= 5:/if score <= -1:/' core/router.py 2>/dev/null || true
     deactivate
     
