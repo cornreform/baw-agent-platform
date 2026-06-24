@@ -767,6 +767,34 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     if todo_block:
         system_prompt += todo_block
 
+    # ── Plan Auto-Detection (LLM-based, no keywords) ────────
+    system_prompt += (
+        "\n\n## Plan Auto-Detection\n"
+        "You can proactively detect when the user is describing a multi-step "
+        "project or long-term plan — entirely from natural conversation.\n"
+        "When you sense the user is talking about something that involves "
+        "multiple steps, files across sessions, or a sustained goal, "
+        "include the following marker at the VERY END of your response "
+        "(before any MEDIA: tags):\n"
+        "  <code>&lt;!--plan:Project Name--&gt;</code>\n"
+        "Replace 'Project Name' with a concise name that captures the plan.\n"
+        "BAW will then create a Plan entity, inject context into every "
+        "subsequent turn, and track files/steps automatically.\n"
+        "Rules:\n"
+        "- Include the marker silently — do NOT announce or ask the user "
+        "about it.\n"
+        "- No keyword matching needed. Use your judgment from conversation "
+        "context.\n"
+        "- Examples of plan signals:\n"
+        "  • '我打算做一個...' / 'I want to build a...'\n"
+        "  • Multiple file uploads that form a coherent body of work\n"
+        "  • Following up over multiple messages on a single goal\n"
+        "  • Discussing steps, milestones, or a timeline\n"
+        "- Do NOT create plans for one-off questions or simple tasks.\n"
+        "- If a plan is already active (see below), extend it — do NOT "
+        "create a duplicate.\n\n"
+    )
+
     # ── Active Plan context injection ──
     try:
         from core.plan import Plan

@@ -16,10 +16,6 @@ from datetime import datetime, timezone
 
 PLANS_DIR = Path.home() / ".baw" / "plans"
 
-# Keywords that trigger plan auto-detection in user input
-_PLAN_KEYWORDS = ["計劃", "project", "plan", "專案", "方案", "規劃", "計畫", "Project", "Plan"]
-
-
 class Plan:
     """A plan/project entity that groups related conversations and artifacts.
 
@@ -183,39 +179,37 @@ class Plan:
         return "\n".join(lines)
 
     # ── Plan Detection ───────────────────────────────────────────
+    #
+    # Primary detection is LLM-based: BAW's system prompt instructs it to
+    # recognise multi-step plans from natural conversation and include a
+    # <!--plan:Project Name--> marker in its output. The messaging layer
+    # parses that marker post-response.
+    #
+    # This static method is a pre-LLM heuristic fallback — conservative,
+    # keyword-free, only triggers on clear file-batch signals.
 
     @staticmethod
     def detect_plan(recent_prompts: list[str]) -> Optional[dict]:
-        """Auto-detect if a sequence of inputs suggests a plan.
+        """Heuristic fallback: detect plans from file-batch signals only.
 
+        Primary detection is LLM-driven (see system prompt in loop.py).
+        This runs before the LLM as a safety net for batch file uploads.
         Returns dict with keys for Plan.create() kwargs, or None.
         """
         if not recent_prompts:
             return None
 
-        combined = " ".join(recent_prompts)
-
-        # Check for plan keywords in the last prompt
-        for kw in _PLAN_KEYWORDS:
-            if kw.lower() in combined.lower():
-                # Extract a name from the prompt (first meaningful phrase)
-                name = ""
-                for prompt in reversed(recent_prompts):
-                    # Try to get the part after the keyword
-                    idx = prompt.lower().find(kw.lower())
-                    if idx >= 0:
-                        after_kw = prompt[idx + len(kw):].strip().rstrip(".!，。")
-                        if after_kw and len(after_kw) < 60:
-                            name = after_kw
-                            break
-                if not name:
-                    name = combined.strip()[:40] if combined.strip() else "Untitled Plan"
-                return {"name": name.strip(), "artifacts": []}
-
-        # Batch file upload with plan-like content — only if 5+ files (conservative)
+        # Batch file upload with plan-like content — 5+ files = likely a project
         file_count = sum(1 for p in recent_prompts if p.startswith("[File:") or "<b>File" in p)
         if file_count >= 5:
-            return {"name": "Untitled Plan", "artifacts": []}
+            name = "Untitled Plan"
+            # Try to extract a project name from earlier prompts
+            for p in recent_prompts:
+                stripped = p.strip()
+                if stripped and not stripped.startswith("[File:") and "<b>File" not in stripped:
+                    name = stripped[:40]
+                    break
+            return {"name": name, "artifacts": []}
 
         return None
 

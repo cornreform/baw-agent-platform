@@ -161,34 +161,37 @@ class TestPlanDetect:
         result = plan_cls.detect_plan(["hello"])
         assert result is None
 
-    def test_detect_plan_keyword(self, plan_cls):
+    def test_detect_keyword_no_longer_matches(self, plan_cls):
+        # Keyword-based detection removed — LLM handles plan detection via <!--plan:-->
+        # Heuristic fallback only triggers on 5+ file batch uploads
         result = plan_cls.detect_plan(["我有一個計劃叫客戶入職"])
-        assert result is not None
-        assert "客戶入職" in result.get("name", "")
+        assert result is None
 
-    def test_detect_project_keyword(self, plan_cls):
+    def test_detect_project_no_longer_matches(self, plan_cls):
         result = plan_cls.detect_plan(["Project Alpha — 3 deliverables"])
-        assert result is not None
-        assert "Alpha" in result.get("name", "")
+        assert result is None
 
     def test_detect_batch_plan(self, plan_cls):
-        # 3+ batch files with keyword
+        # 5+ batch files triggers plan detection (file-batch heuristic)
         prompts = [
             "[File: contract.pdf]",
             "[File: id_card.jpg]",
             "[File: address_proof.pdf]",
-        ]
-        result = plan_cls.detect_plan(prompts)
-        assert result is None  # no keyword, no explicit plan signal
-
-    def test_detect_batch_with_content(self, plan_cls):
-        prompts = [
-            "計劃文件: contract.pdf",
-            "[File: id_card.jpg]",
-            "[File: address_proof.pdf]",
+            "[File: bank_statement.pdf]",
+            "[File: tax_return.pdf]",
         ]
         result = plan_cls.detect_plan(prompts)
         assert result is not None
+
+    def test_detect_batch_fewer_than_5(self, plan_cls):
+        # 3 files alone not enough to trigger heuristic
+        prompts = [
+            "[File: a.pdf]",
+            "[File: b.jpg]",
+            "[File: c.pdf]",
+        ]
+        result = plan_cls.detect_plan(prompts)
+        assert result is None
 
 
 class TestPlanDeactivate:
