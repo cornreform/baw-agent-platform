@@ -839,6 +839,14 @@ class TelegramConnector(BaseConnector):
 
         caption = (msgs[0].get("caption", "") or "").strip()
         user_instruction = f"\n\nUser instruction: {caption}" if caption else ""
+        # Collect captions from ALL messages in group
+        extra_captions = []
+        for i, m in enumerate(msgs):
+            c = (m.get("caption", "") or "").strip()
+            if c and (i > 0 or c != caption):
+                extra_captions.append(f"[msg {i+1}] {c[:300]}")
+        if extra_captions:
+            user_instruction += "\n\nAdditional captions from batch:\n" + "\n".join(extra_captions)
 
         prompt = (
             f"<b>[Batch — {len(file_entries)} reference files]</b>\n\n"
@@ -862,7 +870,7 @@ class TelegramConnector(BaseConnector):
 
 
     def _buffer_rapid_msg(self, chat_id: str, msg: dict):
-        """Buffer a rapid-fire media message (no media_group_id). 
+        """Buffer a rapid-fire media message (no media_group_id).
         Reset timer each time a new msg arrives from same chat.
         When timer fires, process ALL buffered msgs as one batch."""
         if chat_id not in self._rapid_batches:
@@ -874,7 +882,8 @@ class TelegramConnector(BaseConnector):
         if chat_id in self._rapid_timers:
             self._rapid_timers[chat_id].cancel()
 
-        timer = threading.Timer(self._rapid_wait, self._process_rapid_batch, args=[chat_id])
+        # 5s window — give user time to send more files
+        timer = threading.Timer(5.0, self._process_rapid_batch, args=[chat_id])
         timer.daemon = True
         self._rapid_timers[chat_id] = timer
         timer.start()
@@ -1007,6 +1016,14 @@ class TelegramConnector(BaseConnector):
         caption = (msgs[0].get("caption", "") or "").strip()
         if caption:
             prompt += f"\n\nUser instruction: {caption}"
+        # Also collect captions from OTHER messages in batch
+        extra_captions = []
+        for i, m in enumerate(msgs):
+            c = (m.get("caption", "") or "").strip()
+            if c and (i > 0 or c != caption):
+                extra_captions.append(f"[msg {i+1}] {c[:300]}")
+        if extra_captions:
+            prompt += "\n\nAdditional captions from batch:\n" + "\n".join(extra_captions)
 
         self.send(chat_id, f"🤔 Analyzing <b>{len(entries)} items</b> together...")
         self._mark_chat_busy(chat_id)
@@ -1787,6 +1804,14 @@ class TelegramConnector(BaseConnector):
 
             # ── Single media (no group) — buffer for rapid-fire batching ──
             self._buffer_rapid_msg(chat_id, msg)
+
+            # CRITICAL: If media has caption text, do NOT process text separately.
+            # The caption is stored in the buffer and included in the batch prompt.
+            # Without this, caption text gets processed as an independent text task
+            # while the file goes to a separate batch — they become 2 tasks.
+            if text:
+                logger.info(f"[Telegram] Media with caption — caption buffered with file, not split")
+                return
 
         if not text:
             # Truly empty message — silently ignore
