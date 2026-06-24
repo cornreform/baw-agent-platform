@@ -294,6 +294,7 @@ class TelegramConnector(BaseConnector):
             {"command": "backup",  "description": "Create/list/restore backups"},
             {"command": "monitor", "description": "24h error rate + weekly report"},
             {"command": "queue",   "description": "Show pending message queue"},
+            {"command": "plan",    "description": "Plan: new/status/add/done/close"},
         ]
         try:
             self._client.post(
@@ -1927,6 +1928,69 @@ class TelegramConnector(BaseConnector):
         except Exception as e:
             self.send(chat_id, f"❌ BTW error: {e}")
 
+    def _handle_plan_command(self, chat_id: str, text: str):
+        """Handle /plan commands: new, status, add, done, close."""
+        from core.plan import Plan
+        parts = text.strip().split()
+        cmd = parts[1] if len(parts) > 1 else "status"
+
+        if cmd == "new":
+            name = " ".join(parts[2:]) if len(parts) > 2 else "Untitled Plan"
+            self._plan = Plan.create(name=name)
+            self.send(chat_id,
+                f"📋 Plan created: <b>{name}</b> (<code>{self._plan.plan_id[:12]}</code>)\n"
+                f"Send files or messages to add them to this plan.")
+
+        elif cmd == "status":
+            plan = self._plan or Plan.get_active()
+            if not plan:
+                self.send(chat_id, "📋 No active plan. Use <code>/plan new &lt;name&gt;</code> to start one.")
+                return
+            self.send(chat_id, plan.status_block())
+
+        elif cmd == "close":
+            plan = self._plan or Plan.get_active()
+            if not plan:
+                self.send(chat_id, "📋 No active plan to close.")
+                return
+            plan.deactivate()
+            self._plan = None
+            self.send(chat_id, f"📋 Plan <b>{plan.name}</b> archived.")
+
+        elif cmd == "done":
+            plan = self._plan or Plan.get_active()
+            if not plan:
+                self.send(chat_id, "📋 No active plan.")
+                return
+            # Complete the first pending step
+            pending = [s for s in plan.steps if s["status"] == "pending"]
+            if not pending:
+                self.send(chat_id, "✅ All steps completed! Use <code>/plan close</code> to archive.")
+                return
+            plan.complete_step(pending[0]["id"])
+            plan.save()
+            remaining = len([s for s in plan.steps if s["status"] == "pending"])
+            self.send(chat_id, f"✅ Step completed. {remaining} step(s) remaining.\n"
+                               f"{plan.status_block()}")
+
+        elif cmd == "add":
+            plan = self._plan or Plan.get_active()
+            if not plan:
+                self.send(chat_id, "📋 No active plan. Create one first with <code>/plan new</code>")
+                return
+            item = " ".join(parts[2:]) if len(parts) > 2 else "Untitled item"
+            plan.add_step(item)
+            self.send(chat_id, f"📋 Added step: <b>{item}</b>")
+
+        else:
+            self.send(chat_id,
+                "📋 <b>Plan commands:</b>\n"
+                "  <code>/plan new &lt;name&gt;</code> — create plan\n"
+                "  <code>/plan status</code> — show active plan\n"
+                "  <code>/plan add &lt;step&gt;</code> — add step\n"
+                "  <code>/plan done</code> — complete current step\n"
+                "  <code>/plan close</code> — archive plan")
+
     def _process_message(self, chat_id, user_id, user_name, text, msg):
         """Process a message in background thread (runs route() + send())."""
         logger.info(f"[Telegram] Processing: {text[:60]}...")
@@ -1937,6 +2001,11 @@ class TelegramConnector(BaseConnector):
         # Set initial reaction: 🔄 working/spinning
         if _msg_id:
             self._set_reaction(chat_id, _msg_id, "🔄")
+
+        # ── /plan command handler ──
+        if text.startswith("/plan"):
+            self._handle_plan_command(chat_id, text)
+            return
 
         # Reaction update: after 2s switch to thinking
         _reaction_stop = threading.Event()

@@ -767,6 +767,15 @@ def build_system_prompt(config: dict, data_dir: Optional[Path] = None,
     if todo_block:
         system_prompt += todo_block
 
+    # ── Active Plan context injection ──
+    try:
+        from core.plan import Plan
+        plan = Plan.get_active()
+        if plan and plan.status == "active":
+            system_prompt += "\n\n" + plan.status_block()
+    except Exception:
+        pass
+
     return system_prompt
 
 

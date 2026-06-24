@@ -117,6 +117,8 @@ class BaseConnector(ABC):
         self._sessions_dir = Path.home() / ".baw" / "sessions"
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
         self._load_session_index()
+        # ── Plan context ──
+        self._plan: Any = None
 
     @abstractmethod
     def connect(self) -> bool:
@@ -2045,6 +2047,34 @@ class BaseConnector(ABC):
                                 f"[Topic shift — previous conversation was about: "
                                 f"{_prev_topic[:100]}]\n\n{prompt}"
                             )
+
+            # ── Plan detection ──
+            if chat_id and not self._plan:
+                from core.plan import Plan
+                plan_signals = Plan.detect_plan([prompt] if prompt else [])
+                if plan_signals:
+                    self._plan = Plan.create(
+                        name=plan_signals.get("name", "Untitled Plan"),
+                        artifacts=plan_signals.get("artifacts", []),
+                    )
+                    if session:
+                        session["plan_id"] = self._plan.plan_id
+                        self._plan.add_session(session["id"])
+                    logger.info(f"[Plan] Auto-detected: {self._plan.name} ({self._plan.plan_id})")
+
+            # ── Soften intent-shift when plan is active ──
+            if self._plan and conv_history is None and prompt:
+                # Plan is active but context was reset — re-inject plan context
+                prompt = f"[Plan: {self._plan.name} — continuing plan context]\n\n{prompt}"
+                logger.info(f"[Plan] Plan active, context softened for: {self._plan.name}")
+
+            # ── Track plan artifacts from batch/file prompts ──
+            if self._plan and prompt and ("[File:" in prompt or "<b>File" in prompt or "<b>[Batch" in prompt):
+                import re as _plan_re
+                files = _plan_re.findall(r'<b>File \d+:</b>\s+([^<\n]+)', prompt)
+                for fname in files:
+                    self._plan.add_artifact(name=fname.strip(), type="document", path="")
+                logger.info(f"[Plan] Tracked {len(files)} artifacts for plan {self._plan.plan_id}")
 
             # ── Progress tracking + real-time Telegram updates (inline edit) ──
             _last_progress = time.time()
