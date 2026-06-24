@@ -311,8 +311,7 @@ def _discover_skill_files(source: str) -> list[str]:
     files_to_import = []
     if not source or source == "auto":
         candidates = [
-            str(Path.home() / ".hermes" / "skills"),
-            str(Path.home() / ".hermes" / "profiles" / "sticky" / "skills"),
+            str(Path.home() / ".baw" / "skills"),
         ]
         for c in candidates:
             p = Path(c)

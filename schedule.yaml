@@ -39,8 +39,8 @@
 
 - name: weekly-self-evolution
   cron: "0 3 * * 0"
-  command: "Run full self-evolution: analyze memory patterns, flush behavior data, run auto-optimize with changes applied. Read SOUL.md before and after to confirm whether patches were applied. Report patterns found and whether SOUL.md was modified."
-  description: "Sun 03:00 HKT — Full self-evolution: analyze memory, apply SOUL.md patches"
+  command: "Run full self-evolution pipeline using core.evolve.run_weekly_evolution(). Execute: python3 -m core.evolve --auto-evolve directly. Do NOT use the BAW agent loop for this — run the Python function directly for reliable execution. Report: patterns found, whether SOUL.md was modified, and any failures."
+  description: "Sun 03:00 HKT — Full self-evolution: analyze memory, apply SOUL.md patches (direct function call)"
   enabled: true
 
 - name: weekly-kg-curation
@@ -59,6 +59,12 @@
   cron: "30 5 * * 1"
   command: "Run weekly cross-session pattern synthesis. Scan the last 7 days of sessions and memory entries. Find topic clusters, emerging patterns, and insights. Store insights back to memory. Write a report to ~/.baw/reports/weekly_synthesis_report.txt. Report how many clusters and insights were found."
   description: "Mon 05:30 HKT — Weekly cross-session pattern synthesis"
+  enabled: true
+
+- name: daily-auto-heal
+  cron: "0 0 * * *"
+  command: "Run auto-heal diagnostics. Check: 1) Container running (docker ps). 2) Last 50 log lines for errors. 3) Config integrity (yaml parse). 4) Disk space. 5) Provider health. Auto-fix: 1) If container not running, restart. 2) If missing dep found, pip install. 3) If config broken, restore last backup. 4) If error rate > 5/line, kill stale sessions. Report: what was checked, what was fixed, what needs human attention."
+  description: "Midnight HKT — Auto-heal: container, config, errors, disk (self-recovery)"
   enabled: true
 
 - name: daily-self-report
