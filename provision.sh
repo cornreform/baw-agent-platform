@@ -225,7 +225,7 @@ Type=simple
 EnvironmentFile=%h/.baw/telegram.env
 EnvironmentFile=%h/.baw/.env
 ExecStart=%h/BAW/venv/bin/python3 %h/BAW/baw-bot --config %h/.baw/config.yaml
-Restart=on-failure
+Restart=always
 RestartSec=5
 WorkingDirectory=%h/BAW
 
