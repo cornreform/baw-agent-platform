@@ -2,6 +2,31 @@
 
 All notable changes to BAW (Black And White) Agent Platform.
 
+## v1.15.0 — 2026-06-24 (Self-healing dependencies + resilient Telegram polling)
+
+### 🛡️ Self-Healing Dependency System
+- **`core/tools.py`** — `execute_tool()` auto-detects `ModuleNotFoundError`, pip-installs missing module, retries tool call
+- **`baw-bot`** — startup-level `_safe_import()` wrapper for all connector imports with auto-install
+- **`baw-bot`** — `main()` wrapped in try/except ModuleNotFoundError → auto-install → retry once
+- **Dockerfile** — comprehensive dependency list baked in: `html2text`, `websocket-client`, `croniter`, `requests`, `beautifulsoup4`
+- **`/home/baw/.local/` permissions fixed** — `chown baw:baw` enables non-root pip installs
+
+### 🔗 Resilient Telegram Polling (409 Fix)
+- **`core/messaging/telegram.py`** — `connect()` now resilient: retry `close()` + `deleteWebhook` on `getMe` failure
+- **`core/messaging/telegram_async.py`** — startup `close()` + `deleteWebhook` to release stale long-poll sessions
+- **`_on_connect_success()` extracted** — keeps `connect()` under 50 lines
+
+### 🧠 Behavioral Lore
+- **`MASTERSKILLS.md`** — rule #4 "自動修復優先", rule #5 "Error要actionable"
+- **NEVER call `logOut()` API** — it permanently invalidates bot tokens
+
+### 📦 Dependencies
+```python
+# Dockerfile baked deps
+docx2txt httpx pyyaml pptx2md python-pptx python-docx schedule
+html2text websocket-client croniter requests beautifulsoup4
+```
+
 ## v1.14.17 — 2026-06-23 (Auto-provider-fallback for all LLM calls)
 
 ### 🔄 Auto-Provider-Fallback System
