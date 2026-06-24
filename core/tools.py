@@ -147,6 +147,50 @@ def execute_tool(name: str, arguments: dict, timeout: int = 30) -> str:
             except Exception:
                 pass
             last_error = error_str
+
+            # ── Auto-heal: missing Python module ──
+            # If a tool crashes because of a missing dependency (ModuleNotFoundError),
+            # parse the module name, pip install it, and retry automatically.
+            # BAW should never fail on a missing pip package — it should heal itself.
+            _auto_installed = False
+            _mod_name = ""
+            if isinstance(e, ModuleNotFoundError):
+                _mod_name = str(e).split("'")[1] if "'" in str(e) else ""
+            elif "No module named" in error_str:
+                import re as _re
+                _m = _re.search(r"No module named ['\"]?([^'\"]+)['\"]?", error_str)
+                if _m:
+                    _mod_name = _m.group(1)
+            if _mod_name and _mod_name not in ("pip", "setuptools"):
+                try:
+                    import subprocess as _sp
+                    import sys as _sys
+                    import logging as _log
+                    _log.getLogger("baw.tools").warning(
+                        f"[AutoHeal] Missing module '{_mod_name}' — attempting auto-install..."
+                    )
+                    _r = _sp.run(
+                        [_sys.executable, "-m", "pip", "install", _mod_name, "--quiet"],
+                        capture_output=True, text=True, timeout=60,
+                    )
+                    if _r.returncode == 0:
+                        _auto_installed = True
+                        _log.getLogger("baw.tools").info(
+                            f"[AutoHeal] ✅ Installed '{_mod_name}', retrying tool call..."
+                        )
+                        # Restart the loop with the same attempt counter
+                        # (we'll retry with attempt unchanged since we fixed the issue)
+                        last_error = ""
+                        continue  # retry this attempt
+                    else:
+                        _log.getLogger("baw.tools").error(
+                            f"[AutoHeal] ❌ Failed to auto-install '{_mod_name}': {_r.stderr[:200]}"
+                        )
+                except Exception as _pip_e:
+                    import logging as _log
+                    _log.getLogger("baw.tools").error(
+                        f"[AutoHeal] ❌ pip install failed: {_pip_e}"
+                    )
             
             # ── Auto-correct common failures ──
             if attempt < MAX_ATTEMPTS:
