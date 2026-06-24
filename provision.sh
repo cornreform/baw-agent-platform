@@ -213,7 +213,7 @@ if [ -d "$BAW_DIR" ]; then
 with open('core/messaging/__init__.py','r') as f:
     c=f.read()
 old='# ── Direct execution shortcuts'
-new='# ── Chat-first: conversational -> LLM directly\n        _is_cmd = any(_lower.startswith(p) for p in [\"/\", \"search \", \"read \", \"write \", \"create \", \"run \", \"exec \", \"git \", \"ssh \", \"docker \"])\n        if not _is_cmd:\n            return self._chat_response(text, chat_id=chat_id)\n\n' + old
+new='# ── Chat-first: conversational -> LLM directly\n        _lower = text.strip().lower()\n        _is_cmd = any(_lower.startswith(p) for p in [\"/\", \"search \", \"read \", \"write \", \"create \", \"run \", \"exec \", \"git \", \"ssh \", \"docker \"])\n        if not _is_cmd:\n            return self._chat_response(text, chat_id=chat_id)\n\n' + old
 c=c.replace(old,new,1)
 with open('core/messaging/__init__.py','w') as f:
     f.write(c)
