@@ -234,7 +234,10 @@ if s and e:
     # Fix Python 3.9 compat: SOUL.md FIRST in system prompt (was buried after rules)
     sed -i 's/system_prompt = lang_gate + evidence_rule + execution_protocol + soul_text/system_prompt = soul_text + lang_gate + evidence_rule + execution_protocol/' \
         core/loop.py 2>/dev/null || true
-    # Fix Python 3.9 compat: force tools for ALL messages (was INLINE_DIRECT for trivial)
+    # Fix: add user-facing output rule (hide tool traces from user)
+    sed -i "/Use \\\`todo\\\` tool internally to track progress/a\\        \"\\\\n\"\\\n        \"### OUTPUT RULE — User-facing only\\\\n\"\\\n        \"Your text output goes DIRECTLY to the user. Never show:\\\\n\"\\\n        \"- tool call traces, file paths, tool results\\\\n\"\\\n        \"- numbered step lists, progress updates, execution plans\\\\n\"\\\n        \"- internal diagnostics, debug info, or system status\\\\n\"\\\n        \"\\\\n\"\\\n        \"Only the FINAL answer reaches the user.\\\\n\"" \
+        core/loop.py 2>/dev/null || true
+    deactivate
     sed -i 's/if score <= 5:/if score <= -1:/' core/router.py 2>/dev/null || true
     deactivate
     
