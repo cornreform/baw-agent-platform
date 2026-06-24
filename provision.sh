@@ -311,6 +311,28 @@ BAWSERVICE
     echo "  Config:  $HOME/.baw/"
     echo "  Service: systemctl --user enable --now baw"
     echo ""
+    # Fix bawrun import for scheduler
+    ln -sf "$BAW_DIR/bawrun.py" "$BAW_DIR/venv/lib/python3.9/site-packages/bawrun.py" 2>/dev/null
+    # Init scheduler tasks
+    cd "$BAW_DIR" && source venv/bin/activate && python3 -c "
+from core.scheduler import Scheduler, ScheduledTask
+s = Scheduler(os.path.expanduser('~/.baw'))
+tasks = [
+    ('daily-self-report', '0 23 * * *', 'Run self_diagnose and report'),
+    ('daily-auto-heal', '0 3 * * *', 'Auto-heal with fix=True'),
+    ('weekly-memory-quality', '0 4 * * 0', 'Memory quality check'),
+    ('weekly-session-synthesis', '0 5 * * 0', 'Session synthesis'),
+    ('weekly-self-evolution', '0 6 * * 0', 'Self-evolution audit'),
+]
+for n, c, p in tasks:
+    try:
+        s.add_task(ScheduledTask(name=n, cron=c, command=p, enabled=True))
+    except Exception:
+        pass
+print('Scheduler: 5 tasks initialized')
+" 2>/dev/null || true
+    deactivate
+    echo ""
     echo "Nexi migration:"
     echo "  Copy ~/nexi-migration-pack/ content -> ~/.baw/ after first BAW setup"
 fi
