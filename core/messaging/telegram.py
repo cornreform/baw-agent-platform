@@ -85,6 +85,20 @@ class TelegramConnector(BaseConnector):
             return False
         try:
             self._client = httpx.Client(timeout=10)
+
+            # ── Reset stale sessions before getMe ──
+            # Prevents HTTP 409 conflicts and "Logged out" errors from
+            # a previous logOut call. `close()` releases long-poll without
+            # invalidating the token. `deleteWebhook` clears any webhook
+            # leftovers from older configs.
+            try:
+                _reset = httpx.Client(timeout=10)
+                _reset.post(f"{self._api_base}/close")
+                _reset.get(f"{self._api_base}/deleteWebhook?drop_pending_updates=true")
+                _reset.close()
+            except Exception:
+                pass  # non-fatal — just proceed
+
             r = self._client.get(f"{self._api_base}/getMe")
             if r.status_code == 200:
                 info = r.json()
