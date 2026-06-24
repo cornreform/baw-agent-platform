@@ -8,7 +8,7 @@
 
 <br>
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.14.14-blueviolet" alt="v1.14.14">
+  <img src="https://img.shields.io/badge/version-1.15.0-blueviolet" alt="v1.15.0">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -28,7 +28,7 @@
 
 ## 🔄 完全獨立 (Full Independence)
 
-BAW v1.14.14 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
+BAW v1.15.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
 
 | Phase | 能力 | Tools |
 |-------|------|-------|
@@ -777,6 +777,14 @@ baw --setup          # → Guided setup wizard</pre>
 <hr>
 
 <h2>📝 Changelog</h2>
+
+<h3>v1.15.0 — 自我修復依賴 + 穩定 Telegram 輪詢 (2026-06-24)</h3>
+<ul>
+  <li>🛡️ <strong>自我修復依賴系統</strong> — 3 層 safety net：tool 執行 auto-install、connector import wrapper、startup main() wrapper，ModuleNotFoundError 自動 pip install + retry</li>
+  <li>🔗 <strong>Telegram 409 Conflict 根因修復</strong> — 刪除危險嘅 logOut() API，connect() 加 resilient retry + close() + deleteWebhook</li>
+  <li>🐳 <strong>Dockerfile 全面 dep baking</strong> — html2text, websocket-client, croniter, requests, beautifulsoup4 baked in；chown 權限 fix 令非 root pip install 可行</li>
+  <li>🧠 <strong>MASTERSKILLS.md 行為規則擴充</strong> — rule #4 自動修復優先、rule #5 Error 要 actionable、NEVER call logOut()</li>
+</ul>
 
 <h3>v1.14.14 — 完全本地 web_extract + AI Research + RSS tools</h3>
 <ul>
