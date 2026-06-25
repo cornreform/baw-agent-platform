@@ -2690,6 +2690,25 @@ class BaseConnector(ABC):
                 except Exception:
                     pass
 
+            # Clean synthesis: regenerate with identity + user question
+            from pathlib import Path as _CSPath
+            try:
+                _cs = _CSPath("/home/radxa/.baw/SOUL.md").read_text()
+                _cm = [{"role": "system", "content": _cs}, {"role": "user", "content": prompt or ""}]
+                from ..llm import call_llm_with_fallback as _csllm
+                _cf = _csllm(config, _cm, tools=None, temperature=0.7)
+                if _cf and _cf.response and _cf.response.content:
+                    output = _cf.response.content.strip()
+                else:
+                    output = "出咗少少技術問題，試多次？"
+            except Exception:
+                output = "出咗少少技術問題，試多次？"
+            if output and len(output) > 5:
+                try:
+                    with open("/tmp/baw_learning.txt", "a") as _f:
+                        _f.write("Q: " + str(prompt[:80]) + "\nA: " + str(output[:120]) + "\n\n")
+                except Exception:
+                    pass
             return output.strip()
 
         except BaseException as e:
