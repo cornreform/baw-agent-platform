@@ -1,220 +1,80 @@
 #!/usr/bin/env bash
-# BAW Installer — one-command setup
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
-#   bash install.sh
-#
-# Supports: Bash, Zsh, Fish (auto-detected)
-
+# BAW One-Line Installer — bare metal & Docker
+# Usage: curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
 set -e
 
-BAW_REPO="https://github.com/cornreform/baw-agent-platform.git"
-BAW_DIR="$HOME/baw"
-BAW_BIN_DIR="$HOME/.local/bin"
-BAW_BIN="$BAW_BIN_DIR/baw"
-BAW_DATA_DIR="$HOME/.baw"
-PYTHON=""
-SHELL_CONFIG=""
+BAW_DIR="$HOME/BAW"
+GREEN='\033[1;32m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
 
-# ── Colours ──
-BOLD='\033[1m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
-
-echo -e "${CYAN}${BOLD}"
-echo "  ╔══════════════════════════════════════╗"
-echo "  ║     BAW — Black And White Agent      ║"
-echo "  ║         One-Command Installer         ║"
-echo "  ╚══════════════════════════════════════╝"
-echo -e "${NC}"
-
-# ── Find uv ──
-if ! command -v uv &>/dev/null; then
-    echo -e "${CYAN}⏳ uv not found — installing...${NC}"
-    curl -LsSf https://astral.sh/uv/install.sh | bash
-    export PATH="$HOME/.local/bin:$PATH"
-    if ! command -v uv &>/dev/null; then
-        echo -e "${RED}❌ uv installation failed. Please install manually: https://docs.astral.sh/uv/${NC}"
-        exit 1
-    fi
-    echo -e "${GREEN}✅${NC} uv installed: $(uv --version 2>&1)"
-else
-    echo -e "${GREEN}✅${NC} uv: $(uv --version 2>&1)"
-fi
-
-# ── Find Python ──
-PYTHON=""
-for py in $(uv python find 3.12 2>/dev/null) $(uv python find 3.11 2>/dev/null) python3.12 python3.11 python3; do
-    if [ -x "$py" ] || command -v "$py" &>/dev/null; then
-        PYTHON="$py"
-        break
-    fi
-done
-
-if [ -z "$PYTHON" ]; then
-    echo -e "${CYAN}⏳ Python 3.11+ not found — installing via uv...${NC}"
-    uv python install 3.12
-    PYTHON=$(uv python find 3.12)
-    if [ -z "$PYTHON" ]; then
-        echo -e "${RED}❌ Python installation failed.${NC}"
-        exit 1
-    fi
-    echo -e "${GREEN}✅${NC} Python installed: $($PYTHON --version 2>&1)"
-else
-    echo -e "${GREEN}✅${NC} Python: $($PYTHON --version 2>&1)"
-fi
-
-# ── Find Git ──
-if ! command -v git &>/dev/null; then
-    echo -e "${RED}❌ Git not found. Install it first: sudo apt install git${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✅${NC} Git: $(git --version 2>&1)"
-
-# ── Check Docker ──
-DOCKER_AVAILABLE=false
-BARE_METAL_READY=false
-if command -v docker &>/dev/null; then
-    DOCKER_AVAILABLE=true
-    echo -e "${GREEN}✅${NC} Docker: $(docker --version 2>&1)"
-else
-    echo -e "${YELLOW}⚠️  Docker not found.${NC}"
-fi
-
-# Detect bare-metal capability
-if command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
-    BARE_METAL_READY=true
-    echo -e "${GREEN}✅${NC} systemd detected — bare-metal deployment ready"
-fi
-
-# ── Clone or update repo ──
+echo -e "${BOLD}BAW Installer${NC}"
 echo ""
-echo -e "${CYAN}📁 Setting up BAW repo...${NC}"
-if [ -d "$BAW_DIR" ]; then
-    echo "   BAW already exists at $BAW_DIR — pulling latest..."
-    cd "$BAW_DIR" && git pull
-else
-    git clone "$BAW_REPO" "$BAW_DIR"
-fi
-echo -e "${GREEN}✅${NC} BAW repo ready at $BAW_DIR"
 
-# ── Install dependencies with uv (AFTER clone — ordering fix) ──
-echo ""
-echo -e "${CYAN}📦 Installing Python dependencies...${NC}"
+# ── Clone ──
+if [ -d "$BAW_DIR/.git" ]; then
+    echo -e "  ${YELLOW}⟳${NC} Pulling latest..."
+    cd "$BAW_DIR" && git pull origin main
+else
+    echo -e "  ${YELLOW}↓${NC} Cloning..."
+    git clone https://github.com/cornreform/baw-agent-platform.git "$BAW_DIR"
+fi
 cd "$BAW_DIR"
 
-# PEP 668 safe: use uv venv if system Python is restricted
-if $PYTHON -c "import sysconfig; print(sysconfig.get_config_var('INCLUDEPY'))" &>/dev/null; then
-    uv pip install -r requirements.txt --system 2>&1 | tail -3 || {
-        echo -e "${YELLOW}⚠️  --system install failed, trying --break-system-packages...${NC}"
-        uv pip install -r requirements.txt --system --break-system-packages 2>&1 | tail -3
-    }
-else
-    uv venv && source .venv/bin/activate && uv pip install -r requirements.txt 2>&1 | tail -3
+# ── Venv ──
+if [ ! -d "$BAW_DIR/venv" ]; then
+    echo -e "  ${YELLOW}⟳${NC} Creating venv..."
+    python3 -m venv venv
 fi
-echo -e "${GREEN}✅${NC} Dependencies installed"
+source venv/bin/activate
 
-# ── Bootstrap SOUL.md ──
-mkdir -p "$BAW_DATA_DIR"
-if [ ! -f "$BAW_DATA_DIR/SOUL.md" ] && [ -f "$BAW_DIR/SOUL.default.md" ]; then
-    cp "$BAW_DIR/SOUL.default.md" "$BAW_DATA_DIR/SOUL.md"
-    echo -e "${GREEN}✅${NC} SOUL.md bootstrapped"
-fi
+# ── Dependencies ──
+echo -e "  ${YELLOW}⟳${NC} Installing dependencies..."
+pip install -r requirements.txt --quiet 2>&1 | tail -1
 
-# ── Create CLI wrapper ──
-mkdir -p "$BAW_BIN_DIR"
-cat > "$BAW_BIN" << WRAPPER
-#!/usr/bin/env bash
-# BAW CLI wrapper — auto-generated by install.sh
-cd "\$HOME/baw" && exec uv run python "\$HOME/baw/baw" "\$@"
-WRAPPER
-chmod +x "$BAW_BIN"
-echo -e "${GREEN}✅${NC} CLI wrapper: $BAW_BIN"
+# ── Config ──
+mkdir -p ~/.baw
+[ ! -f ~/.baw/SOUL.md ] && cp SOUL.md ~/.baw/
+[ ! -f ~/.baw/config.yaml ] && cp config.sample.yaml ~/.baw/config.yaml
 
-# ── Detect shell and suggest PATH setup ──
-echo ""
-echo -e "${CYAN}🔧 Shell PATH setup...${NC}"
+# ── Symlink (case-sensitivity fix) ──
+ln -sf "$BAW_DIR" ~/baw
 
-SHELL_NAME="$(basename "$SHELL" 2>/dev/null || echo "bash")"
-case "$SHELL_NAME" in
-    zsh) SHELL_CONFIG="$HOME/.zshrc"; PATH_CMD='export PATH="$HOME/.local/bin:$PATH"' ;;
-    bash) SHELL_CONFIG="$HOME/.bashrc"; PATH_CMD='export PATH="$HOME/.local/bin:$PATH"' ;;
-    fish) SHELL_CONFIG="$HOME/.config/fish/config.fish"; PATH_CMD='fish_add_path "$HOME/.local/bin"' ;;
-    *) SHELL_CONFIG="$HOME/.profile"; PATH_CMD='export PATH="$HOME/.local/bin:$PATH"' ;;
+# ── CLI Wrapper ──
+sudo tee /usr/local/bin/baw > /dev/null << 'WRAPPER'
+#!/bin/bash
+BAW_DIR="${BAW_HOME:-$HOME/BAW}"
+cd "$BAW_DIR" || exit 1
+export PYTHONPATH="$BAW_DIR:$PYTHONPATH"
+case "${1:-}" in
+  ""|chat|tui-chat|status|models|config|router|soul|logs|dashboard|setup|memory|todo|tools|sessions|evolve|court|skill|restart|rebuild|self-test|preflight)
+    exec "$BAW_DIR/venv/bin/python3" -m cli.main "$@" ;;
+  *)
+    exec "$BAW_DIR/venv/bin/python3" "$BAW_DIR/baw" "$@" ;;
 esac
+WRAPPER
+sudo chmod 755 /usr/local/bin/baw
 
-if [[ ":$PATH:" == *":$HOME/.local/bin:"* ]]; then
-    echo -e "${GREEN}✅${NC} ~/.local/bin already in PATH"
-else
-    echo -e "  ${YELLOW}⚠️  ~/.local/bin is NOT in your PATH${NC}"
-    echo -e "  Add it: echo '$PATH_CMD' >> $SHELL_CONFIG && source $SHELL_CONFIG"
-fi
-
-# ── Deployment setup ──
-if [ "$DOCKER_AVAILABLE" = true ]; then
-    echo ""
-    echo -e "${CYAN}🐳 Docker deployment${NC}"
-    # Auto-detect Docker group GID and fix in docker-compose.yml
-    DOCKER_GID=$(getent group docker | cut -d: -f3 2>/dev/null || echo "")
-    if [ -n "$DOCKER_GID" ] && [ "$DOCKER_GID" != "988" ]; then
-        echo -e "   ${YELLOW}🔧 Docker GID is $DOCKER_GID (template has 988)${NC}"
-        if [ -f "$BAW_DIR/docker-compose.yml" ]; then
-            sed -i "s/\"988\"/\"$DOCKER_GID\"/" "$BAW_DIR/docker-compose.yml"
-            echo -e "   ${GREEN}✅${NC} docker-compose.yml GID updated to $DOCKER_GID"
-        fi
-    fi
-    echo -e "   Run: ${BOLD}cd $BAW_DIR && docker compose up -d${NC}"
-elif [ "$BARE_METAL_READY" = true ]; then
-    echo ""
-    echo -e "${CYAN}🖥️  Bare-metal deployment${NC}"
-    # Install systemd service
-    SERVICE_FILE="$BAW_DIR/deploy/baw.service"
-    if [ -f "$SERVICE_FILE" ]; then
-        sudo cp "$SERVICE_FILE" /etc/systemd/system/baw.service
-        # baw.service uses systemd specifiers %h/%u (resolved natively)
-        sudo systemctl daemon-reload
-        sudo systemctl enable baw
-        echo -e "   ${GREEN}✅${NC} baw.service installed + enabled"
-        echo -e "   Start with: ${BOLD}sudo systemctl start baw${NC}"
-    fi
-fi
-
-# ── Verify installation ──
-echo ""
-echo -e "${CYAN}🔍 Verifying installation...${NC}"
-[ -f "$BAW_BIN" ] && [ -x "$BAW_BIN" ] && echo -e "${GREEN}✅${NC} CLI wrapper executable"
-[ -d "$BAW_DIR/baw" ] && echo -e "${GREEN}✅${NC} BAW source files present"
-[ -f "$BAW_DIR/requirements.txt" ] && echo -e "${GREEN}✅${NC} requirements.txt present"
-[ -f "$BAW_DIR/SOUL.default.md" ] && echo -e "${GREEN}✅${NC} SOUL template present"
-
-if command -v baw &>/dev/null; then
-    echo ""
-    baw --version
-fi
+# ── Systemd Service ──
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/baw.service << SERVICE
+[Unit]
+Description=BAW Agent Platform
+After=network.target
+[Service]
+Type=simple
+ExecStart=%h/BAW/venv/bin/python3 %h/BAW/baw-bot --config %h/.baw/config.yaml
+Restart=always
+RestartSec=5
+WorkingDirectory=%h/BAW
+EnvironmentFile=%h/.baw/.env
+[Install]
+WantedBy=default.target
+SERVICE
+systemctl --user daemon-reload
 
 # ── Done ──
 echo ""
-echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
-echo -e "${GREEN}${BOLD}  ✅  BAW v1.14.2 installed successfully!${NC}"
-echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
+echo -e "  ${GREEN}✅ BAW installed!${NC}"
 echo ""
-echo -e "  ${BOLD}Next steps:${NC}"
-echo ""
-echo -e "  ${CYAN}1.${NC} Run the setup wizard:"
-echo -e "     ${BOLD}baw --setup${NC}"
-echo ""
-echo -e "  ${CYAN}2.${NC} Start the bot:"
-if [ "$DOCKER_AVAILABLE" = true ]; then
-    echo -e "     ${BOLD}cd $BAW_DIR && docker compose up -d${NC}"
-elif [ "$BARE_METAL_READY" = true ]; then
-    echo -e "     ${BOLD}sudo systemctl start baw${NC}"
-else
-    echo -e "     ${BOLD}cd $BAW_DIR && baw --run${NC}  (manual foreground)"
-fi
-echo ""
-echo -e "  ${CYAN}3.${NC} Read the docs:"
-echo -e "     ${BOLD}https://cornreform.github.io/baw-agent-platform/${NC}"
+echo -e "  Next:  ${BOLD}baw --setup${NC}         (configure API keys + model)"
+echo -e "         ${BOLD}systemctl --user enable --now baw${NC}  (start Telegram bot)"
 echo ""
