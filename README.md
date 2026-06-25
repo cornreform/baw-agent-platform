@@ -88,6 +88,7 @@ pip install -r requirements.txt
 # 4. Set up config
 mkdir -p ~/.baw
 cp SOUL.md ~/.baw/
+cp CAPABILITIES.md ~/.baw/
 cp config.sample.yaml ~/.baw/config.yaml
 
 # 5. Install CLI wrapper (so 'baw' works from anywhere)
@@ -202,6 +203,7 @@ pip install -r requirements.txt
 # 3. Config
 mkdir -p ~/.baw
 cp SOUL.md ~/.baw/
+cp CAPABILITIES.md ~/.baw/
 cp config.sample.yaml ~/.baw/config.yaml
 
 # 4. Fix symlink

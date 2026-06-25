@@ -32,7 +32,8 @@ pip install -r requirements.txt --quiet 2>&1 | tail -1
 
 # ── Config ──
 mkdir -p ~/.baw
-[ ! -f ~/.baw/SOUL.md ] && cp SOUL.md ~/.baw/
+[ ! -f ~/.baw/SOUL.md ] [ ! -f ~/.baw/SOUL.md ] && cp SOUL.md ~/.baw/[ ! -f ~/.baw/SOUL.md ] && cp SOUL.md ~/.baw/ cp SOUL.md ~/.baw/
+[ ! -f ~/.baw/CAPABILITIES.md ] && cp CAPABILITIES.md ~/.baw/
 [ ! -f ~/.baw/config.yaml ] && cp config.sample.yaml ~/.baw/config.yaml
 
 # ── Symlink (case-sensitivity fix) ──
