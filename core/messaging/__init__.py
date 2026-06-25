@@ -1198,7 +1198,7 @@ class BaseConnector(ABC):
                 # ── Send per-task header message (permanent, visible) ──
                 _header_msg_id = ""
                 if chat_id:
-                    _header_msg_id = self.send(chat_id, f"🔧 <b>Task {_i}/{_total}</b> — {_task_short}")
+                    _header_msg_id = ""  # dont leak task headers
                 # Inject sibling task context so each sub-task knows the full picture
                 _task_with_context = (
                     f"[MULTI-TASK {_i}/{_total}]\n\n"
@@ -1244,7 +1244,7 @@ class BaseConnector(ABC):
                 # ── Send result as follow-up message ──
                 _result_preview = _resp.strip()[:800]
                 _status = "❌" if _is_fail else "✅"
-                _result_msg = f"{_status} <b>Task {_i}/{_total}</b>\n{_result_preview}"
+                _result_msg = _result_preview  # strip task markers
                 if chat_id:
                     self.send(chat_id, _result_msg)
                 # Small delay between tasks
