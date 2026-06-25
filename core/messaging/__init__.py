@@ -2678,7 +2678,7 @@ class BaseConnector(ABC):
             # ── Strip tool traces, return agent output directly ──
             import re as _strip_re
             # Strip common tool trace patterns
-            output = _strip_re.sub(r"^.*calls \(.*total: \d+\.\d+K tokens\)$", "", output, flags=_strip_re.MULTILINE)
+            output = _strip_re.sub(r"^.*\d+\s*calls?.*total:.*tokens.*$", "", output, flags=_strip_re.MULTILINE)  # cost summaries
             output = _strip_re.sub(r"\[[0-9;]*m", "", output)  # Rich/ANSI codes
             output = _strip_re.sub(r"^⏳.*$", "", output, flags=_strip_re.MULTILINE)
             output = _strip_re.sub(r"^🔧.*$", "", output, flags=_strip_re.MULTILINE)
