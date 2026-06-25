@@ -156,7 +156,7 @@ def cmd_doctor(data_dir: Path, fix: bool = False):
 
     # 5. Python packages
     _header("Python Packages")
-    required_pkgs = ["faster-whisper", "httpx", "PyYAML"]
+    required_pkgs = ["httpx", "PyYAML", "rich"]  # faster-whisper is optional (auto-heal)
     for pkg in required_pkgs:
         try:
             __import__(pkg.replace("-", "_"))
@@ -166,7 +166,7 @@ def cmd_doctor(data_dir: Path, fix: bool = False):
                 _warn(f"{pkg} not found — installing...")
                 r = subprocess.run(
                     [sys.executable, "-m", "pip", "install", pkg, "--quiet"],
-                    capture_output=True, text=True, timeout=60,
+                    capture_output=True, text=True, timeout=300,  # 5min for ARM64
                 )
                 if r.returncode == 0:
                     _ok(f"{pkg} installed successfully")
