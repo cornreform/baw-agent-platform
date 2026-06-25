@@ -2709,6 +2709,40 @@ class BaseConnector(ABC):
                         _f.write("Q: " + str(prompt[:80]) + "\nA: " + str(output[:120]) + "\n\n")
                 except Exception:
                     pass
+            # Clean synthesis: regenerate with SOUL.md + user prompt + session context
+            from pathlib import Path as _CSPath
+            try:
+                _cs = _CSPath("/home/user/.baw/SOUL.md").read_text()
+                _cm = [{"role": "system", "content": _cs}]
+                try:
+                    if hasattr(self, "get_session") or hasattr(self, "_sessions"):
+                        _sid = chat_id if chat_id else "default"
+                        _sessions = getattr(self, "_sessions", {})
+                        _ses = _sessions.get(_sid, {})
+                        _hist = _ses.get("messages", [])[-4:]
+                        for _m in _hist:
+                            _r = _m.get("role","")
+                            _c = (_m.get("content","") or "")[:200]
+                            if _r in ("user","assistant") and _c:
+                                _cm.append({"role": _r, "content": _c})
+                except Exception:
+                    pass
+                _cm.append({"role": "user", "content": prompt or ""})
+                from ..llm import call_llm_with_fallback as _csllm
+                _cf = _csllm(config, _cm, tools=None, temperature=0.7)
+                if _cf and _cf.response and _cf.response.content:
+                    output = _cf.response.content.strip()
+            except Exception:
+                pass
+            if output and "<think>" in output:
+                import re
+                output = re.sub(r"<think>.*?</think>", "", output, flags=re.DOTALL).strip()
+            if output and len(output) > 5:
+                try:
+                    with open("/tmp/baw_learning.txt", "a") as _f:
+                        _f.write("Q: " + str(prompt[:80]) + "\nA: " + str(output[:120]) + "\n\n")
+                except Exception:
+                    pass
             return output.strip()
 
         except BaseException as e:
