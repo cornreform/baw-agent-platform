@@ -1,6 +1,6 @@
 # BAW v0.22.0 — 對話功能驗證測試
 
-用你對 the user 嘅真實認知（pet1pet2、MINI JCW、USL車業務、Alpaca交易）設計以下對話測試。每個測試 Send 一句俾 BAW，檢查 Response 是否符合預期。
+用你對用戶嘅真實認知設計以下對話測試。每個測試 Send 一句俾 BAW，檢查 Response 是否符合預期。
 
 ---
 
@@ -8,14 +8,14 @@
 
 **Send:**
 ```
-pet1今日乖唔乖啊？
+寵物今日乖唔乖啊？
 ```
 
 **Expected:**
-- ⚠️ BAW 唔知pet1今日乖唔乖（冇 real-time info），但應該：
+- ⚠️ BAW 唔知寵物今日乖唔乖（冇 real-time info），但應該：
   - ✓ 用 **粵語** 回應
   - ✓ 唔會作故仔（honesty over polish）
-  - ✓ 如果佢想 check memory 搵pet1資料，係正常行為
+  - ✓ 如果佢想 check memory 搵寵物資料，係正常行為
 
 **執行的系統**: Language Rule（system prompt 強制粵語）
 
@@ -163,7 +163,7 @@ pet1今日乖唔乖啊？
 一次過 Send 呢 4 條，cover 主要功能：
 
 ```
-1. pet1今日乖唔乖啊？
+1. 寵物今日乖唔乖啊？
 2. 我鍾意你每次回答都先講結論，再講細節
 3. 之前我話過 Alpaca 係 paper，但其實係 live account 嚟㗎
 4. 解釋我而家用緊嘅 AI provider 配置
