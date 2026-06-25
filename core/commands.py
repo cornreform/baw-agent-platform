@@ -89,6 +89,32 @@ def handle_slash(command: str, args: list[str],
             return f"[MODEL_SELECT]\n<b>🤖 Select Model</b>\n{current}\n{aux_info}"
         return _cmd_model(model_id, config)
 
+    if cmd in ("thinking", "think"):
+        val = args[0].lower() if args else ""
+        model_id = config.get("model", {}).get("default", "")
+        if val in ("on", "true", "1"):
+            for pk, pc in config.get("providers", {}).items():
+                for i, m in enumerate(pc.get("models", [])):
+                    if m.get("id") == model_id:
+                        mk = m.get("model_kwargs", {})
+                        mk.pop("thinking", None)
+                        if mk:
+                            m["model_kwargs"] = mk
+                        elif "model_kwargs" in m:
+                            del m["model_kwargs"]
+                        import yaml
+                        (data_dir / "config.yaml").write_text(yaml.dump(config, allow_unicode=True, default_flow_style=False))
+                        return f"✅ Thinking mode enabled for {model_id}"
+        elif val in ("off", "false", "0"):
+            for pk, pc in config.get("providers", {}).items():
+                for i, m in enumerate(pc.get("models", [])):
+                    if m.get("id") == model_id:
+                        m.setdefault("model_kwargs", {})["thinking"] = False
+                        import yaml
+                        (data_dir / "config.yaml").write_text(yaml.dump(config, allow_unicode=True, default_flow_style=False))
+                        return f"🧠 Thinking mode disabled for {model_id}"
+        return f"Usage: /thinking on|off  (current: {model_id})"
+
     if cmd in ("models", "aux", "aux-models"):
         return _cmd_aux_models(config)
 
