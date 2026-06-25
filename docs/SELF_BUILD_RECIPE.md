@@ -120,7 +120,7 @@ with urllib.request.urlopen(req, timeout=30) as r:
 
 **Verify**：
 ```bash
-python3 -c "import json; d=json.load(open('/home/user/baw/data/<thing>.json')); print('rows:', len(d.get('restaurants', d.get('items', []))))"
+python3 -c "import json; d=json.load(open('~/BAW/data/<thing>.json')); print('rows:', len(d.get('restaurants', d.get('items', []))))"
 ```
 個 file 要存在、size > 0、有至少 1 條 record。
 

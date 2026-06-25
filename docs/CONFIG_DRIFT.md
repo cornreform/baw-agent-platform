@@ -1,7 +1,7 @@
 # BAW Config — Two Sources
 
 **TL;DR**: `~/.baw/config.yaml` is the **active runtime config**. The repo
-`/home/user/baw/config.yaml` is an **abandoned draft** kept only for diff reference.
+`~/BAW/config.yaml` is an **abandoned draft** kept only for diff reference.
 On 2026-06-12 it was decided NOT to sync them — the runtime config is the source
 of truth.
 

@@ -1,7 +1,7 @@
 # BAW 系統審計 Part 3 — Memory + Context + Persona + Tools + i18n
 
 > 審計日期: 2026-06-11  
-> 審計範圍: `/home/user/baw/core/` + `/home/user/baw/tools/`
+> 審計範圍: `~/BAW/core/` + `~/BAW/tools/`
 
 ---
 

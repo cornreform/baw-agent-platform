@@ -254,4 +254,4 @@ display:
   language: zh  # Language for progress messages etc. (zh = Traditional Chinese)
 telegram:
   token: ""           # Loaded from TELEGRAM_BOT_TOKEN or BAW_TELEGRAM_TOKEN env var
-  allowed_users: [YOUR_TELEGRAM_ID]  # the user only
+  allowed_users: [YOUR_TELEGRAM_USER_ID]  # the user only

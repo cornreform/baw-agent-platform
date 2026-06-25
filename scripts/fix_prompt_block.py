@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fix ALL broken prompt blocks in telegram.py."""
-content = open('/home/user/baw/core/messaging/telegram.py', 'r').read()
+content = open('~/BAW/core/messaging/telegram.py', 'r').read()
 
 # Fix 1: caption branch
 for old, new in [
@@ -56,12 +56,12 @@ else:
             print("Fixed broken [File: line!")
             break
 
-open('/home/user/baw/core/messaging/telegram.py', 'w').write(content)
+open('~/BAW/core/messaging/telegram.py', 'w').write(content)
 
 # Verify syntax
 import py_compile
 try:
-    py_compile.compile('/home/user/baw/core/messaging/telegram.py', doraise=True)
+    py_compile.compile('~/BAW/core/messaging/telegram.py', doraise=True)
     print("Syntax OK!")
 except py_compile.PyCompileError as e:
     print(f"Still broken: {e}")

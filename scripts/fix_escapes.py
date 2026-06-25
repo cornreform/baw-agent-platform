@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fix ALL broken f-string escape sequences in telegram.py."""
-with open('/home/user/baw/core/messaging/telegram.py', 'r') as f:
+with open('~/BAW/core/messaging/telegram.py', 'r') as f:
     content = f.read()
 
 lines = content.split('\n')
@@ -28,12 +28,12 @@ while i < len(lines):
     i += 1
 
 content = '\n'.join(lines)
-with open('/home/user/baw/core/messaging/telegram.py', 'w') as f:
+with open('~/BAW/core/messaging/telegram.py', 'w') as f:
     f.write(content)
 
 import py_compile
 try:
-    py_compile.compile('/home/user/baw/core/messaging/telegram.py', doraise=True)
+    py_compile.compile('~/BAW/core/messaging/telegram.py', doraise=True)
     print(f'\nSyntax OK! ({fixes} fixes)')
 except py_compile.PyCompileError as e:
     print(f'\nStill broken: {e}')
