@@ -940,7 +940,7 @@ def run_agent(
         _mode_value = "auto"
     _mode = _mode_value  # used by downstream court/complexity logic
     if _mode == "auto":
-        _mode = "quick"  # auto → quick: skip court/plan for smooth single-pass flow
+        _mode = "hybrid"  # auto → hybrid: court for complex tasks, fast for simple
 
     # ── Task classification (Layer 1) ──
     _classification = _classify_task_type(prompt)
