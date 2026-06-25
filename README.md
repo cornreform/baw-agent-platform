@@ -84,10 +84,20 @@ mkdir -p ~/.baw
 cp SOUL.md ~/.baw/
 cp config.sample.yaml ~/.baw/config.yaml
 
-# 5. Run setup wizard (configures API keys, model, Telegram token)
+# 5. Install CLI wrapper (so 'baw' works from anywhere)
+sudo tee /usr/local/bin/baw << '''EOF'''
+#!/bin/bash
+BAW_DIR="${BAW_HOME:-$HOME/BAW}"
+cd "$BAW_DIR" || exit 1
+export PYTHONPATH="$BAW_DIR:$PYTHONPATH"
+exec "$BAW_DIR/venv/bin/python3" -m cli.main "$@"
+EOF
+sudo chmod 755 /usr/local/bin/baw
+
+# 6. Run setup wizard (configures API keys, model, Telegram token)
 baw --setup
 
-# 6. Start BAW
+# 7. Start BAW
 systemctl --user enable --now baw
 ```
 
@@ -182,10 +192,20 @@ mkdir -p ~/.baw
 cp SOUL.md ~/.baw/
 cp config.sample.yaml ~/.baw/config.yaml
 
-# 4. Setup wizard
+# 4. Install CLI wrapper
+sudo tee /usr/local/bin/baw << '''EOF'''
+#!/bin/bash
+BAW_DIR="${BAW_HOME:-$HOME/BAW}"
+cd "$BAW_DIR" || exit 1
+export PYTHONPATH="$BAW_DIR:$PYTHONPATH"
+exec "$BAW_DIR/venv/bin/python3" -m cli.main "$@"
+EOF
+sudo chmod 755 /usr/local/bin/baw
+
+# 5. Setup wizard
 baw --setup
 
-# 5. Start
+# 6. Start
 systemctl --user enable --now baw
 </pre>
 
