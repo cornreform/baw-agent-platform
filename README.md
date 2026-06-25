@@ -66,16 +66,28 @@ BAW v1.18.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統
 | 5 — Self Hosting | install.sh bootstrap on any Linux, Bare metal systemd deployment | install.sh, systemd |
 
 ### ⚡ Bare Metal Install (Recommended)
+
 ```bash
-# Clone + setup
+# 1. Clone the repo
 git clone https://github.com/cornreform/baw-agent-platform.git ~/BAW
-cd ~/BAW && python3 -m venv venv && source venv/bin/activate
+cd ~/BAW
+
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
-mkdir -p ~/.baw && cp SOUL.md config.sample.yaml ~/.baw/
-# Configure API keys
+
+# 4. Set up config
+mkdir -p ~/.baw
+cp SOUL.md ~/.baw/
 cp config.sample.yaml ~/.baw/config.yaml
-nano ~/.baw/.env  # add your API keys
-# Start
+
+# 5. Add your API keys
+nano ~/.baw/.env
+
+# 6. Start BAW
 systemctl --user enable --now baw
 ```
 
@@ -105,7 +117,7 @@ ln -sf $PWD/baw ~/.local/bin/baw
 baw --setup
 
 # Or manually add an API key
-echo "STEPFUN_API_KEY=*** >> ~/.baw/.env
+echo "STEPFUN_API_KEY=***" >> ~/.baw/.env
 
 # ✨ Go!
 baw "list files in current directory"
@@ -156,15 +168,24 @@ $ baw --help
 <h3>🤖 One-Command Install</h3>
 
 <pre>
-# Clone + setup
+# 1. Clone
 git clone https://github.com/cornreform/baw-agent-platform.git ~/BAW
-cd ~/BAW && python3 -m venv venv && source venv/bin/activate
+cd ~/BAW
+
+# 2. Venv + deps
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-mkdir -p ~/.baw && cp SOUL.md config.sample.yaml ~/.baw/
-# Configure API keys
+
+# 3. Config
+mkdir -p ~/.baw
+cp SOUL.md ~/.baw/
 cp config.sample.yaml ~/.baw/config.yaml
-nano ~/.baw/.env  # add your API keys
-# Start
+
+# 4. API keys
+nano ~/.baw/.env
+
+# 5. Start
 systemctl --user enable --now baw
 </pre>
 
