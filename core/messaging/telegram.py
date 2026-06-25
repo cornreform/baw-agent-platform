@@ -5,6 +5,7 @@ Long-polling Telegram Bot via httpx (no extra dependencies).
 Fully featured: commands, replies, error handling, reconnection.
 """
 from __future__ import annotations
+import asyncio
 import json
 import logging
 import os
@@ -715,20 +716,20 @@ class TelegramConnector(BaseConnector):
             if msg_type == "photo":
                 photo_data = max(msg.get("photo", []), key=lambda p: p.get("file_size", 0))
                 threading.Thread(
-                    target=self._process_image_file,
+                    target=lambda: asyncio.set_event_loop(asyncio.new_event_loop()) or self._process_image_file,
                     args=(chat_id, photo_data, msg),
                     daemon=True,
                 ).start()
             elif msg_type == "document":
                 threading.Thread(
-                    target=self._process_document_file,
+                    target=lambda: asyncio.set_event_loop(asyncio.new_event_loop()) or self._process_document_file,
                     args=(chat_id, msg.get("document"), msg),
                     daemon=True,
                 ).start()
             elif msg_type == "voice":
                 voice_data = msg.get("audio") or msg.get("voice")
                 threading.Thread(
-                    target=self._process_voice_file,
+                    target=lambda: asyncio.set_event_loop(asyncio.new_event_loop()) or self._process_voice_file,
                     args=(chat_id, voice_data, msg),
                     daemon=True,
                 ).start()
@@ -761,6 +762,7 @@ class TelegramConnector(BaseConnector):
         self.send(chat_id, f"{label} {count} 收到 — 等埋其他同組檔案...")
 
     def _process_media_group(self, chat_id: str, group_id: str):
+        asyncio.set_event_loop(asyncio.new_event_loop())
         """Timer fired — all media in this group should have arrived. Process as ONE batch."""
         msgs = self._media_group_buffers.get(chat_id, {}).pop(group_id, [])
         timer_key = f"{chat_id}:{group_id}"
@@ -903,6 +905,7 @@ class TelegramConnector(BaseConnector):
         self.send(chat_id, f"{label} {count} 收到 — 等埋其他...")
 
     def _process_rapid_batch(self, chat_id: str):
+        asyncio.set_event_loop(asyncio.new_event_loop())
         """Timer fired — process all buffered rapid-fire msgs as ONE batch."""
         msgs = self._rapid_batches.pop(chat_id, [])
         timer = self._rapid_timers.pop(chat_id, None)
@@ -1039,6 +1042,7 @@ class TelegramConnector(BaseConnector):
     # ─────────────────────────────────────────────────────────────
 
     def _process_document_file(self, chat_id: str, doc: dict, msg: dict):
+        asyncio.set_event_loop(asyncio.new_event_loop())
         """Download, extract, and analyze a document via BAW. Inline edit — one message."""
         try:
             if not doc:
@@ -1163,6 +1167,7 @@ class TelegramConnector(BaseConnector):
             self._release_slot(chat_id)
 
     def _process_image_file(self, chat_id: str, photo_data: dict, msg: dict):
+        asyncio.set_event_loop(asyncio.new_event_loop())
         """Download an image and analyze with vision AI (MiniMax API → Stepfun → OCR). Inline edit."""
         try:
             file_id = photo_data["file_id"]
@@ -1283,6 +1288,7 @@ class TelegramConnector(BaseConnector):
             self._release_slot(chat_id)
 
     def _process_voice_file(self, chat_id: str, voice_data: dict, msg: dict):
+        asyncio.set_event_loop(asyncio.new_event_loop())
         """Download audio, check STT capability, then transcribe or present options."""
         import os
         text = ""
@@ -1761,6 +1767,7 @@ class TelegramConnector(BaseConnector):
         pass
 
     def _handle_update(self, update: dict):
+        asyncio.set_event_loop(asyncio.new_event_loop())
         """Process a single Telegram update (non-blocking, concurrent)."""
         # ── Handle inline keyboard callback query ──
         cb = update.get("callback_query")
@@ -2017,6 +2024,7 @@ class TelegramConnector(BaseConnector):
                 "  <code>/plan close</code> — archive plan")
 
     def _process_message(self, chat_id, user_id, user_name, text, msg):
+        asyncio.set_event_loop(asyncio.new_event_loop())
         """Process a message in background thread (runs route() + send())."""
         logger.info(f"[Telegram] Processing: {text[:60]}...")
 

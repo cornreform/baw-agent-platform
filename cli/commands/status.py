@@ -1,3 +1,4 @@
+from __future__ import annotations
 """baw status — bot health + connector info."""
 import os
 import re

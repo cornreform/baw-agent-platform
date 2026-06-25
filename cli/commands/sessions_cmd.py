@@ -1,3 +1,4 @@
+from __future__ import annotations
 """baw sessions — browse past session transcripts."""
 import json
 from datetime import datetime

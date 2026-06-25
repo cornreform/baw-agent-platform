@@ -1,3 +1,4 @@
+from __future__ import annotations
 """baw config — view and edit BAW configuration."""
 import os
 import sys

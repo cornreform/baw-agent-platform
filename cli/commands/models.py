@@ -1,3 +1,4 @@
+from __future__ import annotations
 """baw models — list and manage AI models with cost display."""
 from pathlib import Path
 from rich.panel import Panel

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 BAW Token Killer — systemic tool output compression layer.
 

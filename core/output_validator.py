@@ -69,9 +69,10 @@ def validate_output(output: str, *, prompt: str = "") -> str:
 
     result = output
 
-    # Phase 0: Convert Markdown bold (**text**) to HTML bold (<b>text</b>)
-    # Telegram sends with parse_mode=HTML, not Markdown
-    result = _markdown_bold_to_html(result)
+    # Phase 0: Strip ALL markdown/HTML formatting — output as plain text
+    # No bold (**text**), no HTML (<b>text</b>), no Rich markup
+    # User sees raw asterisks otherwise
+    result = _strip_all_formatting(result)
 
     # Phase 0a: Fix malformed HTML tags — remove spaces after < and before >
     result = re.sub(r'<\s+', '<', result)
@@ -80,9 +81,7 @@ def validate_output(output: str, *, prompt: str = "") -> str:
     # Phase 0b: Strip AI narration that leaks into user-facing output
     result = _strip_narration(result)
 
-    # Phase 0c: Strip standalone <b> / </b> that are NOT part of markdown conversion
-
-    # Phase 1: Strip HTML tags that escaped through (safety net, will be re-applied below)
+    # Phase 1: Strip HTML tags that escaped through (safety net)
     result = _strip_html(result)
 
     # Phase 2: Normalise whitespace
@@ -110,14 +109,9 @@ def validate_output(output: str, *, prompt: str = "") -> str:
     # Phase 7: Length enforcement
     result = _enforce_length(result)
 
-    # Phase 8: HTML tag balance — ensure all <b> <i> <u> <s> <code> are closed
-    result = _balance_html(result)
-
-    # Phase 8a: Escape standalone < and > that are NOT part of HTML tags
-    # Telegram's HTML parser rejects messages with unescaped < that don't
-    # start valid tags. This prevents "can't parse entities" fallback which
-    # strips ALL HTML formatting.
-    result = _escape_plain_lt_gt(result)
+    # Phase 8: DISABLED — was for Telegram HTML (not needed for plain output)
+    # Phase 8a: DISABLED — was for Telegram HTML escaping
+    # Phase 8b: DISABLED — was for HTML balance
 
     # Phase 9: Final sanity — output must not be empty
     if not result.strip():
@@ -178,6 +172,53 @@ def _strip_html(text: str) -> str:
 
 def _compress_blank_lines(text: str) -> str:
     return re.sub(r'\n{3,}', '\n\n', text)
+
+
+def _strip_all_formatting(text: str) -> str:
+    """Strip ALL markdown/HTML/Rich formatting to plain text.
+
+    Removes:
+    - **bold** → bold
+    - *italic* → italic
+    - `code` → code
+    - __underline__ → underline
+    - ~~strikethrough~~ → strikethrough
+    - <b>text</b> → text
+    - [bold]text[/bold] → text
+    - # headers → plain text
+    - --- dividers → (removed)
+    """
+    # Rich markup: [bold]text[/bold], [b]text[/b], [i]text[/i], etc.
+    text = re.sub(r'\[/?(bold|b|i|u|s|code|pre|italic|dim|white|red|green|yellow|magenta|cyan)\]', '', text)
+
+    # Markdown bold: **text** and __text__
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'__(.+?)__', r'\1', text)
+
+    # Markdown italic: *text* and _text_
+    # Be careful not to remove single asterisks that are part of lists
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text)
+    text = re.sub(r'(?<![a-zA-Z])_(?![a-zA-Z])(.+?)(?<![a-zA-Z])_(?![a-zA-Z])', r'\1', text)
+
+    # Markdown code: `code`
+    text = re.sub(r'`(.+?)`', r'\1', text)
+
+    # Markdown strikethrough: ~~text~~
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
+
+    # Markdown headers: ### → (remove hashes, keep text)
+    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
+
+    # Markdown dividers: --- or *** or ___ → (remove)
+    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+
+    # HTML tags: <b>text</b> → text
+    text = re.sub(r'</?[^>]+>', '', text)
+
+    # Clean up multiple spaces created by removed markup
+    text = re.sub(r' {2,}', ' ', text)
+
+    return text
 
 
 def _markdown_bold_to_html(text: str) -> str:

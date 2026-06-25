@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 BAW built-in: cronjob — autonomous task scheduling tool.
 

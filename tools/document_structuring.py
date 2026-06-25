@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW — Document Structuring Tool
 
 Learned from barnetwang/document_structuring (Hermes Agent Skill).

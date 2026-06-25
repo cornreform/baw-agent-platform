@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW built-in: tool_generate — create new tools autonomously.
 
 Takes a prompt describing what tool to build, generates Python code

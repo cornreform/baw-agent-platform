@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW built-in: config — safe config.yaml read/write with validation.
 
 Dotted-path get/set/delete with YAML validation + auto-backup + rollback.

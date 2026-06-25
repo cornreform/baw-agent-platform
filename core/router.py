@@ -305,7 +305,7 @@ def get_inline_mode(score: int) -> str | None:
       INLINE_WITH_HINT -> 6-7: inline but model may delegate sub-tasks
       None             -> 8+:  full delegate path
     """
-    if score <= 5:
+    if score <= -1:
         return INLINE_DIRECT
     if score <= 7:
         return INLINE_WITH_HINT

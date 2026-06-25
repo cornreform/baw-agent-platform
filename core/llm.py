@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 BAW — LLM Provider Abstraction Layer
 Multi-protocol support: OpenAI, Anthropic, Google, and custom.

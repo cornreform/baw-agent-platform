@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW — MCP Bridge: connect to MCP servers, discover and invoke tools.
 
 Supports stdio and SSE/HTTP transport types.
@@ -27,7 +28,7 @@ logger = logging.getLogger("baw.mcp")
 # ── Global registry of connected MCP servers ──
 
 _connections: dict[str, Any] = {}  # server_name -> {"session": ..., "tools": {...}}
-_lock = None
+_lock = None  # lazy init — needs event loop
 def _get_lock():
     global _lock
     if _lock is None:

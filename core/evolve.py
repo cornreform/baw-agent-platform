@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW — Self-Evolution Engine
 
 Three-layer self-improvement system:

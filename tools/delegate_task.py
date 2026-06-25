@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW built-in: delegate a task to a sub-agent (MiniMax executor).
 
 Sub-agent runs in an isolated context — no parent conversation history,

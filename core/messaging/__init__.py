@@ -835,23 +835,13 @@ class BaseConnector(ABC):
                 )
 
             if cmd in ("model", "models"):
-                cc = self._chat_config.get(msg.chat_id, {})
-                current = cc.get("model") or "deepseek-v4-flash"
-                # Show current model and auxiliary model roles
-                baw = self._baw_ensure()
-                caps = baw.get("config", {}).get("capabilities", {})
-                aux_lines = []
-                for role, cap in caps.items():
-                    if isinstance(cap, dict) and cap.get("model"):
-                        aux_lines.append(f"  {role}: <code>{cap['model']}</code>")
-                nl = "\n"
-                aux_section = nl + "<i>Auxiliary models:</i>" + nl + nl.join(aux_lines) if aux_lines else ""
-                return (
-                    f"<b>Current model:</b> <code>{current}</code>{nl}"
-                    f"<b>Chat override:</b> {cc.get('model', '(none)')}{nl}"
-                    f"{aux_section}{nl}{nl}"
-                    f"Use <code>/model &lt;name&gt;</code> to switch"
-                )
+                # Delegate to commands.py for interactive keyboard selector
+                from ..commands import handle_slash
+                from pathlib import Path as _P
+                _baw = self._baw_ensure()
+                _cfg = _baw["config"]
+                _dd = _baw.get("data_dir", _P.home() / ".baw")
+                return handle_slash(cmd, [arg] if arg else [], _cfg, _dd)
 
 
             # ── Capability commands ──

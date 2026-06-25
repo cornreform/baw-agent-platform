@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW built-in: scan_and_adopt — discover foreign tools, adapt to BAW.
 
 Scans a target directory (local, git repo, or pip package) for tools/skills

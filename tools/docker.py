@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW built-in: lifecycle — build, restart, status, logs, cleanup.
 
 Universal runtime manager. Auto-detects Docker vs bare-metal (systemctl)

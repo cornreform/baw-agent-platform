@@ -1,3 +1,4 @@
+from __future__ import annotations
 """baw soul — view/edit BAW's personality (SOUL.md)."""
 import os
 import subprocess

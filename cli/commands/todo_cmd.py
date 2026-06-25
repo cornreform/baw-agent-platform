@@ -1,3 +1,4 @@
+from __future__ import annotations
 """baw todo — task / thought / follow-up management from the CLI.
 
 Subcommands:

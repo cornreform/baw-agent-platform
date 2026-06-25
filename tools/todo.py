@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW built-in: todo — task / thought / follow-up management.
 
 Backed by core.todo_state.TodoState so the list survives process restarts
