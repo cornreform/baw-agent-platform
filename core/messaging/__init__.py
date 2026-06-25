@@ -2734,9 +2734,14 @@ class BaseConnector(ABC):
                     output = _cf.response.content.strip()
             except Exception:
                 pass
-            if output and "<think>" in output:
-                import re
-                output = re.sub(r"<think>.*?</think>", "", output, flags=re.DOTALL).strip()
+            # Bulletproof: strip ALL XML content from output (any model)
+            if output:
+                import re as _re
+                output = _re.sub(r"<[^>]*tool_call[^>]*>.*?</[^>]*tool_call[^>]*>", "", output, flags=_re.DOTALL)
+                output = _re.sub(r"<[^>]*invoke[^>]*>.*?</[^>]*invoke[^>]*>", "", output, flags=_re.DOTALL)
+                output = _re.sub(r"<[^>]*parameter[^>]*>.*?</[^>]*parameter[^>]*>", "", output, flags=_re.DOTALL)
+                output = _re.sub(r"<[^>]*think[^>]*>.*?</[^>]*think[^>]*>", "", output, flags=_re.DOTALL)
+                output = _re.sub(r"\\n\\s*\\n\\s*\\n", "\\n\\n", output).strip()
             if output and len(output) > 5:
                 try:
                     with open("/tmp/baw_learning.txt", "a") as _f:
