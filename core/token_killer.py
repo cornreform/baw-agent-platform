@@ -413,9 +413,7 @@ def should_activate_court(prompt: str, mode: str = "auto") -> bool:
     In explicit mode (quick/tight/hybrid): apply traditional keyword
     patterns for safety, since the user explicitly selected a mode.
     """
-    if mode == "auto":
-        return False  # LLM self-judges
-
+    # Auto mode: always run court for quality assurance
     prompt_lower = prompt.lower()
     prompt_len = len(prompt)
     
