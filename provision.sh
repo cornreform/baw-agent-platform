@@ -235,7 +235,9 @@ if s and e:
     sed -i 's/system_prompt = lang_gate + evidence_rule + execution_protocol + soul_text/system_prompt = soul_text + lang_gate + evidence_rule + execution_protocol/' \
         core/loop.py 2>/dev/null || true
     # Fix: add user-facing output rule (hide tool traces from user)
-    sed -i "/Use \\\`todo\\\` tool internally to track progress/a\\        \"\\\\n\"\\\n        \"### OUTPUT RULE — User-facing only\\\\n\"\\\n        \"Your text output goes DIRECTLY to the user. Never show:\\\\n\"\\\n        \"- tool call traces, file paths, tool results\\\\n\"\\\n        \"- numbered step lists, progress updates, execution plans\\\\n\"\\\n        \"- internal diagnostics, debug info, or system status\\\\n\"\\\n        \"\\\\n\"\\\n        \"Only the FINAL answer reaches the user.\\\\n\"" \
+    sed -i "/Use \\\`todo\\\` tool internally to track progress/a\\        \\\"\\\\\\\\n\\\"\\\\\\n        \\\"### OUTPUT RULE — User-facing only\\\\\\\\n\\\"\\\\\\n        \\\"Your text output goes DIRECTLY to the user. Never show:\\\\\\\\n\\\"\\\\\\n        \\\"- tool call traces, file paths, tool results\\\\\\\\n\\\"\\\\\\n        \\\"- numbered step lists, progress updates, execution plans\\\\\\\\n\\\"\\\\\\n        \\\"- internal diagnostics, debug info, or system status\\\\\\\\n\\\"\\\\\\n        \\\"\\\\\\\\n\\\"\\\\\\n        \\\"Only the FINAL answer reaches the user.\\\\\\\\n\\\"\" \\\n        core/loop.py 2>/dev/null || true
+    # Fix: YAML config - remove misplaced fallback line that breaks config loading
+    sed -i '/^    fallback: MiniMax/d' "$HOME/.baw/config.yaml" 2>/dev/null || true
         core/loop.py 2>/dev/null || true
     # Fix: only use _resp.content for output when no tool_calls
     sed -i 's/output += (_resp.content or "")/if not _resp.tool_calls:\n        output += (_resp.content or "")\n    if not output:\n        output = ""/' \
