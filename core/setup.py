@@ -1040,6 +1040,16 @@ def cmd_setup(data_dir: Path):
     print()
 
     _print_note("Next steps:")
+    # Auto-restart BAW if service exists
+    import subprocess as _sp
+    _r = _sp.run(['systemctl', '--user', 'is-active', 'baw'], capture_output=True, text=True)
+    if _r.returncode == 0:
+        print()
+        _print_note('Restarting BAW to apply new config...')
+        _sp.run(['systemctl', '--user', 'restart', 'baw'], timeout=15)
+    elif Path.home() / '.config' / 'systemd' / 'user' / 'baw.service':
+        _print_note('Run: systemctl --user enable --now baw')
+    print()
     _print_note("  1. Run 'baw --doctor'     — verify everything works")
     _print_note("  2. Run 'baw \"hello\"'      — test the agent")
     _print_note("  3. Run 'baw --cfg list'   — review all settings")
