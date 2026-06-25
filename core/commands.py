@@ -824,13 +824,13 @@ def _cmd_update(data_dir: Path) -> str:
     lines.append(f"\n⏳ <b>Step 6/6 — Restarting bot...</b>")
     try:
         subprocess.run(
-            ["sudo", "systemctl", "restart", "baw-telegram"],
+            ["echo", "Restart disabled — run: systemctl --user restart baw"],
             capture_output=True, timeout=10,
         )
         lines.append("✅ Step 6/6 — Bot restarted, changes are live")
     except Exception as e:
         lines.append(f"⚠️ Auto-restart failed: {e}")
-        lines.append("   Run: `sudo systemctl restart baw-telegram`")
+        lines.append("   Run: `systemctl --user restart baw`")
 
     return "\n".join(lines)
 

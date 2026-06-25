@@ -340,7 +340,7 @@ class BaseConnector(ABC):
         def _poll_watchdog():
             while self._running:
                 if not _original_thread.is_alive() and self._running:
-                    logger.warning(f"[{self._name}] Poll thread died — restarting")
+                    logger.warning(f"[{self._name}] Poll thread died — will retry next cycle (no restart to avoid rate limit loop)")
                     new_thread = threading.Thread(target=self._poll_loop, daemon=True)
                     new_thread.start()
                     break  # watchdog exits — new thread gets its own watchdog via stop/start
@@ -551,8 +551,8 @@ class BaseConnector(ABC):
                 return "[STOP] Stopped."
 
             if cmd in ("restart",):
-                self._restart_requested = True
-                self._save_restart_chat_id(msg.chat_id)
+                # DISABLED: self-restart causes Telegram rate limit loop
+                logger.warning("Restart requested but disabled — restart manually if needed")
                 return "Restarting BAW engine..."
 
             if cmd in ("reload",):
