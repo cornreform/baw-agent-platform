@@ -1,123 +1,111 @@
-adversarial:
-  angel_model: deepseek-v4-flash
-  devil_model: MiniMax-M3
-  enabled: true
-  flag_threshold: 0
-  warn_threshold: 2
-capabilities:
-  browser:
+model:
+  default: z-ai/glm-5.2
+  fallback: MiniMax-M2.5
+  task_rules:
+  - match: search|product|購買|價錢|價格|price|shop|商店|查詢|research|find|lookup
     model: deepseek-v4-flash
-  chat:
+  - match: code|debug|fix|bug|error|program|script|python|node|測試|修復
     model: deepseek-v4-flash
-  delegate_task:
-    fallback: deepseek-v4-flash
-    model: MiniMax-M2.5
-  executor:
-    model: MiniMax-M2.5
-  image_generation:
+  - match: vision|image|photo|圖片|相片|screenshot|截圖
     model: MiniMax-M3
-  stt:
-    api_key_env: XAI_API_KEY
-    base_url: https://api.x.ai/v1
-    language: zh
-    method: auto-asr
-    model: grok-stt
-  tts:
-    config:
-      api_model: stepaudio-2.5-tts
-      base_url: https://api.stepfun.ai/v1
-    method: model
-    model: stepaudio-2.5-tts
-    voice: Cantonese_GentleLady
+  - match: write|create|build|製作|建立|generate|生成|設計|design
+    model: deepseek-v4-flash
+  cost_tiers:
+    subscription:
+    - MiniMax-M2.5
+    - MiniMax-M2.7
+    - MiniMax-M3
+    - MiniMax-M2.7-highspeed
+    - MiniMax-M2.5-highspeed
+    - step-3.7-flash
+    pay_per_use:
+    - deepseek-v4-flash
+    - deepseek-v4-pro
+    - openrouter/anthropic/claude-opus-4.8
+    - openrouter/anthropic/claude-sonnet-4.6
+    - openrouter/openai/gpt-5.5-pro
+    - openrouter/qwen/qwen3.7-plus
+    - openrouter/deepseek/deepseek-v4-pro
+    preferential:
+    - step-3.7-flash
+    - MiniMax-M2.5
+    - MiniMax-M2.7
+    - MiniMax-M3
+    - deepseek-v4-flash
+  executor: minimax m2.5
+  image: minimax image 01
+  preferential:
+  - step-3.7-flash
+  - MiniMax-M2.5
+  - MiniMax-M2.7
+  - MiniMax-M3
+  - deepseek-v4-flash
+  retry:
+    exponential_backoff: true
+    max_attempts: 3
+    timeout: 30
+  stt: grok
+  tts: minimax
+executor:
+  model: MiniMax-M2.5
+capabilities:
   vision:
     model: MiniMax-M3
-  web_browser:
+    fallback: MiniMax-M2.5
+  chat:
+    model: deepseek-v4-flash
+  image_generation:
+    model: MiniMax-image-01
+    provider: minimax
+  stt:
+    method: hybrid
+    model: grok-stt
+    base_url: https://api.stepfun.ai/step_plan/v1
+    api_key_env: STEPFUN_API_KEY
+    fallback:
+      api_key_env: STEPFUN_API_KEY
+      base_url: https://api.stepfun.ai/step_plan/v1
+      method: auto-asr
+      model: stepaudio-2.5-asr
+    primary:
+      api_key_env: XAI_API_KEY
+      base_url: https://api.x.ai/v1
+      method: auto-asr
+      model: grok-stt
+  tts:
+    model: stepaudio-2.5-tts
+    method: edge
+    voice: Cantonese_GentleLady
+  browser:
+    model: step-3.7-flash
+  delegate_task:
     model: step-3.7-flash
   web_extract:
     model: step-3.7-flash
-evolve:
-  known_issues:
-  - detected: '2026-06-16T15:45:01.097470'
-    rate: 6/7
-    tool: write_file
-executor:
-  model: step-3.7-flash
-fact_check:
-  mode: normal
-mode: auto
-model:
-  default: deepseek-v4-flash
-  fallback: MiniMax-M3
-  task_rules:
-  - match: search|product|購買|價錢|價格|price|shop|商店|查詢|research|find|lookup
+  web_browser:
     model: step-3.7-flash
-  - match: code|debug|fix|bug|error|program|script|python|node|測試|修復
-    model: step-3.7-flash
-  - match: vision|image|photo|圖片|相片|screenshot|截圖
-    model: step-3.7-flash
-  - match: write|create|build|製作|建立|generate|生成|設計|design
-    model: step-3.7-flash
-  # ── Cost-aware model routing (built-in) ──
-  # Simple tasks → subscription/flash models first.
-  # Complex tasks → pay-per-use premium models.
-  # See SOUL.md "Cost-Aware Model Routing" section.
-  cost_tiers:
-    subscription:
-      - step-3.7-flash       # $0.5/$2.0 per 1M — StepFun flash（月費任用）
-      - MiniMax-M2.5         # MiniMax 中階（月費任用）
-      - MiniMax-M2.7         # MiniMax 更強（月費任用）
-      - MiniMax-M3           # MiniMax 旗艦（月費任用）
-    pay_per_use:
-      - deepseek-v4-flash    # $0.3/$1.2 per 1M — DeepSeek Flash（極平按量）
-      - deepseek-v4-pro      # DeepSeek Pro（較貴）
-      - openrouter/anthropic/claude-opus-4.8   # Premium
-      - openrouter/openai/gpt-5.5-pro          # Premium
-  preferential:
-    - step-3.7-flash         # 月費優先，唔燒錢
-    - MiniMax-M2.5           # 月費 fallback
-    - MiniMax-M2.7
-    - MiniMax-M3
-    - deepseek-v4-flash      # 極平但按量，最後先用
-permissions:
-  risk_levels:
-    high:
-    - path: /etc/*
-    - path: /usr/*
-    - path: /boot/*
-    - path: '*.pem'
-    - path: '*.key'
-    - path: .env
-    - cmd_prefix: rm -rf
-    - cmd_prefix: sudo
-    - cmd_prefix: dd if=
-    low:
-    - tool: read_file
-    - tool: web_search
-    medium:
-    - tool: write_file
-    - tool: bash
 providers:
   deepseek:
-    api_key_env: DEEPSEEK_API_KEY
     base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
     models:
     - capabilities:
       - chat
-      context_window: 65536
+      context_window: 1000000
       cost_per_1m_input: 0.3
       cost_per_1m_output: 1.2
       id: deepseek-v4-flash
     - capabilities:
       - chat
-      context_window: 65536
+      context_window: 1000000
       id: deepseek-v4-pro
     - capabilities:
       - chat
-      context_window: 65536
+      context_window: 1000000
       id: deepseek-reasoner
   minimax:
+    base_url: https://api.minimax.io/v1
     api_key_env: MINIMAX_API_KEY
-    base_url: https://api.minimax.chat/v1
     models:
     - capabilities:
       - chat
@@ -127,12 +115,40 @@ providers:
       context_window: 1048576
       id: MiniMax-M3
     - capabilities:
+      - image_generation
+      context_window: 1048576
+      id: MiniMax-image-01
+    - capabilities:
       - chat
       context_window: 131072
       id: MiniMax-M2.5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: MiniMax-M2.7
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: MiniMax-M2.7-highspeed
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: MiniMax-M2.5-highspeed
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: MiniMax-M2.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: MiniMax-M2.1-highspeed
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: MiniMax-M2
   moonshot:
-    api_key_env: MOONSHOT_API_KEY
     base_url: https://api.moonshot.ai/v1
+    api_key_env: MOONSHOT_API_KEY
     models:
     - context_window: 262144
       cost_per_1m_input: 1.0
@@ -183,8 +199,8 @@ providers:
       context_window: 128000
       id: moonshot-v1-128k
   stepfun:
-    api_key_env: STEPFUN_API_KEY
     base_url: https://api.stepfun.ai/step_plan/v1
+    api_key_env: STEPFUN_API_KEY
     models:
     - context_window: 262144
       cost_per_1m_input: 0.5
@@ -219,6 +235,1402 @@ providers:
       - tts
       context_window: 131072
       id: step-tts-2
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    models:
+    - capabilities:
+      - chat
+      - vision
+      context_window: 262144
+      id: nex-agi/nex-n2-pro:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-5.2
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: moonshotai/kimi-k2.7-code
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ~anthropic/claude-fable-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-fable-5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nvidia/nemotron-3.5-content-safety:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nvidia/nemotron-3-ultra-550b-a55b:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nvidia/nemotron-3-ultra-550b-a55b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.7-plus
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: minimax/minimax-m3
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: stepfun/step-3.7-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-opus-4.8-fast
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-opus-4.8
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.7-max
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: x-ai/grok-build-0.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3.5-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-opus-4.7-fast
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: perceptron/perceptron-mk1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: inclusionai/ring-2.6-1t
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3.1-flash-lite
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-chat-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: x-ai/grok-4.3
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ibm-granite/granite-4.1-8b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-medium-3-5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openrouter/owl-alpha
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: poolside/laguna-xs.2:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: poolside/laguna-m.1:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ~anthropic/claude-haiku-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ~openai/gpt-mini-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ~google/gemini-pro-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ~moonshotai/kimi-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ~google/gemini-flash-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ~anthropic/claude-sonnet-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ~openai/gpt-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.5-plus-20260420
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.6-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.6-35b-a3b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.6-max-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.6-27b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.5-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-v4-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-v4-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: inclusionai/ling-2.6-1t
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: tencent/hy3-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: xiaomi/mimo-v2.5-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: xiaomi/mimo-v2.5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.4-image-2
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: inclusionai/ling-2.6-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ~anthropic/claude-opus-latest
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openrouter/pareto-code
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: moonshotai/kimi-k2.6
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-opus-4.7
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-opus-4.6-fast
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-5.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemma-4-26b-a4b-it:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemma-4-26b-a4b-it
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemma-4-31b-it:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemma-4-31b-it
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.6-plus
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: arcee-ai/trinity-large-thinking
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: x-ai/grok-4.20-multi-agent
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: x-ai/grok-4.20
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/lyria-3-pro-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/lyria-3-clip-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: kwaipilot/kat-coder-pro-v2
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: rekaai/reka-edge
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: minimax/minimax-m2.7
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.4-nano
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.4-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-small-2603
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-5-turbo
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nvidia/nemotron-3-super-120b-a12b:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nvidia/nemotron-3-super-120b-a12b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: bytedance-seed/seed-2.0-lite
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.5-9b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.4-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.4
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: inception/mercury-2
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.3-chat
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3.1-flash-lite-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: bytedance-seed/seed-2.0-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3.1-flash-image-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.5-35b-a3b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.5-27b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.5-122b-a10b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.5-flash-02-23
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: liquid/lfm-2-24b-a2b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3.1-pro-preview-customtools
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.3-codex
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: aion-labs/aion-2.0
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3.1-pro-preview
+    - capabilities:
+      - chat
+      context_window: 200000
+      id: anthropic/claude-sonnet-4.6
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.5-plus-02-15
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3.5-397b-a17b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: minimax/minimax-m2.5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-max-thinking
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-opus-4.6
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-coder-next
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openrouter/free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: stepfun/step-3.5-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: moonshotai/kimi-k2.5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: upstage/solar-pro-3
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: minimax/minimax-m2-her
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: writer/palmyra-x5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: liquid/lfm-2.5-1.2b-thinking:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: liquid/lfm-2.5-1.2b-instruct:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-audio
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-audio-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-4.7-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.2-codex
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: bytedance-seed/seed-1.6-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: bytedance-seed/seed-1.6
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: minimax/minimax-m2.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-4.7
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3-flash-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: xiaomi/mimo-v2-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nvidia/nemotron-3-nano-30b-a3b:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nvidia/nemotron-3-nano-30b-a3b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.2-chat
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.2-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.2
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/devstral-2512
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: relace/relace-search
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-4.6v
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: essentialai/rnj-1-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openrouter/bodybuilder
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.1-codex-max
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: amazon/nova-2-lite-v1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/ministral-14b-2512
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/ministral-8b-2512
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/ministral-3b-2512
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-large-2512
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: arcee-ai/trinity-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-v3.2
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: prime-intellect/intellect-3
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-opus-4.5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: allenai/olmo-3-32b-think
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3-pro-image-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepcogito/cogito-v2.1-671b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.1-chat
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.1-codex
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5.1-codex-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: moonshotai/kimi-k2-thinking
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: amazon/nova-premier-v1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: perplexity/sonar-pro-search
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/voxtral-small-24b-2507
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-oss-safeguard-20b
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: nvidia/nemotron-nano-12b-v2-vl:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: minimax/minimax-m2
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: qwen/qwen3-vl-32b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ibm-granite/granite-4.0-h-micro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: microsoft/phi-4-mini-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5-image-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-haiku-4.5
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: qwen/qwen3-vl-8b-thinking
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: qwen/qwen3-vl-8b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5-image
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/o3-deep-research
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/o4-mini-deep-research
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: nvidia/llama-3.3-nemotron-super-49b-v1.5
+    - capabilities:
+      - chat
+      context_window: 1048576
+      id: google/gemini-2.5-flash-image
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: qwen/qwen3-vl-30b-a3b-thinking
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: qwen/qwen3-vl-30b-a3b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-4.6
+    - capabilities:
+      - chat
+      context_window: 200000
+      id: anthropic/claude-sonnet-4.5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-v3.2-exp
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: thedrummer/cydonia-24b-v4.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: relace/relace-apply-3
+    - capabilities:
+      - chat
+      context_window: 1048576
+      id: google/gemini-2.5-flash-lite-preview-09-2025
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: qwen/qwen3-vl-235b-a22b-thinking
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: qwen/qwen3-vl-235b-a22b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-max
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-coder-plus
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5-codex
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-v3.1-terminus
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-coder-flash
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-next-80b-a3b-thinking
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-next-80b-a3b-instruct:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-next-80b-a3b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen-plus-2025-07-28:thinking
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen-plus-2025-07-28
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nvidia/nemotron-nano-9b-v2:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: moonshotai/kimi-k2-0905
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-30b-a3b-thinking-2507
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nousresearch/hermes-4-70b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nousresearch/hermes-4-405b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-chat-v3.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-medium-3.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-4.5v
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: ai21/jamba-large-1.7
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5-chat
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-5-nano
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-oss-120b:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-oss-120b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-oss-20b:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-oss-20b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-opus-4.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/codestral-2508
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-coder-30b-a3b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-30b-a3b-instruct-2507
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-4.5
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-4.5-air
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-235b-a22b-thinking-2507
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-coder:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-coder
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: bytedance/ui-tars-1.5-7b
+    - capabilities:
+      - chat
+      context_window: 1048576
+      id: google/gemini-2.5-flash-lite
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-235b-a22b-2507
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: switchpoint/router
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: moonshotai/kimi-k2
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: cognitivecomputations/dolphin-mistral-24b-venice-edition:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: tencent/hunyuan-a13b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: morph/morph-v3-large
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: morph/morph-v3-fast
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: baidu/ernie-4.5-vl-424b-a47b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-small-3.2-24b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: minimax/minimax-m1
+    - capabilities:
+      - chat
+      context_window: 1048576
+      id: google/gemini-2.5-flash
+    - capabilities:
+      - chat
+      context_window: 1048576
+      id: google/gemini-2.5-pro
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/o3-pro
+    - capabilities:
+      - chat
+      context_window: 1048576
+      id: google/gemini-2.5-pro-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-r1-0528
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthropic/claude-opus-4
+    - capabilities:
+      - chat
+      context_window: 200000
+      id: anthropic/claude-sonnet-4
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemma-3n-e4b-it
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-medium-3
+    - capabilities:
+      - chat
+      context_window: 1048576
+      id: google/gemini-2.5-pro-preview-05-06
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: arcee-ai/virtuoso-large
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: arcee-ai/coder-large
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: meta-llama/llama-guard-4-12b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-30b-a3b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-8b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-14b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-32b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen3-235b-a22b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/o4-mini-high
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/o3
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/o4-mini
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4.1
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4.1-mini
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4.1-nano
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: meta-llama/llama-4-maverick
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: meta-llama/llama-4-scout
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-chat-v3-0324
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/o1-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-small-3.1-24b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemma-3-4b-it
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemma-3-12b-it
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: cohere/command-a
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4o-mini-search-preview
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4o-search-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: rekaai/reka-flash-3
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemma-3-27b-it
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: thedrummer/skyfall-36b-v2
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: perplexity/sonar-reasoning-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: perplexity/sonar-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: perplexity/sonar-deep-research
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-saba
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/o3-mini-high
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: aion-labs/aion-1.0
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: aion-labs/aion-1.0-mini
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: aion-labs/aion-rp-llama-3.1-8b
+    - capabilities:
+      - chat
+      - vision
+      context_window: 131072
+      id: qwen/qwen2.5-vl-72b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen-plus
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/o3-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-small-24b-instruct-2501
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: perplexity/sonar
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-r1-distill-llama-70b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-r1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: minimax/minimax-01
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: microsoft/phi-4
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: sao10k/l3.1-70b-hanami-x1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: deepseek/deepseek-chat
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: sao10k/l3.3-euryale-70b
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/o1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: cohere/command-r7b-12-2024
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: meta-llama/llama-3.3-70b-instruct:free
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: meta-llama/llama-3.3-70b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: amazon/nova-lite-v1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: amazon/nova-micro-v1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: amazon/nova-pro-v1
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4o-2024-11-20
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-large-2407
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen-2.5-coder-32b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: thedrummer/unslopnemo-12b
+    - capabilities:
+      - chat
+      context_window: 200000
+      id: anthropic/claude-3.5-haiku
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: anthracite-org/magnum-v4-72b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen-2.5-7b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: inflection/inflection-3-productivity
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: inflection/inflection-3-pi
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: thedrummer/rocinante-12b
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: meta-llama/llama-3.2-3b-instruct:free
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: meta-llama/llama-3.2-3b-instruct
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: meta-llama/llama-3.2-1b-instruct
+    - capabilities:
+      - chat
+      - vision
+      context_window: 128000
+      id: meta-llama/llama-3.2-11b-vision-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: qwen/qwen-2.5-72b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: cohere/command-r-plus-08-2024
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: cohere/command-r-08-2024
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: sao10k/l3.1-euryale-70b
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: nousresearch/hermes-3-llama-3.1-70b
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: nousresearch/hermes-3-llama-3.1-405b:free
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: nousresearch/hermes-3-llama-3.1-405b
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: sao10k/l3-lunaris-8b
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4o-2024-08-06
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: meta-llama/llama-3.1-8b-instruct
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: meta-llama/llama-3.1-70b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-nemo
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4o-mini-2024-07-18
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4o-mini
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemma-2-27b-it
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4o-2024-05-13
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4o
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: meta-llama/llama-3-8b-instruct
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: meta-llama/llama-3-70b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mixtral-8x22b-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: microsoft/wizardlm-2-8x22b
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4-turbo
+    - capabilities:
+      - chat
+      context_window: 200000
+      id: anthropic/claude-3-haiku
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mistralai/mistral-large
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4-turbo-preview
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-3.5-turbo-0613
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openrouter/auto
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-3.5-turbo-instruct
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-3.5-turbo-16k
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: mancer/weaver
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: undi95/remm-slerp-l2-13b
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: gryphe/mythomax-l2-13b
+    - capabilities:
+      - chat
+      context_window: 128000
+      id: openai/gpt-4
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openai/gpt-3.5-turbo
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3.1-flash-image
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: google/gemini-3-pro-image
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: cohere/north-mini-code:free
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: poolside/laguna-xs.2
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: poolside/laguna-m.1
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: openrouter/fusion
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: nex-agi/nex-n2-pro
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: z-ai/glm-5v-turbo
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: sakana/fugu-ultra
   xai:
     api_key_env: XAI_API_KEY
     base_url: https://api.x.ai/v1
@@ -272,36 +1684,161 @@ providers:
       - chat
       context_window: 131072
       id: grok-imagine-video-1.5-preview
-router:
-  strategy: balanced
-telegram:
-  admin_chat_id: 565235243
-  allowed_users:
-  - 565235243
-  chat_id: 565235243
-  token: ""           # Set to your Telegram bot token from @BotFather
+    - capabilities:
+      - chat
+      context_window: 131072
+      id: grok-imagine-video-1.5
+permissions:
+  risk_levels:
+    high:
+    - path: /etc/*
+    - path: /usr/*
+    - path: /boot/*
+    - path: '*.pem'
+    - path: '*.key'
+    - path: .env
+    - cmd_prefix: rm -rf
+    - cmd_prefix: sudo
+    - cmd_prefix: dd if=
+    medium:
+    - tool: write_file
+    - tool: bash
+    low:
+    - tool: read_file
+    - tool: web_search
 tone:
+  default: casual
   profiles:
-    business:
-      description: 客戶文件 — 合作邀約 tone、唔出個人名、冇 deadline 壓力
     casual:
       description: 日常同 Sunny 吹水 — 粵語口語、短句、emoji OK
+    business:
+      description: 客戶文件 — 合作邀約 tone、唔出個人名、冇 deadline 壓力
     client-doc:
       description: Client facing 文件 — 零 comment、零 meta、直接出 artifact
+    teaching:
+      description: 教學文件 — 直接俾 .md、唔問要唔要 extra format
     ot-rt:
       description: 快速執行 — 做完先報、唔逐 step confirm
     stepwise:
       description: 逐步執行 — 每步報 result、等 confirm 先繼續
-    teaching:
-      description: 教學文件 — 直接俾 .md、唔問要唔要 extra format
+fact_check:
+  mode: normal
+adversarial:
+  enabled: true
+  flag_threshold: 3
+  warn_threshold: 2
+  angel_model: deepseek-v4-flash
+  devil_model: MiniMax-M3
 tribunal:
+  chief:
+    name: step-3.7-flash
+    provider: stepfun
+    fallback:
+      name: deepseek-v4-flash
+      provider: deepseek
   bench:
   - name: step-3.7-flash
     provider: stepfun
     role: analyst
-  - name: kimi-k2.6
+  - fallback:
+      name: MiniMax-M3
+      provider: minimax
+    name: kimi-k2.6
     provider: moonshot
     role: creative
-  chief:
-    name: step-3.7-flash
-    provider: stepfun
+display:
+  language: zh
+telegram:
+  token: ''
+  allowed_users:
+  - 565235243
+  admin_chat_id: 565235243
+  chat_id: 565235243
+billing:
+  tracking: enabled
+disk:
+  enable_log_compression: true
+  log_max_size_mb: 100
+  log_retention_days: 7
+  temp_file_cleanup_hours: 24
+evolve:
+  known_issues:
+  - detected: '2026-06-19T02:35:37.091643'
+    rate: 32/45
+    tool: knowledge_graph
+image_generation: minimax image 01
+memory:
+  enable_swap: true
+  gc_threshold: 512
+  max_memory_percent: 75
+mode: auto
+performance:
+  cache_tool_schemas: true
+  lazy_load_tools: true
+  max_concurrent_requests: 4
+  request_timeout: 30
+router:
+  strategy: balanced
+  tier_preferences:
+    complex:
+    - deepseek-v4-pro
+    - deepseek-reasoner
+    - MiniMax-M3
+    expert:
+    - deepseek-v4-pro
+    - deepseek-reasoner
+    moderate:
+    - deepseek-v4-flash
+    - MiniMax-M3
+    - deepseek-reasoner
+    trivial:
+    - deepseek-v4-flash
+    - MiniMax-M2.5
+    - MiniMax-M3
+search:
+  default_provider: xai
+  fallback_provider: duckduckgo
+security:
+  api_key_from_env: true
+  browser:
+    model: deepseek-v4-flash
+  cron:
+    timezone: Asia/Hong_Kong
+  delegate_task:
+    fallback: MiniMax-M2.5
+    model: deepseek-v4-flash
+  enforce_non_root: true
+  rate_limit_rpm: 60
+  stt:
+    api_key_env: XAI_API_KEY
+    base_url: https://api.x.ai/v1
+    fallback:
+      api_key_env: XAI_API_KEY
+      base_url: https://api.x.ai/v1
+      method: auto-asr
+      model: grok-stt
+    method: hybrid
+    model: grok-stt
+    primary:
+      api_key_env: XAI_API_KEY
+      base_url: https://api.x.ai/v1
+      method: auto-asr
+      model: grok-stt
+  tts:
+    config:
+      voice: Cantonese_GentleLady
+    fallback: MiniMax-M3
+    method: minimax
+    model: MiniMax-M3
+    voice: Cantonese_GentleLady
+  web_browser:
+    model: deepseek-v4-flash
+  web_extract:
+    model: deepseek-v4-flash
+some: {}
+stt: grok
+system:
+  auto_recovery: true
+  circuit_breaker_max_retries: 3
+tts: minimax
+tts_voice: Cantonese_GentleLady

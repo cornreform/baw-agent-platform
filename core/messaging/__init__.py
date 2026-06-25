@@ -1985,7 +1985,7 @@ class BaseConnector(ABC):
                     _estimated_tokens = int(_msg_tokens)
 
                     # Get default model's context window
-                    _cw = 65536  # safe default
+                    _cw = 131072  # default context window (128K)
                     _model_id = config.get("model", {}).get("default", "deepseek-v4-flash")
                     for _p in config.get("providers", {}).values():
                         for _m in _p.get("models", []):
