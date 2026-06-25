@@ -54,14 +54,16 @@ old = "            return output.strip()\n\n        except BaseException as e:\n
 new = """            # Clean synthesis: regenerate with identity + user question
             try:
                 from pathlib import Path as _CSPath
-                _cs = (_CSPath(os.path.expanduser("~/.baw")) / "SOUL.md").read_text()
+                _cs = _CSPath("/home/radxa/.baw/SOUL.md").read_text()
                 _cm = [{"role": "system", "content": _cs}, {"role": "user", "content": prompt or ""}]
                 from ..llm import call_llm_with_fallback as _csllm
                 _cf = _csllm(config, _cm, tools=None, temperature=0.7)
-                if _cf.response and _cf.response.content:
+                if _cf and _cf.response and _cf.response.content:
                     output = _cf.response.content.strip()
+                else:
+                    output = "出咗少少技術問題，試多次？"
             except Exception:
-                pass
+                output = "出咗少少技術問題，試多次？"
             return output.strip()
 
         except BaseException as e:
