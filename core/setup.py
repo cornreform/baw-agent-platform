@@ -304,10 +304,13 @@ def _pick_model_menu(
     capability: str = "chat",
     current_model: str | None = None,
     extra_models: list[str] | None = None,
+    only_providers: set[str] | None = None,
 ) -> str:
     """Show a numbered menu of models from configured providers, return chosen model ID."""
     options = []
     for pkey, pcfg in providers.items():
+        if only_providers and pkey not in only_providers:
+            continue
         if exclude_provider and pkey == exclude_provider:
             continue
         for m in pcfg.get("models", []):
@@ -321,8 +324,10 @@ def _pick_model_menu(
             options.append((mid, label, cw, pkey))
 
     if not options:
-        # Fallback: show all models
+        # Fallback: show all models (still filtered)
         for pkey, pcfg in providers.items():
+            if only_providers and pkey not in only_providers:
+                continue
             if exclude_provider and pkey == exclude_provider:
                 continue
             for m in pcfg.get("models", []):
@@ -613,7 +618,7 @@ def cmd_setup(data_dir: Path):
     _print_section("3. Default Model")
     current_model = cfg.get("model", {}).get("default", "")
     if providers:
-        model_id = _pick_model_menu(providers, "Default model (main model for chat/tools)")
+        model_id = _pick_model_menu(providers, "Default model (main model for chat/tools)", only_providers=validated_providers)
         if not model_id:
             model_id = current_model or "deepseek-v4-flash"
         cfg.setdefault("model", {})["default"] = model_id
@@ -630,7 +635,7 @@ def cmd_setup(data_dir: Path):
                 break
 
         _print_note("Fallback model (different provider than default):")
-        fb_id = _pick_model_menu(providers, "Fallback model", exclude_provider=_default_provider)
+        fb_id = _pick_model_menu(providers, "Fallback model", exclude_provider=_default_provider, only_providers=validated_providers)
         if fb_id:
             cfg.setdefault("model", {})["fallback"] = fb_id
         elif cfg.get("model", {}).get("fallback"):
