@@ -82,7 +82,9 @@ def handle_slash(command: str, args: list[str],
     if cmd in ("m", "model"):
         model_id = " ".join(args)
         if not model_id:
-            return "Usage: /model <id> (see config.yaml for available models)"
+            model_cfg = config.get("model", {})
+            current = model_cfg.get("default", "unknown")
+            return f"[MODEL_SELECT]\n<b>🤖 Select Model</b>\n{current}"
         return _cmd_model(model_id, config)
 
     if cmd in ("models", "aux", "aux-models"):
