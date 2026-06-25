@@ -286,7 +286,7 @@ def build_system_prompt(config: dict, data_dir = None,
     fb = Path.home() / ".baw" / "SOUL.md"
     if fb.exists():
         return fb.read_text(encoding="utf-8")
-    return "You are BAW, an AI agent with full system access.\n"
+    return "You are BAW (Black And White), an AI agent with full system access.\n"
 
 def _build_todo_block(data_dir: Path) -> str:
     """Build the todo-system reminder + carry-over follow-ups block.
