@@ -114,6 +114,8 @@ providers:
       - image_generation
       context_window: 1048576
       id: MiniMax-M3
+      model_kwargs:
+        thinking: false
     - capabilities:
       - image_generation
       context_window: 1048576
