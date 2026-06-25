@@ -31,6 +31,7 @@ BAW_THEME = Theme({
     "baw.key":      "bold yellow",
     "baw.val":      "white",
     "baw.header":   "bold magenta",
+    "baw.head":     "bold yellow",
     "baw.subtitle": "italic yellow",
     "baw.prompt":   "bold magenta",
     "baw.ai":       "dim white",
