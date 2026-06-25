@@ -624,7 +624,8 @@ def call_llm_with_fallback(
     # ── Sanity check: fallback must differ from primary ──
     if fallback_id and fallback_id == primary_id:
         import logging as _log
-        _log.warning(f"[LLM] fallback '{fallback_id}' == primary — will be skipped")
+        _log.warning(f"[LLM] fallback '{fallback_id}' == primary — forcing scan-all")
+        fallback_id = ""  # Force scan-all providers
         fallback_id = ""
 
     # ── Fast skip: if primary model's provider is unhealthy (blacklisted or high failures),
