@@ -63,16 +63,20 @@ BAW v1.18.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統
 | 2 — Self Operation | System health, diagnostics, cron scheduler, auto-cleanup | `--doctor`, cron jobs |
 | 3 — Self Knowledge | SOUL.md, ARCHITECTURE.md, capability discovery | `--capabilities`, `--learn-skill` |
 | 4 — Self Extension | LLM-generated tools, auto-register, smoke test | `--learn-skill`, tool registry |
-| 5 — Self Hosting | install.sh bootstrap on any Linux, Docker deployment | install.sh, Docker Compose |
+| 5 — Self Hosting | install.sh bootstrap on any Linux, Bare metal systemd deployment | install.sh, systemd |
 
-### One-command install
+### ⚡ Bare Metal Install (Recommended)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
-```
-
-### Docker deployment
-```bash
-cd ~/baw && docker compose up -d
+# Clone + setup
+git clone https://github.com/cornreform/baw-agent-platform.git ~/BAW
+cd ~/BAW && python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+mkdir -p ~/.baw && cp SOUL.md config.sample.yaml ~/.baw/
+# Configure API keys
+cp config.sample.yaml ~/.baw/config.yaml
+nano ~/.baw/.env  # add your API keys
+# Start
+systemctl --user enable --now baw
 ```
 
 ---
@@ -106,7 +110,7 @@ echo "STEPFUN_API_KEY=*** >> ~/.baw/.env
 # ✨ Go!
 baw "list files in current directory"
 baw --doctor           # Health check
-baw --update           # Pull latest + rebuild Docker
+baw --update           # Pull latest + restart service
 baw                    # Interactive Chat mode
 </pre>
 
@@ -128,7 +132,7 @@ Architecture: self-improving loop with Angel/Devil adversarial court
 $ baw --help
 🖤  BAW CLI — Black And White Agent Platform
 
-  All commands run inside the Docker container (baw-telegram).
+  All commands run as systemd user service.
   Pass --help to see full command reference.
 
   Quick start:
@@ -147,13 +151,21 @@ $ baw --help
   <tr><td>Git</td><td><code>git --version</code> — if missing: <code>brew install git</code> (macOS) or <code>sudo apt install git</code> (Linux)</td></tr>
   <tr><td>pip</td><td><code>python3 -m pip --version</code> — if missing: <code>python3 -m ensurepip --upgrade</code></td></tr>
   <tr><td>~/.local/bin in PATH</td><td><code>echo $PATH</code> should include <code>~/.local/bin</code></td></tr>
-  <tr><td>Docker (optional)</td><td><code>docker --version</code> — needed for Telegram bot</td></tr>
-</table>
+  </table>
 
 <h3>🤖 One-Command Install</h3>
 
 <pre>
-curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
+# Clone + setup
+git clone https://github.com/cornreform/baw-agent-platform.git ~/BAW
+cd ~/BAW && python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+mkdir -p ~/.baw && cp SOUL.md config.sample.yaml ~/.baw/
+# Configure API keys
+cp config.sample.yaml ~/.baw/config.yaml
+nano ~/.baw/.env  # add your API keys
+# Start
+systemctl --user enable --now baw
 </pre>
 
 <h3>🎯 Core Features</h3>
@@ -184,8 +196,8 @@ curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/
   <tr><td>🧘 Self-Evolution</td><td>4-phase learning: behavior tracking → health monitor → auto-fix → pattern optimization</td></tr>
   <tr><td>📊 HTML Dashboard</td><td><code>--board</code> generates dark-themed system dashboard</td></tr>
   <tr><td>📁 File History + Auto Git</td><td>Every write logged with SHA256 + auto commit</td></tr>
-  <tr><td>👨‍⚕️ Doctor Health Check</td><td><code>--doctor [--fix]</code> — validate config, deps, Docker, disk, API keys</td></tr>
-  <tr><td>🔄 Self-Update</td><td><code>--update</code> — git pull + rebuild Docker + restart</td></tr>
+  <tr><td>👨‍⚕️ Doctor Health Check</td><td><code>--doctor [--fix]</code> — validate config, deps, disk, API keys</td></tr>
+  <tr><td>🔄 Self-Update</td><td><code>--update</code> — git pull + restart</td></tr>
   <tr><td>📦 Backup & Restore</td><td><code>--backup</code> / <code>--restore</code> — config, .env, memory, sessions</td></tr>
   <tr><td>📎 Auto MEDIA Delivery</td><td>Detects generated files in output, auto-sends via MEDIA: tag — agent never says 'can't attach'</td></tr>
   <tr><td>🔍 Complete Model Discovery</td><td>Auto-probes multiple endpoint paths (/v1/models) to discover ALL provider models, dedup across URLs</td></tr>
@@ -239,10 +251,10 @@ baw --cfg check                  # Validate required sections
 # Health & Maintenance
 baw --doctor                     # Health check
 baw --doctor --fix               # Health check + auto-repair
-baw --update                     # Pull latest + rebuild Docker
+baw --update                     # Pull latest + restart service
 baw --version                    # Version + build info
 baw --diagnostics                # System debug info
-baw --logs [N]                   # View Docker logs (N lines)
+baw --logs [N]                   # View journal logs (N lines)
 baw --reset                      # Factory reset
 
 # Memory & Sessions
@@ -494,7 +506,7 @@ echo "STEPFUN_API_KEY=*** >> ~/.baw/.env
 # ✨ 即刻用！
 baw "list files in current directory"
 baw --doctor           # 健康檢查
-baw --update           # 更新 + 重建 Docker
+baw --update           # 更新 + 重啟服務
 baw                    # 互動式 Chat 模式
 </pre>
 
@@ -512,8 +524,7 @@ baw                    # 互動式 Chat 模式
   <tr><td>Git</td><td><code>git --version</code> — macOS: <code>brew install git</code> / Linux: <code>sudo apt install git</code></td></tr>
   <tr><td>pip</td><td><code>python3 -m pip --version</code></td></tr>
   <tr><td>~/.local/bin in PATH</td><td><code>echo $PATH</code> 應該包含 <code>~/.local/bin</code></td></tr>
-  <tr><td>Docker (optional)</td><td><code>docker --version</code> — Telegram bot 需要</td></tr>
-</table>
+  </table>
 
 <h3>🎯 核心特色</h3>
 
@@ -535,8 +546,8 @@ baw                    # 互動式 Chat 模式
   <tr><td>🧘 自我進化</td><td>4 階段學習：行為追蹤 → 健康監控 → 自動修復 → 模式優化</td></tr>
   <tr><td>🤖 Agent Delegation</td><td>主腦拆任務 → 子 agent 執行 → 綜合報告</td></tr>
   <tr><td>🎙️ Voice STT</td><td>Telegram 語音自動檢測，auto-probe OpenAI/SSE 協議，本地 faster-whisper fallback</td></tr>
-  <tr><td>👨‍⚕️ 健康檢查</td><td><code>--doctor [--fix]</code> — config、依賴、Docker、Disk、API key 全面檢查</td></tr>
-  <tr><td>🔄 自更新</td><td><code>--update</code> — git pull + 重建 Docker + 重啟</td></tr>
+  <tr><td>👨‍⚕️ 健康檢查</td><td><code>--doctor [--fix]</code> — config、依賴、Disk、API key 全面檢查</td></tr>
+  <tr><td>🔄 自更新</td><td><code>--update</code> — git pull + 重啟服務 + 重啟</td></tr>
   <tr><td>📦 備份還原</td><td><code>--backup</code> / <code>--restore</code> — 全部資料一鍵打包</td></tr>
   <tr><td>👤 Profile 管理</td><td><code>--profile-*</code> — 獨立設定、記憶、session 隔離</td></tr>
   <tr><td>🔐 出廠重置</td><td><code>--reset</code> — 確認後 wipe 全部數據</td></tr>
@@ -575,9 +586,9 @@ baw --cfg check                  # 驗證必要設定
 # 健康維護
 baw --doctor                     # 健康檢查
 baw --doctor --fix               # 檢查 + 自動修復
-baw --update                     # 更新 + 重建 Docker
+baw --update                     # 更新 + 重啟服務
 baw --diagnostics                # 系統除錯資訊
-baw --logs [N]                   # Docker logs
+baw --logs [N]                   # System logs
 baw --version                    # 版本資訊
 baw --reset                      # 出廠重置
 
@@ -673,14 +684,14 @@ baw --setup          # → Guided setup wizard</pre>
 <tr><th>Command</th><th>Description</th></tr>
 <tr><td><code>baw --doctor [--fix]</code></td><td>🩺 Health check + auto-repair</td></tr>
 <tr><td><code>baw --setup</code></td><td>🎯 Interactive setup wizard</td></tr>
-<tr><td><code>baw --update</code></td><td>🔄 Pull latest + rebuild Docker</td></tr>
-<tr><td><code>baw --version</code></td><td>📌 Version, commit, branch, Docker SHA</td></tr>
+<tr><td><code>baw --update</code></td><td>🔄 Pull latest + restart service</td></tr>
+<tr><td><code>baw --version</code></td><td>📌 Version, commit, branch, Commit SHA</td></tr>
 <tr><td><code>baw --backup</code></td><td>💾 Backup config, .env, memory, sessions</td></tr>
 <tr><td><code>baw --restore [path]</code></td><td>📂 Restore from backup</td></tr>
 <tr><td><code>baw --profile-list</code></td><td>👤 List profiles</td></tr>
 <tr><td><code>baw --profile-create &lt;name&gt;</code></td><td>👤 Create profile</td></tr>
 <tr><td><code>baw --diagnostics</code></td><td>🔬 System debug info</td></tr>
-<tr><td><code>baw --logs [N]</code></td><td>📜 Tail Docker logs</td></tr>
+<tr><td><code>baw --logs [N]</code></td><td>📜 Tail System logs</td></tr>
 <tr><td><code>baw --reset</code></td><td>🔐 Factory reset</td></tr>
 <tr><td><code>baw --cfg list</code></td><td>⚙️ Show all settings</td></tr>
 <tr><td><code>baw --cfg set &lt;k&gt; &lt;v&gt;</code></td><td>⚙️ Change setting</td></tr>
