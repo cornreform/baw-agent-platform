@@ -100,10 +100,10 @@ esac
 EOF
 sudo chmod 755 /usr/local/bin/baw
 
-# 6. Run setup wizard (configures API keys, model, Telegram token)
+# 8. Run setup wizard (configures API keys, model, Telegram token)
 baw --setup
 
-# 7. Start BAW
+# 9. Start BAW
 systemctl --user enable --now baw
 ```
 
@@ -198,7 +198,28 @@ mkdir -p ~/.baw
 cp SOUL.md ~/.baw/
 cp config.sample.yaml ~/.baw/config.yaml
 
-# 4. Install CLI wrapper
+# 4. Fix symlink
+ln -sf ~/BAW ~/baw
+
+# 5. Create service
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/baw.service << '''EOF'''
+[Unit]
+Description=BAW Agent Platform (Bare Metal)
+After=network.target
+[Service]
+Type=simple
+ExecStart=%h/BAW/venv/bin/python3 %h/BAW/baw-bot --config %h/.baw/config.yaml
+Restart=always
+RestartSec=5
+WorkingDirectory=%h/BAW
+EnvironmentFile=%h/.baw/.env
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+
+# 6. Install CLI wrapper
 sudo tee /usr/local/bin/baw << '''EOF'''
 #!/bin/bash
 BAW_DIR="${BAW_HOME:-$HOME/BAW}"
@@ -214,10 +235,10 @@ esac
 EOF
 sudo chmod 755 /usr/local/bin/baw
 
-# 5. Setup wizard
+# 7. Setup wizard
 baw --setup
 
-# 6. Start
+# 8. Start
 systemctl --user enable --now baw
 </pre>
 
