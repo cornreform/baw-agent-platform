@@ -810,6 +810,14 @@ def _cmd_update(data_dir: Path) -> str:
 
 
 def _cmd_aux_models(config: dict) -> str:
+    # Reload from disk to avoid stale in-memory config
+    try:
+        import yaml
+        from pathlib import Path
+        disk_cfg = yaml.safe_load((Path.home() / ".baw" / "config.yaml").read_text()) or {}
+        config = disk_cfg
+    except Exception:
+        pass
     """Show all auxiliary models (STT, TTS, vision, image_gen, etc.)"""
     caps = config.get("capabilities", {})
     exec_cfg = config.get("executor", {})
