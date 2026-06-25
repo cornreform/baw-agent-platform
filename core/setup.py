@@ -739,11 +739,13 @@ def cmd_setup(data_dir: Path):
         if auto_cfg:
             desc = auto_cfg.get("model", auto_cfg.get("method", "auto"))
             print(f"  {C.DIM}Auto-detect: {desc}{C.RESET}")
-            choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (d)efault / (p)ick model / (s)kip [{C.DIM}D{C.RESET}]: ").strip().lower()
-            if choice in ("", "d", "default"):
+            choice = input(f"  {C.MAGENTA}> {C.RESET}{name}: (a)ccept auto / (p)ick model / Enter=keep current [{C.DIM}Enter{C.RESET}]: ").strip().lower()
+            if choice in ("a", "auto", "accept"):
                 caps[key] = auto_cfg
                 _ok(f"{name} configured ({desc})")
                 changed_caps = True
+            elif choice == "" and existing:
+                pass  # Enter = keep existing
             elif choice == "p":
                 cur = existing.get("model") if existing else None
                 extras = list(dict.fromkeys(filter(None, [auto_cfg.get("model")] + (auto_models or []))))
