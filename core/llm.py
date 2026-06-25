@@ -367,12 +367,12 @@ def _call_openai_chat(
     msg = choice.get("message", {})
     usage = data.get("usage", {})
 
+    # Handle models that return content in reasoning_content (e.g. Kimi thinking mode)
+    content = msg.get("content", "") or ""
     # Strip <think> blocks from content (MiniMax-M3, DeepSeek-R1 thinking mode leak)
     if content:
         import re as _think_re
         content = _think_re.sub(r'<think>.*?</think>', '', content, flags=_think_re.DOTALL).strip()
-    # Handle models that return content in reasoning_content (e.g. Kimi thinking mode)
-    content = msg.get("content", "") or ""
     reasoning = msg.get("reasoning_content")
     if not content and reasoning:
         content = reasoning
