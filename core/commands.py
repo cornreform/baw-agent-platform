@@ -179,6 +179,7 @@ _HELP_COMMANDS: list[dict] = [
     {"cat": "💬 Core", "cmd": "/status, /s", "desc": "Model, memory, tools, session health"},
     {"cat": "💬 Core", "cmd": "/btw <text>", "desc": "Quick answer — no court, no plan"},
     {"cat": "💬 Core", "cmd": "/fresh, /fr /raw <prompt>", "desc": "Raw model — no soul, no memories"},
+    {"cat": "⚙️ Config", "cmd": "/thinking, /think on|off", "desc": "Toggle model thinking mode (MiniMax, DeepSeek-R1)"},
     {"cat": "💬 Core", "cmd": "/rethink, /rt [prompt]", "desc": "Re-run last prompt, force alternative view"},
     {"cat": "💬 Core", "cmd": "/court, /ct", "desc": "Show last Angel/Devil court verdict"},
     {"cat": "💬 Core", "cmd": "/clear, /c", "desc": "Clear screen (CLI only)"},
