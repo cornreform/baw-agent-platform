@@ -84,8 +84,8 @@ mkdir -p ~/.baw
 cp SOUL.md ~/.baw/
 cp config.sample.yaml ~/.baw/config.yaml
 
-# 5. Add your API keys
-nano ~/.baw/.env
+# 5. Run setup wizard (configures API keys, model, Telegram token)
+baw --setup
 
 # 6. Start BAW
 systemctl --user enable --now baw
@@ -182,8 +182,8 @@ mkdir -p ~/.baw
 cp SOUL.md ~/.baw/
 cp config.sample.yaml ~/.baw/config.yaml
 
-# 4. API keys
-nano ~/.baw/.env
+# 4. Setup wizard
+baw --setup
 
 # 5. Start
 systemctl --user enable --now baw
