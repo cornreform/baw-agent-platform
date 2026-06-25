@@ -452,123 +452,66 @@ def cmd_setup(data_dir: Path):
         print()
 
     # Show available providers
-    print(f"  {C.DIM}Available providers (enter number to add, Enter when done):{C.RESET}")
+    print(f"  {C.DIM}Add API keys one at a time — Enter when done:{C.RESET}")
     for idx, _, label, _, _, _ in all_providers:
         has_key = "✓" if any(env_key in existing_env for i, env_key, l, *_ in [p for p in all_providers if p[0]==idx]) else " "
         print(f"     {C.GREEN}{idx:>2}{C.RESET}) {has_key} {label}")
 
-    # Loop: keep adding providers until user presses Enter
-    added_indices = set()
-    while True:
-        raw = input(f"  {C.MAGENTA}?{C.RESET} Add provider (number, or Enter to continue): ").strip().lower()
-        if raw in ("", "d", "done"):
-            break
-        if raw == "a":
-            added_indices = set(range(1, len(all_providers)+1))
-            break
-        for part in raw.replace(",", " ").split():
-            if part.isdigit():
-                added_indices.add(int(part))
-        if added_indices:
-            done_msg = f"{len(added_indices)} provider(s) queued — Enter to add more or done"
-        else:
-            done_msg = "No providers added yet"
-
-    selected_providers = [p for p in all_providers if p[0] in added_indices]
-
     new_env = {}
     plan_choices = {}
     validated_providers: set[str] = set()
+    selected_providers = []  # track for auto-config later
 
-    for idx, env_key, label, provider_key, default_base, _ in selected_providers:
-        if env_key == "__CUSTOM__":
-            # Custom provider — ask for everything
-            print(f"\n  {C.MAGENTA}┌─ Custom Provider ───────────────────{C.RESET}")
-            custom_name = _input("  Provider name (e.g. 'my-provider')", default="custom").strip()
-            if not custom_name:
-                custom_name = "custom"
-            custom_name = custom_name.replace(" ", "-").lower()
-            custom_env = _input("  Env variable name (e.g. 'MY_CUSTOM_API_KEY')", default=f"{custom_name.upper()}_API_KEY").strip()
-            if not custom_env:
-                custom_env = f"{custom_name.upper()}_API_KEY"
-            custom_base = _input("  Base URL (e.g. 'https://api.custom.com/v1')", default="").strip()
-            if not custom_base:
+    # Loop: pick provider → enter key → repeat
+    while True:
+        raw = input(f"  {C.MAGENTA}?{C.RESET} Add provider (number, Enter=done): ").strip().lower()
+        if raw in ("", "d", "done"):
+            break
+        if raw == "a":
+            for p in all_providers:
+                if p[1] != "__CUSTOM__" and p[1] not in existing_env:
+                    selected_providers.append(p)
+            break
+        for part in raw.replace(",", " ").split():
+            if not part.isdigit():
                 continue
-            custom_model = _input("  Default model ID (optional)", default="").strip()
-
-            current_val = existing_env.get(custom_env, "")
-            if current_val:
-                _print_item(custom_name, f"already set ({current_val[:8]}...), keeping")
+            idx = int(part)
+            provider = next((p for p in all_providers if p[0] == idx), None)
+            if not provider:
                 continue
-            val = input(f"  {C.MAGENTA}?{C.RESET} {custom_name} ({custom_env}): ").strip()
+            selected_providers.append(provider)
+            # Immediately prompt for key
+            _, env_key, label, provider_key, default_base, _ = provider
+            _print_item(label, "")
+            if env_key in existing_env:
+                _print_item(label, f"already set ({existing_env[env_key][:8]}...), keeping")
+                validated_providers.add(provider_key)
+                continue
+            val = input(f"  {C.MAGENTA}?{C.RESET} {label} ({env_key}): ").strip()
             if not val:
                 continue
-
-            # Test with custom base URL
-            if custom_base:
-                print(f"  {C.DIM}⏳ Testing key...{C.RESET}", end="", flush=True)
-                test_model = custom_model or ""
-                ok, msg = _validate_api_key(custom_name, custom_base, val, model=test_model)
-                print(f"\r  {' ' * 20}\r", end="")
+            # Validate and store
+            base_url = default_base
+            if base_url:
+                print(f"  {C.DIM}Testing key...{C.RESET} ", end="", flush=True)
+                ok, msg = _validate_api_key(provider_key, base_url, val)
+                print()
                 if ok:
                     _ok(msg)
-                    validated_providers.add(custom_name)
+                    validated_providers.add(provider_key)
                 else:
                     _warn(msg)
-                    if not _confirm("  Use this key anyway?", default=False):
+                    if not _confirm("  Use anyway?", default=False):
                         continue
-                    validated_providers.add(custom_name)
+                    validated_providers.add(provider_key)
+            new_env[env_key] = val
+            _ok(f"{label} key saved")
+        print()  # blank line before next prompt
 
-            new_env[custom_env] = val
-            # Store custom config for step 3
-            plan_choices[f"__custom__{custom_name}"] = {
-                "env": custom_env, "base_url": custom_base, "model": custom_model
-            }
-            print(f"  {C.DIM}└──────────────────────────────────────{C.RESET}\n")
-            continue
-
-        current_val = existing_env.get(env_key, "")
-        if current_val:
-            _print_item(label, f"already set ({current_val[:8]}...), keeping")
-            validated_providers.add(provider_key)  # pre-existing key counts as validated
-            continue
-        val = input(f"  {C.MAGENTA}?{C.RESET} {label} ({env_key}): ").strip()
-        if not val:
-            continue
-
-        base_url = default_base
-        if provider_key == "stepfun":
-            print(f"  {C.DIM}{_explain_plan('stepfun')}{C.RESET}")
-            plan = _input("  Plan type", default="standard")
-            plan_choices[env_key] = plan.lower().replace("-", "_")
-            if plan.lower() in ("step_plan", "step-plan"):
-                base_url = "https://api.stepfun.ai/step_plan/v1"
-            elif plan.lower() == "china":
-                base_url = "https://api.stepfun.com/v1"
-            else:
-                base_url = "https://api.stepfun.ai/v1"
-        elif provider_key == "minimax":
-            print(f"  {C.DIM}{_explain_plan('minimax')}{C.RESET}")
-            plan = _input("  Plan type", default="standard")
-            plan_choices[env_key] = plan.lower()
-        elif provider_key == "moonshot":
-            print(f"  {C.DIM}{_explain_plan('moonshot')}{C.RESET}")
-            plan = _input("  Plan type", default="standard")
-            plan_choices[env_key] = plan.lower().replace("-", "_")
-
-        if base_url:
-            print(f"  {C.DIM}⏳ Testing key...{C.RESET}", end="", flush=True)
-            ok, msg = _validate_api_key(provider_key, base_url, val)
-            print(f"\r  {' ' * 20}\r", end="")
-            if ok:
-                _ok(msg)
-                validated_providers.add(provider_key)
-            else:
-                _warn(msg)
-                if not _confirm("  Use this key anyway?", default=False):
-                    continue
-                validated_providers.add(provider_key)  # user accepted unvalidated key
-        new_env[env_key] = val
+    # Auto-detect from pre-existing keys not yet added
+    for idx, env_key, label, provider_key, default_base, _ in all_providers:
+        if env_key in existing_env and provider_key not in [v for p in selected_providers for v in [p[3]]]:
+            validated_providers.add(provider_key)
 
     # Write .env
     if new_env:
@@ -582,13 +525,6 @@ def cmd_setup(data_dir: Path):
         _ok(f"Saved {len(new_env)} key(s) to {env_path}")
 
     all_keys = {**existing_env, **new_env}
-
-    # Auto-detect providers from pre-existing keys (user skipped selection)
-    if not selected_providers and existing_env:
-        for idx, env_key, label, provider_key, default_base, _ in all_providers:
-            if env_key in existing_env and env_key != "__CUSTOM__":
-                validated_providers.add(provider_key)
-
     # ── 3. Providers (auto-configure from keys) ──
     _print_section("2. Providers")
     providers = cfg.setdefault("providers", {})
@@ -633,8 +569,7 @@ def cmd_setup(data_dir: Path):
         _ok(f"{label} provider configured")
         configured_any = True
 
-    # If no new providers but existing keys exist, we still have providers
-    if providers or existing_env:
+    if not configured_any and existing_env:
         configured_any = True
     if not configured_any:
         _warn("No API keys configured — BAW needs at least one provider to work")
