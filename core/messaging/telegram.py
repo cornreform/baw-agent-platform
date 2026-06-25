@@ -2368,6 +2368,7 @@ class TelegramConnector(BaseConnector):
         lines = text.strip().split("\n")
         title = lines[1] if len(lines) > 1 else "<b>Select Provider</b>"
         current_model = lines[2] if len(lines) > 2 else ""
+        footer = "\n".join(lines[3:]) if len(lines) > 3 else ""
         # Build provider keyboard
         providers = self._get_providers_config()
         rows = []
@@ -2381,7 +2382,7 @@ class TelegramConnector(BaseConnector):
                 f"{self._api_base}/sendMessage",
                 json={
                     "chat_id": chat_id,
-                    "text": f"{title}\nCurrent: <code>{current_model}</code>",
+                    "text": f"{title}\nCurrent: <code>{current_model}</code>" + (f"\n\n{footer}" if footer else ""),
                     "reply_markup": {"inline_keyboard": rows},
                     "parse_mode": "HTML",
                 },
