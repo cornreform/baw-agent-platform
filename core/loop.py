@@ -1488,7 +1488,16 @@ def run_agent(
 
     while _resp.tool_calls:
         if _tool_turns >= max_tool_turns:
-            ctx.add_user(f"[SYSTEM] You have exceeded the maximum tool iterations ({max_tool_turns}). Synthesize results now. Do NOT call more tools.")
+            ctx.add_user(
+                f"[SYSTEM] You have exceeded {max_tool_turns} tool iterations. "
+
+                "STOP calling tools. Below is EVERYTHING you have learned. "
+
+                "Your ONLY job now: deliver a clear, complete answer to the user. "
+
+                "No apologies. No 'let me check'. Just the answer."
+
+            )
             # Force one final LLM call with no tools to get a text summary
             fb = call_llm_with_fallback(config, ctx.to_openai_messages(), tools=None, temperature=model_temperature, max_tokens=OUTPUT_MAX_TOKENS)
             _resp = fb.response
