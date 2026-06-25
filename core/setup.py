@@ -809,12 +809,13 @@ def cmd_setup(data_dir: Path):
     # ── 5. Behaviour ──
     _print_section("5. Behaviour")
     _print_note("Execution mode determines how thoroughly BAW checks its work:")
+    _print_note("  auto    — automatic, BAW picks best mode per task (default)")
     _print_note("  quick   — fastest, no court/plan, direct execution")
     _print_note("  hybrid  — balanced, plan + execute, light verification")
-    _print_note("  tight   — most thorough, full court + plan + per-step verify (default)")
+    _print_note("  tight   — most thorough, full court + plan + per-step verify")
     current = cfg.get("mode", "auto")
     if current not in ("quick", "hybrid", "tight", "auto"):
-        current = "tight"  # fix invalid stored value
+        current = "auto"  # fix invalid stored value
     mode = _input("Mode", default=current)
     while mode not in ("quick", "hybrid", "tight", "auto"):
         print(f"{C.RED}  Must be: quick, hybrid, tight, or auto{C.RESET}")
