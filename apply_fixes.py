@@ -52,8 +52,8 @@ init_content = (BAW / "core/messaging/__init__.py").read_text()
 old = "            return output.strip()\n\n        except BaseException as e:\n            return f\"[FAIL] BAW error: {e}\"\n\n    # ── Focus Mode"
 
 new = """            # Clean synthesis: regenerate with identity + user question
+            from pathlib import Path as _CSPath
             try:
-                from pathlib import Path as _CSPath
                 _cs = _CSPath("/home/radxa/.baw/SOUL.md").read_text()
                 _cm = [{"role": "system", "content": _cs}, {"role": "user", "content": prompt or ""}]
                 from ..llm import call_llm_with_fallback as _csllm
@@ -64,6 +64,13 @@ new = """            # Clean synthesis: regenerate with identity + user question
                     output = "出咗少少技術問題，試多次？"
             except Exception:
                 output = "出咗少少技術問題，試多次？"
+            # Self-learning: log Q&A for pattern analysis
+            if output and len(output) > 5:
+                try:
+                    with open("/tmp/baw_learning.txt", "a") as _f:
+                        _f.write("Q: " + str(prompt[:80]) + "\\nA: " + str(output[:120]) + "\\n\\n")
+                except Exception:
+                    pass
             return output.strip()
 
         except BaseException as e:
