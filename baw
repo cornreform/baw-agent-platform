@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run python
+#!/home/user/BAW/venv/bin/python3
 """
 BAW Agent Platform — CLI Entry Point
 Linux + macOS compatible
@@ -649,7 +649,7 @@ Examples:
         print("⚠️  This will wipe all BAW data (config, .env, memory, sessions, skills)")
         confirm = input("   Type 'RESET' to confirm: ").strip()
         if confirm == "RESET":
-            import shutil
+            # shutil already imported at top level
             for item in ["config.yaml", ".env", "SOUL.md", "memory", "sessions", "tasks", "skills"]:
                 p = data_dir / item
                 if p.exists():
