@@ -77,22 +77,32 @@ def health_check() -> dict:
         checks.append({"name": "cron", "score": 0, "status": "missing"})
     max_score += 1
 
-    # 5. Model health — check last latency log (1 point)
-    latency_path = Path.home() / ".baw" / "logs" / "latency.jsonl"
-    if latency_path.exists():
-        try:
-            lines = latency_path.read_text(encoding="utf-8").strip().split("\n")
-            recent = [json.loads(l) for l in lines[-20:] if l.strip()]
-            ok_count = sum(1 for r in recent if r.get("status") == "ok")
-            if ok_count >= len(recent) * 0.5:
-                checks.append({"name": "models", "score": 1, "status": "ok", "detail": f"{ok_count}/{len(recent)} ok"})
-                total_score += 1
-            else:
-                checks.append({"name": "models", "score": 0, "status": "warning", "detail": f"only {ok_count}/{len(recent)} ok"})
-        except Exception:
-            checks.append({"name": "models", "score": 0, "status": "error"})
+    # 5. Model health — circuit breaker + latency log (1 point)
+    from core.llm import _CIRCUIT_STATE, _CIRCUIT_LOCK
+    with _CIRCUIT_LOCK:
+        dead_providers = []
+        for provider, state in _CIRCUIT_STATE.items():
+            if state.get("failures", 0) >= 8:
+                dead_providers.append(f"{provider}({state['failures']} fails)")
+    if dead_providers:
+        checks.append({"name": "models", "score": 0, "status": "error",
+                       "detail": f"Providers failing: {', '.join(dead_providers)} — check API keys"})
     else:
-        checks.append({"name": "models", "score": 0, "status": "missing", "detail": "no latency log yet"})
+        latency_path = Path.home() / ".baw" / "logs" / "latency.jsonl"
+        if latency_path.exists():
+            try:
+                lines = latency_path.read_text(encoding="utf-8").strip().split("\n")
+                recent = [json.loads(l) for l in lines[-20:] if l.strip()]
+                ok_count = sum(1 for r in recent if r.get("status") == "ok")
+                if ok_count >= len(recent) * 0.5:
+                    checks.append({"name": "models", "score": 1, "status": "ok", "detail": f"{ok_count}/{len(recent)} ok"})
+                    total_score += 1
+                else:
+                    checks.append({"name": "models", "score": 0, "status": "warning", "detail": f"only {ok_count}/{len(recent)} ok"})
+            except Exception:
+                checks.append({"name": "models", "score": 0, "status": "error"})
+        else:
+            checks.append({"name": "models", "score": 0, "status": "missing", "detail": "no latency log yet"})
     max_score += 1
 
     # 6. Exceptions (1 point — fewer is better)
@@ -205,25 +215,28 @@ def health_check() -> dict:
         checks.append({"name": "tools", "score": 0, "status": "error", "detail": str(_te)[:80]})
     max_score += 1
 
-    # 12. Docker socket (1 point) — verify docker access
-    _dock = Path("/var/run/docker.sock")
-    if _dock.exists():
-        import stat as _st
-        _mode = _dock.stat().st_mode
-        try:
-            _writ = bool(_mode & _st.S_IWGRP) or bool(_mode & _st.S_IWUSR)
-            if _writ:
-                checks.append({"name": "docker", "score": 1, "status": "ok"})
-                total_score += 1
-            else:
-                checks.append({"name": "docker", "score": 0.5, "status": "warning", "detail": "socket exists but not writable"})
+    # 12. Docker socket (1 point) — only check if running inside Docker
+    _in_docker = Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
+    if _in_docker:
+        _dock = Path("/var/run/docker.sock")
+        if _dock.exists():
+            import stat as _st
+            _mode = _dock.stat().st_mode
+            try:
+                _writ = bool(_mode & _st.S_IWGRP) or bool(_mode & _st.S_IWUSR)
+                if _writ:
+                    checks.append({"name": "docker", "score": 1, "status": "ok"})
+                    total_score += 1
+                else:
+                    checks.append({"name": "docker", "score": 0.5, "status": "warning", "detail": "socket exists but not writable"})
+                    total_score += 0.5
+            except Exception:
+                checks.append({"name": "docker", "score": 0.5, "status": "warning"})
                 total_score += 0.5
-        except Exception:
-            checks.append({"name": "docker", "score": 0.5, "status": "warning"})
-            total_score += 0.5
-    else:
-        checks.append({"name": "docker", "score": 0, "status": "missing", "detail": "no docker.sock mounted"})
-    max_score += 1
+        else:
+            checks.append({"name": "docker", "score": 0, "status": "missing", "detail": "no docker.sock mounted"})
+        max_score += 1
+    # bare-metal: skip docker check entirely, don't add to max_score
 
     # 13. Knowledge graph (1 point) — verify KG integrity
     _kg_path = Path.home() / ".baw" / "knowledge_graph.json"
