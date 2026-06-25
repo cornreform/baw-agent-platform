@@ -309,7 +309,7 @@ def _pick_model_menu(
     """Show a numbered menu of models from configured providers, return chosen model ID."""
     options = []
     for pkey, pcfg in providers.items():
-        if only_providers and pkey not in only_providers:
+        if only_providers and len(only_providers) > 0 and pkey not in only_providers:
             continue
         if exclude_provider and pkey == exclude_provider:
             continue
@@ -326,7 +326,7 @@ def _pick_model_menu(
     if not options:
         # Fallback: show all models (still filtered)
         for pkey, pcfg in providers.items():
-            if only_providers and pkey not in only_providers:
+            if only_providers and len(only_providers) > 0 and pkey not in only_providers:
                 continue
             if exclude_provider and pkey == exclude_provider:
                 continue
@@ -503,6 +503,7 @@ def cmd_setup(data_dir: Path):
                     _warn(msg)
                     if not _confirm("  Use this key anyway?", default=False):
                         continue
+                    validated_providers.add(custom_name)
 
             new_env[custom_env] = val
             # Store custom config for step 3
@@ -551,6 +552,7 @@ def cmd_setup(data_dir: Path):
                 _warn(msg)
                 if not _confirm("  Use this key anyway?", default=False):
                     continue
+                validated_providers.add(provider_key)  # user accepted unvalidated key
         new_env[env_key] = val
 
     # Write .env
@@ -616,6 +618,9 @@ def cmd_setup(data_dir: Path):
 
     # ── 3. Default Model (dropdown from configured providers) ──
     _print_section("3. Default Model")
+    # Ensure all configured providers are in validated set
+    if providers and not validated_providers:
+        validated_providers = set(providers.keys())
     current_model = cfg.get("model", {}).get("default", "")
     if providers:
         model_id = _pick_model_menu(providers, "Default model (main model for chat/tools)", only_providers=validated_providers)
