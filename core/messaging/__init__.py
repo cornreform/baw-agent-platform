@@ -2253,17 +2253,17 @@ class BaseConnector(ABC):
             if _task_complexity == "simple":
                 _MAX_AUTO_ROUNDS = 2
                 _MAX_TOTAL_SECONDS = 180
-                _focus_max_tool_turns = 25  # 10 was too low — BAW hits cap before reaching synthesis
+                _focus_max_tool_turns = 50  # was 25
                 logger.info(f"[_run_baw] Simple task — rounds={_MAX_AUTO_ROUNDS}, tool_turns={_focus_max_tool_turns}")
             elif _task_complexity == "moderate":
                 _MAX_AUTO_ROUNDS = 3
                 _MAX_TOTAL_SECONDS = 360
-                _focus_max_tool_turns = 50
+                _focus_max_tool_turns = 100
                 logger.info(f"[_run_baw] Moderate task — rounds={_MAX_AUTO_ROUNDS}, tool_turns={_focus_max_tool_turns}")
             elif _task_complexity == "complex":
                 _MAX_AUTO_ROUNDS = 5
                 if not _focus_max_tool_turns:
-                    _focus_max_tool_turns = 100  # complex tasks need substantial tool budget per round
+                    _focus_max_tool_turns = 200  # complex tasks need substantial tool budget per round
                 logger.info(f"[_run_baw] Complex task — tool_turns={_focus_max_tool_turns}")
                 # ── Background task notification: tell user upfront for long tasks ──
                 if chat_id and not _is_focus_mode:
