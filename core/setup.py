@@ -811,6 +811,8 @@ def cmd_setup(data_dir: Path):
     _print_note("  hybrid  — balanced, plan + execute, light verification")
     _print_note("  tight   — most thorough, full court + plan + per-step verify (default)")
     current = cfg.get("mode", "tight")
+    if current not in ("quick", "hybrid", "tight"):
+        current = "tight"  # fix invalid stored value
     mode = _input("Mode", default=current)
     while mode not in ("quick", "hybrid", "tight"):
         print(f"{C.RED}  Must be: quick, hybrid, or tight{C.RESET}")
