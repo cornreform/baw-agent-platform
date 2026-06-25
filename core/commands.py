@@ -84,7 +84,9 @@ def handle_slash(command: str, args: list[str],
         if not model_id:
             model_cfg = config.get("model", {})
             current = model_cfg.get("default", "unknown")
-            return f"[MODEL_SELECT]\n<b>🤖 Select Model</b>\n{current}"
+            # Build auxiliary models info for footer
+            aux_info = _cmd_aux_models(config).replace("\n", "\n").replace("<b>", "<b>").replace("</b>", "</b>")
+            return f"[MODEL_SELECT]\n<b>🤖 Select Model</b>\n{current}\n{aux_info}"
         return _cmd_model(model_id, config)
 
     if cmd in ("models", "aux", "aux-models"):
