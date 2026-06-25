@@ -122,6 +122,7 @@ Examples:
         "textual": "textual",
         "tavily": "tavily-python",
         "ddgs": "ddgs",
+        "mcp": "mcp",
     }
 
     def _safe_import(import_stmt: str) -> bool:
