@@ -65,7 +65,13 @@ BAW v1.18.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統
 | 4 — Self Extension | LLM-generated tools, auto-register, smoke test | `--learn-skill`, tool registry |
 | 5 — Self Hosting | install.sh bootstrap on any Linux, Bare metal systemd deployment | install.sh, systemd |
 
-### ⚡ Bare Metal Install (Recommended)
+### ⚡ One-Line Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
+```
+
+### 📋 Step-by-Step (Manual)
 
 ```bash
 # 1. Clone the repo
