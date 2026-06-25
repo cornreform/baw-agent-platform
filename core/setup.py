@@ -814,8 +814,8 @@ def cmd_setup(data_dir: Path):
     if current not in ("quick", "hybrid", "tight"):
         current = "tight"  # fix invalid stored value
     mode = _input("Mode", default=current)
-    while mode not in ("quick", "hybrid", "tight"):
-        print(f"{C.RED}  Must be: quick, hybrid, or tight{C.RESET}")
+    while mode not in ("quick", "hybrid", "tight", "auto"):
+        print(f"{C.RED}  Must be: quick, hybrid, tight, or auto{C.RESET}")
         mode = _input("Mode", default=current)
     cfg["mode"] = mode
 
