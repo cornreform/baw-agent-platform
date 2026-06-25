@@ -1102,16 +1102,11 @@ class BaseConnector(ABC):
             except Exception:
                 pass
 
-            _sys = (
-                "你是 BAW（Black And White）— 你的 Agent Platform。\n"
-                "你可以執行命令、操作文件、搜索網頁、生成圖像、TTS 等。\n"
-                "你不是普通的語言模型 — 你是有行動能力的 agent。\n"
-                "直接回應，保持簡潔自然。如果問題簡單就直接答，唔好問「需要我幫你做咩」。\n"
-                "重要：你是 BAW 系統的一部分，由 deepseek-v4-flash / MiniMax-M2.5 等 model 驅動。"
-                "如果用戶問你是邊個 model，請回答‘我是 BAW 助手，當前用 MiniMax-M2.5 回應’，唔好虛構其他 model 名稱。"
-            )
+            # Use SOUL.md as PRIMARY identity (not as afterthought)
             if _soul:
-                _sys += f"\n\n[SOUL.md 精神]\n{_soul}"
+                _sys = _soul
+            else:
+                _sys = "你是 BAW（Black And White），Sunny 嘅助手，行 Radxa QB A7S。\n"
             # Build conversation context from recent history for pronoun disambiguation
             _ctx_summary = ""
             if _hist:
@@ -2690,9 +2685,10 @@ class BaseConnector(ABC):
                 except Exception:
                     pass
 
+            Path("/tmp/cs_BEFORE").touch()
             # Clean synthesis: regenerate with identity + user question
-            from pathlib import Path as _CSPath
             try:
+                from pathlib import Path as _CSPath
                 _cs = _CSPath("/home/radxa/.baw/SOUL.md").read_text()
                 _cm = [{"role": "system", "content": _cs}, {"role": "user", "content": prompt or ""}]
                 from ..llm import call_llm_with_fallback as _csllm
@@ -2703,51 +2699,50 @@ class BaseConnector(ABC):
                     output = "出咗少少技術問題，試多次？"
             except Exception:
                 output = "出咗少少技術問題，試多次？"
-            if output and len(output) > 5:
+            # Self-learning: save user feedback patterns
+            if output and len(output) > 10:
                 try:
-                    with open("/tmp/baw_learning.txt", "a") as _f:
-                        _f.write("Q: " + str(prompt[:80]) + "\nA: " + str(output[:120]) + "\n\n")
+                    _log = _CSPath("/tmp/baw_learning.txt")
+                    with open(str(_log), "a") as _f:
+                        _f.write(f"Q: {prompt[:80]}\nA: {output[:120]}\n\n")
                 except Exception:
                     pass
-            # Clean synthesis: regenerate with SOUL.md + user prompt + session context
-            from pathlib import Path as _CSPath
+            # ── Clean synthesis: regenerate with SOUL.md identity ──
             try:
+                from pathlib import Path as _CSPath
                 _cs = _CSPath("/home/radxa/.baw/SOUL.md").read_text()
-                _cm = [{"role": "system", "content": _cs}]
-                try:
-                    if hasattr(self, "get_session") or hasattr(self, "_sessions"):
-                        _sid = chat_id if chat_id else "default"
-                        _sessions = getattr(self, "_sessions", {})
-                        _ses = _sessions.get(_sid, {})
-                        _hist = _ses.get("messages", [])[-4:]
-                        for _m in _hist:
-                            _r = _m.get("role","")
-                            _c = (_m.get("content","") or "")[:200]
-                            if _r in ("user","assistant") and _c:
-                                _cm.append({"role": _r, "content": _c})
-                except Exception:
-                    pass
-                _cm.append({"role": "user", "content": prompt or ""})
+                _cm = [
+                    {"role": "system", "content": _cs},
+                    {"role": "system", "content": "Reply in natural language only. No tool calls, no XML, no code blocks. No token counts, no task headers. Just the result."},
+                    {"role": "user", "content": prompt or ""}
+                ]
                 from ..llm import call_llm_with_fallback as _csllm
                 _cf = _csllm(config, _cm, tools=None, temperature=0.7)
                 if _cf and _cf.response and _cf.response.content:
-                    output = _cf.response.content.strip()
+                    raw = _cf.response.content
+                    # Strip any remaining tool traces
+                    import re as _r2
+                    raw = _r2.sub(r"<[^>]*tool_call[^>]*>.*?</[^>]*tool_call[^>]*>", "", raw, flags=_r2.DOTALL)
+                    raw = _r2.sub(r"<[^>]*invoke[^>]*>.*?</[^>]*invoke[^>]*>", "", raw, flags=_r2.DOTALL)
+                    raw = _r2.sub(r"<[^>]*think[^>]*>.*?</[^>]*think[^>]*>", "", raw, flags=_r2.DOTALL)
+                    raw = _r2.sub(r"^\d+\s+calls?\s*\(.*?\)\s*\u2014\s*total:.*?tokens?\s*$", "", raw, flags=_r2.MULTILINE)
+                    raw = _r2.sub(r"^\U0001f4ca\s*<b>\d+\s+calls?</b>.*?tokens?\s*$", "", raw, flags=_r2.MULTILINE)
+                    raw = _r2.sub(r"^\U0001f527\s*<b>Task \d+/\d+</b>.*?\n", "", raw, flags=_r2.MULTILINE)
+                    raw = _r2.sub(r"^\u2705\s*Task \d+/\d+.*?\n", "", raw, flags=_r2.MULTILINE)
+                    raw = _r2.sub(r"\n\s*\n\s*\n", "\n\n", raw).strip()
+                    if raw.strip():
+                        output = raw
             except Exception:
                 pass
-            # Bulletproof: strip ALL XML content from output (any model)
-            if output:
-                import re as _re
-                output = _re.sub(r"<[^>]*tool_call[^>]*>.*?</[^>]*tool_call[^>]*>", "", output, flags=_re.DOTALL)
-                output = _re.sub(r"<[^>]*invoke[^>]*>.*?</[^>]*invoke[^>]*>", "", output, flags=_re.DOTALL)
-                output = _re.sub(r"<[^>]*parameter[^>]*>.*?</[^>]*parameter[^>]*>", "", output, flags=_re.DOTALL)
-                output = _re.sub(r"<[^>]*think[^>]*>.*?</[^>]*think[^>]*>", "", output, flags=_re.DOTALL)
-                output = _re.sub(r"\\n\\s*\\n\\s*\\n", "\\n\\n", output).strip()
+
+            # Self-learning log
             if output and len(output) > 5:
                 try:
                     with open("/tmp/baw_learning.txt", "a") as _f:
-                        _f.write("Q: " + str(prompt[:80]) + "\nA: " + str(output[:120]) + "\n\n")
+                        _f.write(f"Q: {str(prompt)[:80]}\nA: {str(output)[:120]}\n\n")
                 except Exception:
                     pass
+
             return output.strip()
 
         except BaseException as e:
