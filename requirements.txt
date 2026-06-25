@@ -13,22 +13,14 @@ python-dotenv>=1.0
 
 # ── Document processing (install-time, not runtime discovery) ──
 python-docx>=1.1
-# PyMuPDF>=1.23  # optional — PDF processing
-# pymupdf4llm>=0.1  # optional — auto-installed if needed for PDF processing
-# ── Search providers ──
-# tavily-python>=0.5  # optional — Tavily search provider
-# ddgs>=9.0  # optional — DuckDuckGo search
-
 # ── STT — Speech-to-text ──
 edge-tts>=6.0  # TTS fallback
-# faster-whisper>=1.1  # optional — local STT
 
 # ── WebSocket — Slack Socket Mode ──
 websocket-client>=1.7
 
 # ── CLI / Dashboard UI ──
 rich>=13.0
-# textual>=0.52  # optional — TUI chat (pip install textual)
 
 # ── MCP — Model Context Protocol ──
 mcp>=1.0.0
