@@ -351,7 +351,9 @@ def _pick_model_menu(
             options.insert(0, (em, f"(auto) {em}", "—", ""))
 
     if not options:
-        return _input(f"{prompt} (no models available, type manually)", default="")
+        print(f"  {C.DIM}  No models available. Press Enter to skip.{C.RESET}")
+        raw = input(f"  {C.MAGENTA}> {C.RESET}").strip()
+        return raw if raw else ""  # empty = skip
 
     print()
     print(f"  {C.MAGENTA}?{C.RESET} {prompt}:")
@@ -655,13 +657,18 @@ def cmd_setup(data_dir: Path):
             if _default_provider:
                 break
 
-        _print_note("Fallback model (different provider than default):")
-        fb_id = _pick_model_menu(providers, "Fallback model", exclude_provider=_default_provider, only_providers=validated_providers)
-        if fb_id:
-            cfg.setdefault("model", {})["fallback"] = fb_id
-        elif cfg.get("model", {}).get("fallback"):
-            # Keep existing fallback
-            pass
+        # Check if other providers exist for fallback
+        _other_providers = [pk for pk in validated_providers if pk != _default_provider] if validated_providers else []
+        if _other_providers:
+            _print_note("Fallback model (different provider, Enter to skip):")
+            fb_id = _pick_model_menu(providers, "Fallback model", exclude_provider=_default_provider, only_providers=validated_providers)
+            if fb_id:
+                cfg.setdefault("model", {})["fallback"] = fb_id
+        else:
+            _print_note("No other providers configured — add more API keys for fallback support")
+            # Keep existing fallback if any
+            if not cfg.get("model", {}).get("fallback"):
+                cfg.setdefault("model", {})["fallback"] = ""
     else:
         _print_note("No providers configured yet. Set model manually or configure providers first.")
         model_id = _input("Default model ID", default=current_model or "deepseek-v4-flash")
