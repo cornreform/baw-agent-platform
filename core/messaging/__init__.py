@@ -2675,28 +2675,15 @@ class BaseConnector(ABC):
                 except Exception:
                     pass
 
-                        # ── Clean synthesis: include tool results as context ──
-            # SAVE the agent output (contains tool results) before overwriting
-            _agent_output = output
-            try:
-                from pathlib import Path as _CSPath
-                _cs = _CSPath("/home/user/.baw/SOUL.md").read_text()
-                _cm = [
-                    {"role": "system", "content": _cs},
-                    {"role": "system", "content": "You are BAW. Below is the result of your tool execution. Synthesize it into a clear, natural response for the user. Do NOT repeat the user prompt. Do NOT output tool traces or metadata. Just deliver the findings."},
-                    {"role": "user", "content": f"User asked: {prompt or ''}\n\nYour findings:\n{_agent_output[:4000]}"}
-                ]
-                from ..llm import call_llm_with_fallback as _csllm
-                _cf = _csllm(config, _cm, tools=None, temperature=0.7)
-                if _cf and _cf.response and _cf.response.content:
-                    output = _cf.response.content.strip()
-                    # Strip Rich/ANSI markup codes before returning
-                    import re as _strip_re
-                    output = _strip_re.sub(r"\[[0-9;]*m", "", output)
-                else:
-                    output = _agent_output  # fallback to agent output
-            except Exception:
-                output = _agent_output  # fallback to agent output
+            # ── Strip tool traces, return agent output directly ──
+            import re as _strip_re
+            # Strip common tool trace patterns
+            output = _strip_re.sub(r"^.*calls \(.*total: \d+\.\d+K tokens\)$", "", output, flags=_strip_re.MULTILINE)
+            output = _strip_re.sub(r"\[[0-9;]*m", "", output)  # Rich/ANSI codes
+            output = _strip_re.sub(r"^⏳.*$", "", output, flags=_strip_re.MULTILINE)
+            output = _strip_re.sub(r"^🔧.*$", "", output, flags=_strip_re.MULTILINE)
+            output = _strip_re.sub(r"^✅.*$", "", output, flags=_strip_re.MULTILINE)
+            output = output.strip()
 
             ## Self-learning: save user feedback patterns
             if output and len(output) > 10:
