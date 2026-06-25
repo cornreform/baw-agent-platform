@@ -1,4 +1,38 @@
 ### v1.18.0 — Production Stability Release
+## v1.20.0 — One-Line Install + Architecture Realignment
+
+### One-Line Install
+```bash
+curl -fsSL https://raw.githubusercontent.com/cornreform/baw-agent-platform/main/install.sh | bash
+```
+- Full bare metal setup: clone → venv → deps → config → wrapper → systemd
+- Works for ANY user (no hardcoded paths)
+- Docker alternative available
+
+### Architecture
+- **auto → hybrid mode**: court + plan for complex tasks, direct fast path for simple
+- **Single-pass synthesis**: no more clean synthesis overwriting agent output
+- **`<think>` tags stripped**: MiniMax-M3 thinking mode no longer leaks to users
+- **Path.home()**: all hardcoded `/home/user/` paths removed
+- **Smart fallback**: if default provider has no key, auto-uses first available
+
+### SOUL.md v3
+- Angel/Devil court explained
+- Model commands documented (`/model angel`, `/model devil`)
+- "You are NOT MiniMax-M3" — identity separated from model
+
+### Setup Wizard
+- Inline API key entry with instant feedback
+- Model picker: validated providers only, capped 10/provider
+- Enter keeps existing config, 'a' accepts auto-detect
+- Mode: auto is default
+
+### Performance
+- CLI tool turns: 12 → 200
+- Doctor: faster-whisper optional, pip timeout 60→300s for ARM64
+- Rich/ANSI markup stripped
+- Context retention: 4x improvement
+
 
 **Architecture Fixes:**
 - Clean synthesis now includes tool results as context (was discarding all work)
