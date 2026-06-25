@@ -283,7 +283,7 @@ def build_system_prompt(config: dict, data_dir = None,
     soul_path = base_path / "SOUL.md"
     if soul_path.exists():
         return soul_path.read_text(encoding="utf-8")
-    fb = Path("/home/user/.baw/SOUL.md")
+    fb = Path.home() / ".baw" / "SOUL.md"
     if fb.exists():
         return fb.read_text(encoding="utf-8")
     return "You are BAW, an AI agent with full system access.\n"
