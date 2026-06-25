@@ -1,4 +1,28 @@
-# Changelog
+### v1.18.0 — Production Stability Release
+
+**Architecture Fixes:**
+- Clean synthesis now includes tool results as context (was discarding all work)
+- Context retention: 40→80 msg limit, 3→8 keep turns, topic shift 25%→10%
+- Compression threshold uses context window % instead of hardcoded 80K
+- DeepSeek context window corrected: 66K → 1M
+
+**Identity & Output:**
+- SOUL.md v2: explicit identity (you ARE BAW, NOT Sunny/Gemini/generic AI)
+- MultiTask: stop leaking task headers (✅ Task X/Y) to users
+- Circuit breaker: when fallback==primary, force scan-all + surface friendly error
+- /doctor now checks circuit breaker state (detects dead providers)
+
+**CLI & UI:**
+- /model keyboard: interactive provider→model selector with inline buttons
+- Model selector: limit 50 per provider, use config default for current indicator
+- _cmd_aux_models reloads from disk (was showing stale cached values)
+- baw.head Rich theme fix: router show no longer crashes
+
+**Infrastructure:**
+- Output format: HTML unified across all connectors
+- ChatBypass identity: SOUL.md as primary system prompt
+
+**Breaking: Fresh install recommended** — accumulated patches cleaned up.
 
 All notable changes to BAW (Black And White) Agent Platform.
 

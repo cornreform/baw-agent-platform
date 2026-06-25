@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.15.0-blueviolet" alt="v1.15.0">
+  <img src="https://img.shields.io/badge/version-1.18.0-blueviolet" alt="v1.18.0">
   <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Linux | macOS">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -55,7 +55,7 @@
 
 ## 🔄 完全獨立 (Full Independence)
 
-BAW v1.15.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
+BAW v1.18.0 係一個完全獨立嘅 Agent Platform — 唔需要第二個系統介入設定或 setup。
 
 | Phase | 能力 | Tools |
 |-------|------|-------|
@@ -120,8 +120,8 @@ Run <code>baw --setup</code> — it walks through Telegram token, default model,
 
 <pre>
 $ baw --version
-BAW (Black And White) Agent Platform v1.14.2
-Commit: 807a933 (v1.14.2)
+BAW (Black And White) Agent Platform v1.18.0
+Commit: 807a933 (v1.18.0)
 Home: /app
 Architecture: self-improving loop with Angel/Devil adversarial court
 
@@ -805,7 +805,7 @@ baw --setup          # → Guided setup wizard</pre>
 
 <h2>📝 Changelog</h2>
 
-<h3>v1.15.0 — 自我修復依賴 + 穩定 Telegram 輪詢 (2026-06-24)</h3>
+<h3>v1.18.0 — 自我修復依賴 + 穩定 Telegram 輪詢 (2026-06-24)</h3>
 <ul>
   <li>🛡️ <strong>自我修復依賴系統</strong> — 3 層 safety net：tool 執行 auto-install、connector import wrapper、startup main() wrapper，ModuleNotFoundError 自動 pip install + retry</li>
   <li>🔗 <strong>Telegram 409 Conflict 根因修復</strong> — 刪除危險嘅 logOut() API，connect() 加 resilient retry + close() + deleteWebhook</li>
@@ -823,7 +823,7 @@ baw --setup          # → Guided setup wizard</pre>
   <li>鳴謝：Clay 啟發咗 waterfall enrichment 多源查詢思路</li>
 </ul>
 <ul>
-  <li>Version sync: all files now report v1.14.2</li>
+  <li>Version sync: all files now report v1.18.0</li>
   <li>Community health files: CONTRIBUTING.md + issue templates added</li>
   <li>README: GitHub stars/last-commit badges, CLI demo section, humility-toned description</li>
   <li>CHANGELOG.md: v1.8-v1.14 entries appended with detailed content</li>
