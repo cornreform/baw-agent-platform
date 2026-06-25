@@ -115,6 +115,13 @@ Examples:
         "feedparser": "feedparser",
         "markdownify": "markdownify",
         "rich": "rich",
+        "fitz": "PyMuPDF",
+        "pymupdf": "PyMuPDF",
+        "pymupdf4llm": "pymupdf4llm",
+        "faster_whisper": "faster-whisper",
+        "textual": "textual",
+        "tavily": "tavily-python",
+        "ddgs": "ddgs",
     }
 
     def _safe_import(import_stmt: str) -> bool:
