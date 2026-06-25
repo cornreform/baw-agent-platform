@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 BAW built-in: session_search — FTS5 cross-session search.
 

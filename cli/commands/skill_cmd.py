@@ -1,3 +1,4 @@
+from __future__ import annotations
 """baw skill — list/install/manage BAW skills."""
 import os
 import subprocess

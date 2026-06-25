@@ -10,7 +10,9 @@ Uses kg_curator.stats() for KG and MemoryStore.stats() for memory.
 """
 
 import json
+import random
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -20,6 +22,23 @@ if _BAW_ROOT not in sys.path:
 
 from tools.kg_curator import stats as kg_stats
 from core.memory import MemoryStore
+
+# ── retry helper ──────────────────────────────────────────────────
+
+
+def _retry(fn, max_attempts=3, base_delay=1):
+    """Call fn() with exponential backoff: 1s, 2s, 4s. Re-raises on last failure."""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn()
+        except Exception:
+            if attempt == max_attempts:
+                raise
+            delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.3)
+            time.sleep(delay)
+
+
+# ── constants ─────────────────────────────────────────────────────
 
 _KG_FILE = Path.home() / ".baw" / "knowledge_graph.json"
 _NOISE_RELS = {"mentioned_in", "tagged"}
@@ -81,9 +100,9 @@ def quality_report() -> str:
 
     No emoji, no ** markdown, pure ASCII text.
     """
-    kg_data = _load_kg()
+    kg_data = _retry(_load_kg)
     total_kg, sig_count, noise_count, sig_pct = _kg_metrics(kg_data)
-    mem = _memory_metrics()
+    mem = _retry(_memory_metrics)
     total_mem = mem.get("total", 0)
     avg_score = mem.get("avg_score", 0)
     high_score = mem.get("high_score", 0)
@@ -116,10 +135,10 @@ def quality_report() -> str:
 
 def loss_score() -> str:
     """Return just the composite loss score as a string."""
-    kg_data = _load_kg()
+    kg_data = _retry(_load_kg)
     _, _, noise_count, _ = _kg_metrics(kg_data)
     total_kg = len(kg_data.get("triples", []))
-    mem = _memory_metrics()
+    mem = _retry(_memory_metrics)
     avg_score = mem.get("avg_score", 0)
     edges = mem.get("edges", 0)
     loss = _compute_loss(total_kg, noise_count, avg_score, edges)

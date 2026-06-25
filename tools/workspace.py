@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW built-in: workspace state management.
 
 Tracks ongoing development work across turns.

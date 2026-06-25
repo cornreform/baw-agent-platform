@@ -1,3 +1,4 @@
+from __future__ import annotations
 """baw router — view and edit tier → model preferences.
 
 Lets the user decide which model handles each complexity tier.

@@ -236,7 +236,7 @@ async def _start_async(self):
         # Run server.serve() in a task so we can detect shutdown
         server_task = asyncio.create_task(server.serve())
         # Wait for shutdown signal
-        await asyncio.get_event_loop().run_in_executor(None, state["shutdown"].wait)
+        await asyncio.get_running_loop().run_in_executor(None, state["shutdown"].wait)
         # Stop the server
         server.should_exit = True
         await server_task

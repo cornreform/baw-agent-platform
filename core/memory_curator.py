@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 BAW Memory Curator — think before you remember.
 

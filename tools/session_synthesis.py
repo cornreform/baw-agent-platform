@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 BAW built-in: session_synthesis — cross-session pattern synthesis.
 

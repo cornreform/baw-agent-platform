@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW built-in: fusion_analyze — multi-model deliberation with smart model selection.
 
 Queries multiple LLM providers in parallel, with mode-based model selection.

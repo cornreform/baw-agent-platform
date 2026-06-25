@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BAW — Background Command Management
 
 Run long-lived commands (servers, watchers) without blocking.

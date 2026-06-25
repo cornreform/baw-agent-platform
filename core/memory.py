@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 BAW — Unified Memory Store
 JSONL append-only + edges.json graph for associative spread.
