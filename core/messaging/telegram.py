@@ -2400,7 +2400,7 @@ class TelegramConnector(BaseConnector):
     def _send_model_buttons(self, chat_id: str, msg_id: int, provider: str, current_model: str):
         """Edit message to show models for a specific provider."""
         providers = self._get_providers_config()
-        models = providers.get(provider, [])
+        models = providers.get(provider, [])[:50]  # limit to 50 for Telegram keyboard
         if not models:
             return
         rows = []
@@ -2483,8 +2483,8 @@ class TelegramConnector(BaseConnector):
                     try:
                         providers = self._get_providers_config()
                         title = "<b>Select Provider</b>"
-                        cc = getattr(self, '_chat_config', {}).get(chat_id, {})
-                        current = cc.get("model", "deepseek-v4-flash")
+                        baw_cfg = self._baw_ensure().get("config", {})
+                        current = baw_cfg.get("model", {}).get("default", "deepseek-v4-flash")
                         rows = []
                         for pn in providers:
                             rows.append([{"text": f"  {pn}", "callback_data": f"provider_select:{pn}"}])
@@ -2504,8 +2504,8 @@ class TelegramConnector(BaseConnector):
             else:
                 # Show models for this provider
                 providers = self._get_providers_config()
-                cc = getattr(self, '_chat_config', {}).get(chat_id, {})
-                current = cc.get("model", "deepseek-v4-flash")
+                baw_cfg = self._baw_ensure().get("config", {})
+                current = baw_cfg.get("model", {}).get("default", "deepseek-v4-flash")
                 self._send_model_buttons(chat_id, msg_id, pname, current)
 
         elif data.startswith("model_select:"):
