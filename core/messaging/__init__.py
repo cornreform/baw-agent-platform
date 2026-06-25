@@ -361,7 +361,7 @@ class BaseConnector(ABC):
         ...
 
     # ── Session management ──────────────────────────────────────
-    _MAX_SESSION_MSGS = 40  # ~20 user/assistant exchanges, keeps input <20K avg
+    _MAX_SESSION_MSGS = 80  # increased from 40 for better context retention  # ~20 user/assistant exchanges, keeps input <20K avg
 
     def _load_session_index(self):
         """Load all saved session file IDs into memory (not full history)."""
@@ -1392,7 +1392,7 @@ class BaseConnector(ABC):
                     _tmp_ctx.add_assistant(_content, m.get("tool_calls"))
                 elif _role == "tool":
                     _tmp_ctx.add_tool_result(m.get("tool_call_id", ""), m.get("name", ""), _content)
-            _compacted, _, _compact_text = _tmp_ctx.compact(threshold_chars=30000, keep_recent_turns=3)
+            _compacted, _, _compact_text = _tmp_ctx.compact(threshold_chars=30000, keep_recent_turns=8)
             if _compacted > 0 and _compact_text:
                 _summary = _compact_text[:500]
         except Exception as e:
@@ -2002,7 +2002,7 @@ class BaseConnector(ABC):
                         pass
                     # Auto-compression: hard cap at 30K estimated tokens or 30% of context
                     _next_estimate = _estimated_tokens + (len(prompt) * 0.25) if prompt else 0
-                    if (_estimated_tokens > 30000 or _usage_pct > 30 or (_next_estimate / _cw) > 0.40) and session:
+                    if (_estimated_tokens > 80000 or _usage_pct > 60 or (_next_estimate / _cw) > 0.40) and session:
                         logger.info(f"[Context] {_estimated_tokens} tokens ({_usage_pct:.0f}%) — auto-compressing...")
                         self._compress_session(config, data_dir, session)
                         conv_history = session.get("messages", [])
@@ -2022,7 +2022,7 @@ class BaseConnector(ABC):
                     _curr_words = set((prompt or "")[:300].lower().split())
                     if _prev_words and _curr_words:
                         _overlap = len(_prev_words & _curr_words) / max(len(_prev_words | _curr_words), 1)
-                        if _overlap < 0.25:  # <25% keyword overlap → topic shift
+                        if _overlap < 0.10:  # <10% keyword overlap → topic shift (was 25%)
                             logger.info(
                                 f"[Intent] Shift detected (overlap={_overlap:.2f}): "
                                 f"'{_prev_topic[:60]}' → '{prompt[:60]}'"
