@@ -2690,6 +2690,9 @@ class BaseConnector(ABC):
                 _cf = _csllm(config, _cm, tools=None, temperature=0.7)
                 if _cf and _cf.response and _cf.response.content:
                     output = _cf.response.content.strip()
+                    # Strip Rich/ANSI markup codes before returning
+                    import re as _strip_re
+                    output = _strip_re.sub(r"\[[0-9;]*m", "", output)
                 else:
                     output = _agent_output  # fallback to agent output
             except Exception:
