@@ -367,7 +367,7 @@ def _welcome(cfg):
 # Agent loop — streaming + tool calling
 # ═══════════════════════════════════════════════════════════════════════
 
-MAX_TOOL_TURNS = 12
+MAX_TOOL_TURNS = 200  # was 12
 
 def _run_agent(client, model_id, messages, cfg):
     """Run agent loop: stream response, handle tool calls, return final text + usage."""

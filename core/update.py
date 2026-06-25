@@ -44,19 +44,23 @@ def cmd_version(data_dir: Path):
     if r.returncode == 0 and r.stdout.strip():
         print(f"  Branch: {r.stdout.strip()}")
 
-    r = _run(["docker", "inspect", "baw-telegram", "--format", "{{.Image}}"])
-    if r.returncode == 0 and r.stdout.strip():
-        print(f"  Docker image: {r.stdout.strip()[:20]}…")
-    r2 = _run(["docker", "ps", "--filter", "name=baw", "--format", "{{.Status}}"])
-    if r2.returncode == 0 and r2.stdout.strip():
-        print(f"  Docker status: {r2.stdout.strip()}")
+    _in_docker = Path("/.dockerenv").exists()
+    if _in_docker:
+        r = _run(["docker", "inspect", "baw-telegram", "--format", "{{.Image}}"])
+        if r.returncode == 0 and r.stdout.strip():
+            print(f"  Docker image: {r.stdout.strip()[:20]}…")
+        r2 = _run(["docker", "ps", "--filter", "name=baw", "--format", "{{.Status}}"])
+        if r2.returncode == 0 and r2.stdout.strip():
+            print(f"  Docker status: {r2.stdout.strip()}")
+    else:
+        print(f"  Deployment: bare metal")
 
     r = _run(["python3", "--version"])
     print(f"  Python: {r.stdout.strip()}")
 
 
 def cmd_update(data_dir: Path):
-    """Pull latest code, rebuild Docker, restart."""
+    """Pull latest code and restart (bare metal or Docker)."""
     if not (BAW_ROOT / ".git").exists():
         print(f"  {C_RED}✗{C_RESET} Not a git repo at {BAW_ROOT}")
         return False
