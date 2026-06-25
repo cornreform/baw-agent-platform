@@ -27,7 +27,12 @@ logger = logging.getLogger("baw.mcp")
 # ── Global registry of connected MCP servers ──
 
 _connections: dict[str, Any] = {}  # server_name -> {"session": ..., "tools": {...}}
-_lock = asyncio.Lock()
+_lock = None
+def _get_lock():
+    global _lock
+    if _lock is None:
+        _lock = asyncio.Lock()
+    return _lock
 
 
 async def _connect_stdio(name: str, command: str, args: list[str],
@@ -131,7 +136,7 @@ async def _connect_all(config_path: str = "") -> str:
                 "with {\"mcpServers\": {\"memory\": {\"command\": \"npx\", \"args\": []}}}")
 
     results = []
-    async with _lock:
+    async with _get_lock():
         for name, cfg in config.items():
             if cfg.get("disabled", False):
                 results.append(f"⏭️  {name}: disabled")
@@ -243,7 +248,7 @@ async def _call_tool(server: str, tool: str, args: str) -> str:
 
 async def _disconnect_all() -> str:
     """Disconnect all MCP servers."""
-    async with _lock:
+    async with _get_lock():
         count = len(_connections)
         for name, conn in list(_connections.items()):
             try:
