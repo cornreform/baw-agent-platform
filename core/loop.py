@@ -285,7 +285,13 @@ def build_system_prompt(config: dict, data_dir = None,
         return soul_path.read_text(encoding="utf-8")
     fb = Path.home() / ".baw" / "SOUL.md"
     if fb.exists():
-        return fb.read_text(encoding="utf-8")
+        result = fb.read_text(encoding="utf-8")
+        cap_path = base_path / "CAPABILITIES.md"
+        if cap_path.exists():
+            result += "
+
+" + cap_path.read_text(encoding="utf-8")
+        return result
     return "You are BAW (Black And White), an AI agent with full system access.\n"
 
 def _build_todo_block(data_dir: Path) -> str:
