@@ -331,6 +331,13 @@ COMMANDS: dict[str, dict] = {
         "usage": "baw restart [--force]",
     },
     "rebuild": {
+    "gateway": {
+        "short": "🚦 Start/stop BAW service",
+        "long": "Manage the BAW gateway service.\n  baw gateway start  — Start the service\n  baw gateway stop   — Stop the service",
+        "example": "baw gateway start",
+        "args": [{"name": "action", "choices": ["start", "stop"]}],
+        "usage": "baw gateway <start|stop>",
+    },
         "short": "🔨  Fast rebuild + restart (cached layers)",
         "long": (
             "Rebuild BAW Docker image with layer caching and restart.\n"
@@ -535,6 +542,13 @@ def main():
         elif canonical == "tui-chat":
             from cli.commands.tui_chat import cmd_tui_chat
             cmd_tui_chat()
+        elif canonical == "gateway":
+            action = args.get("action", "")
+            from cli.commands.restart import cmd_gateway_start, cmd_gateway_stop
+            if action == "stop":
+                cmd_gateway_stop()
+            else:
+                cmd_gateway_start()
         elif canonical == "restart":
             from cli.commands.restart import cmd_restart
             force = "--force" in args if args else False

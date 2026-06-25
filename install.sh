@@ -45,7 +45,7 @@ BAW_DIR="${BAW_HOME:-$HOME/BAW}"
 cd "$BAW_DIR" || exit 1
 export PYTHONPATH="$BAW_DIR:$PYTHONPATH"
 case "${1:-}" in
-  ""|chat|tui-chat|status|models|config|router|soul|logs|dashboard|setup|memory|todo|tools|sessions|evolve|court|skill|restart|rebuild|self-test|preflight)
+  ""|chat|tui-chat|status|models|config|router|soul|logs|dashboard|setup|memory|todo|tools|sessions|evolve|court|skill|restart|rebuild|gateway|self-test|preflight)
     exec "$BAW_DIR/venv/bin/python3" -m cli.main "$@" ;;
   *)
     exec "$BAW_DIR/venv/bin/python3" "$BAW_DIR/baw" "$@" ;;
