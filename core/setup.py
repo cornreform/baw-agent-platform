@@ -872,7 +872,13 @@ def cmd_setup(data_dir: Path):
             if not token:
                 token = input(f"  {C.MAGENTA}?{C.RESET} Telegram Bot Token: ").strip()
             if token:
-                cfg.setdefault("telegram", {})["token"] = token
+                # Show masked token for confirmation
+                masked = token[:10] + '...' if len(token) > 10 else token[:5] + '...'
+                confirm = input(f"  {C.MAGENTA}?{C.RESET} Confirm token ({masked})? (Y/n): ").strip().lower()
+                if confirm in ('n', 'no'):
+                    _print_note("Token discarded — re-enter next time")
+                else:
+                    cfg.setdefault("telegram", {})["token"] = token
                 # Configure allowed_users
                 current_users = cfg.get("telegram", {}).get("allowed_users", [])
                 if current_users:
