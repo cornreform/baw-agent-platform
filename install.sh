@@ -65,7 +65,7 @@ ExecStart=%h/BAW/venv/bin/python3 %h/BAW/baw-bot --config %h/.baw/config.yaml
 Restart=always
 RestartSec=5
 WorkingDirectory=%h/BAW
-EnvironmentFile=%h/.baw/.env
+EnvironmentFile=-%h/.baw/.env
 [Install]
 WantedBy=default.target
 SERVICE
