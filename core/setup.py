@@ -516,6 +516,7 @@ def cmd_setup(data_dir: Path):
         current_val = existing_env.get(env_key, "")
         if current_val:
             _print_item(label, f"already set ({current_val[:8]}...), keeping")
+            validated_providers.add(provider_key)  # pre-existing key counts as validated
             continue
         val = input(f"  {C.MAGENTA}?{C.RESET} {label} ({env_key}): ").strip()
         if not val:
@@ -568,6 +569,12 @@ def cmd_setup(data_dir: Path):
 
     all_keys = {**existing_env, **new_env}
 
+    # Auto-detect providers from pre-existing keys (user skipped selection)
+    if not selected_providers and existing_env:
+        for idx, env_key, label, provider_key, default_base, _ in all_providers:
+            if env_key in existing_env and env_key != "__CUSTOM__":
+                validated_providers.add(provider_key)
+
     # ── 3. Providers (auto-configure from keys) ──
     _print_section("2. Providers")
     providers = cfg.setdefault("providers", {})
@@ -612,6 +619,9 @@ def cmd_setup(data_dir: Path):
         _ok(f"{label} provider configured")
         configured_any = True
 
+    # If no new providers but existing keys exist, we still have providers
+    if providers or existing_env:
+        configured_any = True
     if not configured_any:
         _warn("No API keys configured — BAW needs at least one provider to work")
         _print_note("Run 'baw --setup' again after getting API keys")
