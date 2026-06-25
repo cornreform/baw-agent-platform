@@ -2675,21 +2675,27 @@ class BaseConnector(ABC):
                 except Exception:
                     pass
 
-            Path("/tmp/cs_BEFORE").touch()
-            # Clean synthesis: regenerate with identity + user question
+                        # ── Clean synthesis: include tool results as context ──
+            # SAVE the agent output (contains tool results) before overwriting
+            _agent_output = output
             try:
                 from pathlib import Path as _CSPath
                 _cs = _CSPath("/home/user/.baw/SOUL.md").read_text()
-                _cm = [{"role": "system", "content": _cs}, {"role": "user", "content": prompt or ""}]
+                _cm = [
+                    {"role": "system", "content": _cs},
+                    {"role": "system", "content": "You are BAW. Below is the result of your tool execution. Synthesize it into a clear, natural response for the user. Do NOT repeat the user prompt. Do NOT output tool traces or metadata. Just deliver the findings."},
+                    {"role": "user", "content": f"User asked: {prompt or ''}\n\nYour findings:\n{_agent_output[:4000]}"}
+                ]
                 from ..llm import call_llm_with_fallback as _csllm
                 _cf = _csllm(config, _cm, tools=None, temperature=0.7)
                 if _cf and _cf.response and _cf.response.content:
                     output = _cf.response.content.strip()
                 else:
-                    output = "出咗少少技術問題，試多次？"
+                    output = _agent_output  # fallback to agent output
             except Exception:
-                output = "出咗少少技術問題，試多次？"
-            # Self-learning: save user feedback patterns
+                output = _agent_output  # fallback to agent output
+
+            ## Self-learning: save user feedback patterns
             if output and len(output) > 10:
                 try:
                     _log = _CSPath("/tmp/baw_learning.txt")
@@ -2697,34 +2703,6 @@ class BaseConnector(ABC):
                         _f.write(f"Q: {prompt[:80]}\nA: {output[:120]}\n\n")
                 except Exception:
                     pass
-            # ── Clean synthesis: regenerate with SOUL.md identity ──
-            try:
-                from pathlib import Path as _CSPath
-                _cs = _CSPath("/home/user/.baw/SOUL.md").read_text()
-                _cm = [
-                    {"role": "system", "content": _cs},
-                    {"role": "system", "content": "Reply in natural language only. No tool calls, no XML, no code blocks. No token counts, no task headers. Just the result."},
-                    {"role": "user", "content": prompt or ""}
-                ]
-                from ..llm import call_llm_with_fallback as _csllm
-                _cf = _csllm(config, _cm, tools=None, temperature=0.7)
-                if _cf and _cf.response and _cf.response.content:
-                    raw = _cf.response.content
-                    # Strip any remaining tool traces
-                    import re as _r2
-                    raw = _r2.sub(r"<[^>]*tool_call[^>]*>.*?</[^>]*tool_call[^>]*>", "", raw, flags=_r2.DOTALL)
-                    raw = _r2.sub(r"<[^>]*invoke[^>]*>.*?</[^>]*invoke[^>]*>", "", raw, flags=_r2.DOTALL)
-                    raw = _r2.sub(r"<[^>]*think[^>]*>.*?</[^>]*think[^>]*>", "", raw, flags=_r2.DOTALL)
-                    raw = _r2.sub(r"^\d+\s+calls?\s*\(.*?\)\s*\u2014\s*total:.*?tokens?\s*$", "", raw, flags=_r2.MULTILINE)
-                    raw = _r2.sub(r"^\U0001f4ca\s*<b>\d+\s+calls?</b>.*?tokens?\s*$", "", raw, flags=_r2.MULTILINE)
-                    raw = _r2.sub(r"^\U0001f527\s*<b>Task \d+/\d+</b>.*?\n", "", raw, flags=_r2.MULTILINE)
-                    raw = _r2.sub(r"^\u2705\s*Task \d+/\d+.*?\n", "", raw, flags=_r2.MULTILINE)
-                    raw = _r2.sub(r"\n\s*\n\s*\n", "\n\n", raw).strip()
-                    if raw.strip():
-                        output = raw
-            except Exception:
-                pass
-
             # Self-learning log
             if output and len(output) > 5:
                 try:
