@@ -1,5 +1,5 @@
 model:
-  default: z-ai/glm-5.2
+  default: deepseek-v4-flash
   fallback: MiniMax-M2.5
   task_rules:
   - match: search|product|購買|價錢|價格|price|shop|商店|查詢|research|find|lookup
