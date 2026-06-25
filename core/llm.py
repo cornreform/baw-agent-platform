@@ -1014,6 +1014,26 @@ def validate_config(config: dict) -> list[str]:
         issues.append("ERROR: No providers configured")
 
     model_default = config.get("model", {}).get("default")
+    # Smart fallback: if default model's provider has no API key, use first available provider
+    if model_default:
+        _def_provider = None
+        for _pk, _pc in providers.items():
+            for _m in _pc.get("models", []):
+                if _m.get("id") == model_default:
+                    _def_provider = _pk
+                    break
+        if _def_provider:
+            _env_key = _pc.get("api_key_env", "")
+            if _env_key and not os.environ.get(_env_key):
+                # Default provider has no key — use first provider that does
+                for _pk, _pc in providers.items():
+                    _ek = _pc.get("api_key_env", "")
+                    if _ek and os.environ.get(_ek):
+                        _first_model = (_pc.get("models", [{}])[0] or {}).get("id", "")
+                        if _first_model:
+                            model_default = _first_model
+                            _logging.info(f"[LLM] Default provider ({_def_provider}) has no key → using {_pk}:{_first_model}")
+                            break
     if not model_default:
         issues.append("ERROR: model.default not set")
 
