@@ -1,4 +1,4 @@
-#!/home/radxa/BAW/venv/bin/python3
+#!/usr/bin/env python3
 """
 BAW Agent Platform — CLI Entry Point
 Linux + macOS compatible
