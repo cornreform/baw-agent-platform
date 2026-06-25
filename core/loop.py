@@ -1106,8 +1106,9 @@ def run_agent(
                 exe_result = execute_tool(name, args)
                 # ── Loop detection: track consecutive failures ──
                 if "Error" in exe_result[:100] or "Traceback" in exe_result:
-                    from core.watchdog import track_consecutive_failure, _recover_restart
-                    if track_consecutive_failure(name):
+                    # DISABLED: self-restart causes crash loop with Telegram rate limits
+                    import logging; logging.warning(f"Tool {name} has consecutive failures — NOT restarting to avoid loop")
+                    if False:  # was: if track_consecutive_failure(name):
                         _recover_restart(f"{name} failed 5x consecutive")
                 else:
                     from core.watchdog import clear_consecutive_failures
