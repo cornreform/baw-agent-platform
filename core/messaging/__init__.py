@@ -2002,7 +2002,7 @@ class BaseConnector(ABC):
                         pass
                     # Auto-compression: hard cap at 30K estimated tokens or 30% of context
                     _next_estimate = _estimated_tokens + (len(prompt) * 0.25) if prompt else 0
-                    if (_estimated_tokens > 80000 or _usage_pct > 60 or (_next_estimate / _cw) > 0.40) and session:
+                    if (_usage_pct > 60 or (_next_estimate / _cw) > 0.70) and session:  # auto-compress at 60% of context window
                         logger.info(f"[Context] {_estimated_tokens} tokens ({_usage_pct:.0f}%) — auto-compressing...")
                         self._compress_session(config, data_dir, session)
                         conv_history = session.get("messages", [])
