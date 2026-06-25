@@ -313,7 +313,13 @@ def _pick_model_menu(
             continue
         if exclude_provider and pkey == exclude_provider:
             continue
-        for m in pcfg.get("models", []):
+        model_list = pcfg.get("models", [])
+        # Cap at 10 models per provider to keep menu usable
+        if len(model_list) > 10:
+            shown = model_list[:10]
+        else:
+            shown = model_list
+        for m in shown:
             mid = m["id"] if isinstance(m, dict) else m
             caps = m.get("capabilities", []) if isinstance(m, dict) else []
             # Filter by capability: show matching caps or models with no caps (generic)
