@@ -90,7 +90,13 @@ sudo tee /usr/local/bin/baw << '''EOF'''
 BAW_DIR="${BAW_HOME:-$HOME/BAW}"
 cd "$BAW_DIR" || exit 1
 export PYTHONPATH="$BAW_DIR:$PYTHONPATH"
-exec "$BAW_DIR/venv/bin/python3" -m cli.main "$@"
+# Route subcommands to Rich CLI, flags to old script
+case "${1:-}" in
+  ""|chat|tui-chat|status|models|config|router|soul|logs|dashboard|setup|memory|todo|tools|sessions|evolve|court|skill|restart|rebuild|self-test|preflight)
+    exec "$BAW_DIR/venv/bin/python3" -m cli.main "$@" ;;
+  *)
+    exec "$BAW_DIR/venv/bin/python3" "$BAW_DIR/baw" "$@" ;;
+esac
 EOF
 sudo chmod 755 /usr/local/bin/baw
 
@@ -198,7 +204,13 @@ sudo tee /usr/local/bin/baw << '''EOF'''
 BAW_DIR="${BAW_HOME:-$HOME/BAW}"
 cd "$BAW_DIR" || exit 1
 export PYTHONPATH="$BAW_DIR:$PYTHONPATH"
-exec "$BAW_DIR/venv/bin/python3" -m cli.main "$@"
+# Route subcommands to Rich CLI, flags to old script
+case "${1:-}" in
+  ""|chat|tui-chat|status|models|config|router|soul|logs|dashboard|setup|memory|todo|tools|sessions|evolve|court|skill|restart|rebuild|self-test|preflight)
+    exec "$BAW_DIR/venv/bin/python3" -m cli.main "$@" ;;
+  *)
+    exec "$BAW_DIR/venv/bin/python3" "$BAW_DIR/baw" "$@" ;;
+esac
 EOF
 sudo chmod 755 /usr/local/bin/baw
 
