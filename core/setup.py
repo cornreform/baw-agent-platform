@@ -451,24 +451,30 @@ def cmd_setup(data_dir: Path):
                 _print_item(label, f"✓ saved ({existing_env[env_key][:8]}...)")
         print()
 
-    # Menu: pick providers
-    print(f"  {C.MAGENTA}?{C.RESET} Pick providers to configure (numbers, comma-separated):")
+    # Show available providers
+    print(f"  {C.DIM}Available providers (enter number to add, Enter when done):{C.RESET}")
     for idx, _, label, _, _, _ in all_providers:
-        print(f"     {C.GREEN}{idx:>2}{C.RESET}) {label}")
-    print(f"     {C.GREEN}a{C.RESET}) All of them")
-    print(f"     {C.GREEN}d{C.RESET}) Done, skip to next section")
-    raw = input(f"  {C.MAGENTA}> {C.RESET}").strip().lower()
+        has_key = "✓" if any(env_key in existing_env for i, env_key, l, *_ in [p for p in all_providers if p[0]==idx]) else " "
+        print(f"     {C.GREEN}{idx:>2}{C.RESET}) {has_key} {label}")
 
-    if raw in ("", "d", "done", "skip"):
-        selected_providers = []
-    elif raw == "a":
-        selected_providers = all_providers
-    else:
-        indices = set()
+    # Loop: keep adding providers until user presses Enter
+    added_indices = set()
+    while True:
+        raw = input(f"  {C.MAGENTA}?{C.RESET} Add provider (number, or Enter to continue): ").strip().lower()
+        if raw in ("", "d", "done"):
+            break
+        if raw == "a":
+            added_indices = set(range(1, len(all_providers)+1))
+            break
         for part in raw.replace(",", " ").split():
             if part.isdigit():
-                indices.add(int(part))
-        selected_providers = [p for p in all_providers if p[0] in indices]
+                added_indices.add(int(part))
+        if added_indices:
+            done_msg = f"{len(added_indices)} provider(s) queued — Enter to add more or done"
+        else:
+            done_msg = "No providers added yet"
+
+    selected_providers = [p for p in all_providers if p[0] in added_indices]
 
     new_env = {}
     plan_choices = {}
