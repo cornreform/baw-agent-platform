@@ -799,28 +799,8 @@ class BaseConnector(ABC):
                 current = cc.get("tone", self.config.get("tone", {}).get("default", "casual"))
                 return f"Current tone: {current}\nAvailable: {', '.join(tones)}"
 
-            # ── Thinking mode toggle ──
-            if cmd == "thinking":
-                baw = self._baw_ensure()
-                cfg = baw["config"]
-                if arg:
-                    new_val = arg.strip().lower() in ("on", "true", "1", "yes")
-                    display = cfg.setdefault("display", {})
-                    display["show_reasoning"] = new_val
-                    # Persist
-                    import yaml
-                    (baw["data_dir"] / "config.yaml").write_text(
-                        yaml.dump(cfg, default_flow_style=False, allow_unicode=True),
-                        encoding="utf-8",
-                    )
-                    from core.config import invalidate_cache
-                    invalidate_cache()
-                    state = "on" if new_val else "off"
-                    return f"[OK] Thinking mode: {state}\nWhen on, BAW shows its reasoning before each answer."
-                cc = self._chat_config.get(msg.chat_id, {})
-                show = cfg.get("display", {}).get("show_reasoning", False)
-                state = "on" if show else "off"
-                return f"Thinking mode: {state}\nUse `/thinking on` or `/thinking off` to toggle."
+            # Thinking mode: delegated to commands.py
+
 
             if cmd in ("model", "m") and arg:
                 # Handle [modelname] syntax from inline keyboard callback
