@@ -330,7 +330,6 @@ COMMANDS: dict[str, dict] = {
         "aliases": ["reboot"],
         "usage": "baw restart [--force]",
     },
-    "rebuild": {
     "gateway": {
         "short": "🚦 Start/stop BAW service",
         "long": "Manage the BAW gateway service.\n  baw gateway start  — Start the service\n  baw gateway stop   — Stop the service",
@@ -338,6 +337,7 @@ COMMANDS: dict[str, dict] = {
         "args": [{"name": "action", "choices": ["start", "stop"]}],
         "usage": "baw gateway <start|stop>",
     },
+    "rebuild": {
         "short": "🔨  Fast rebuild + restart (cached layers)",
         "long": (
             "Rebuild BAW Docker image with layer caching and restart.\n"
