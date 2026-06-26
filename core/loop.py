@@ -288,9 +288,7 @@ def build_system_prompt(config: dict, data_dir = None,
         result = fb.read_text(encoding="utf-8")
         cap_path = base_path / "CAPABILITIES.md"
         if cap_path.exists():
-            result += "
-
-" + cap_path.read_text(encoding="utf-8")
+            result += "\n\n" + cap_path.read_text(encoding="utf-8")
         return result
     return "You are BAW (Black And White), an AI agent with full system access.\n"
 
