@@ -251,7 +251,9 @@ async def _start_async(self):
                 resp = await _reset.post(f"{self._api_base}/close")
                 if resp.status_code == 429:
                     retry_after = resp.json().get("parameters", {}).get("retry_after", 30)
-                    logger.warning(f"[Telegram] close() rate-limited, retry after {retry_after}s — proceeding anyway")
+                    logger.warning(f"[Telegram] close() rate-limited — waiting {retry_after}s")
+                    import asyncio as _asyncio
+                    await _asyncio.sleep(retry_after + 5)  # actually wait + buffer
                 elif resp.status_code != 200:
                     logger.warning(f"[Telegram] close() returned HTTP {resp.status_code}: {resp.text[:200]}")
             except Exception as exc:
