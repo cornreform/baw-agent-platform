@@ -65,6 +65,7 @@ Type=simple
 ExecStart=%h/BAW/venv/bin/python3 %h/BAW/baw-bot --config %h/.baw/config.yaml
 Restart=always
 RestartSec=30  # slower to avoid Telegram rate limit death loop
+TimeoutStartSec=600
 WorkingDirectory=%h/BAW
 EnvironmentFile=-%h/.baw/.env
 [Install]
