@@ -543,7 +543,7 @@ def main():
             from cli.commands.tui_chat import cmd_tui_chat
             cmd_tui_chat()
         elif canonical == "gateway":
-            action = args[0] if args else "start"
+            action = subcommand or "start"
             from cli.commands.restart import cmd_gateway_start, cmd_gateway_stop
             if action == "stop":
                 cmd_gateway_stop()
